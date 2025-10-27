@@ -141,7 +141,8 @@ for line in sys.stdin:
         elif data.get('type') == 'user' and data.get('message', {}).get('content'):
             for item in data['message']['content']:
                 if item.get('type') == 'tool_result' and item.get('is_error'):
-                    print('❌ ' + item['content'].split('\n')[0])
+                    tool_name = item.get('tool_use', {}).get('name', 'unknown')
+                    print(f'❌ [{tool_name}] ' + item['content'].split('\n')[0])
     except: pass
 """
 
