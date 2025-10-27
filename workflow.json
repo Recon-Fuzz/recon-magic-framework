@@ -1,0 +1,30 @@
+
+{
+    "name": "Audit Workflow",
+    "steps": [
+        {
+            "name": "Phase 0",
+            "type": "task",
+            "description": "Initial Scoping",
+            "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-0.md. Run exclusively the phase audit-naive-phase-0 using the Task tool",
+            "model": {
+                "type": "CLAUDE_CODE",
+                "model": "inherit"
+            },
+            "shouldCreateSummary": true,
+            "shouldCommitChanges": true
+        },
+        {
+            "name": "Phase 1",
+            "type": "task",
+            "description": "Issues Generation",
+            "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-1.md. Run exclusively the phase audit-naive-phase-1 using the Task tool",
+            "model": {
+                "type": "CLAUDE_CODE",
+                "model": "inherit"
+            },
+            "shouldCreateSummary": true,
+            "shouldCommitChanges": true
+        }
+    ]
+}
