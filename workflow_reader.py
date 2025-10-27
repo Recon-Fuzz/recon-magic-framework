@@ -94,7 +94,7 @@ def main():
     for i, step in enumerate(workflow.steps, 1):
         print(f"Step {i}: {step.name}")
         print(f"  Type: {step.type}")
-        print(f"  Description: {getattr(step, 'description', 'N/A')}")
+        print(f"  Description: {step.description or 'N/A'}")
         print(f"  Model: {step.model.type.value} ({step.model.model})")
         print(f"  Create Summary: {step.shouldCreateSummary}")
         print(f"  Commit Changes: {step.shouldCommitChanges}")
