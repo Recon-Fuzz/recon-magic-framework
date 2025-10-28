@@ -1,0 +1,3 @@
+- Hardcoded Programs comaptibility.
+- Real decision making ability, that is not hardcoded, and that has the 3 options, within reason.
+- API status specification.
