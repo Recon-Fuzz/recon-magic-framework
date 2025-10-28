@@ -78,5 +78,5 @@ type DecisionStep = DecisionStepReadFile | DecisionStepReadFileWithDigest | Deci
 interface Decision {
     operator: 'eq' | 'gt' | 'lt' | 'gte' | 'lte' | 'neq';
     value: number;
-    action: 'CONTINUE' | 'STOP' // | 'JUMP_TO_STEP'; TODO: Add later, also this makes code harder to reason about.
+    action: 'CONTINUE' | 'STOP' | 'REPEAT_PREVIOUS_STEP' // | 'JUMP_TO_STEP'; TODO: Add later, also this makes code harder to reason about.
 }

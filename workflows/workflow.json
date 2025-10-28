@@ -25,6 +25,11 @@
             },
             "decision": [
                 {
+                    "operator": "lt",
+                    "value": 10,
+                    "action": "CONTINUE"
+                },
+                {
                     "operator": "gte",
                     "value": 10,
                     "action": "STOP"

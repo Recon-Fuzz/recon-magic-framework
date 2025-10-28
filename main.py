@@ -215,7 +215,9 @@ def main(workflow_file: str = "workflow.json"):
     print(f"{'#'*60}\n")
 
     # Execute each step
-    for i, step in enumerate(workflow.steps, 1):
+    i = 1
+    while i <= len(workflow.steps):
+        step = workflow.steps[i - 1]
         print(f"\n[Step {i}/{len(workflow.steps)}] {step.name}")
         print(f"Type: {step.type}")
         print(f"Model: {step.model.type}")
@@ -243,10 +245,19 @@ def main(workflow_file: str = "workflow.json"):
             print(f"\n🛑 STOP action triggered by step {i}")
             print("Halting workflow execution early.")
             return SUCCESS
+        elif action == "REPEAT_PREVIOUS_STEP":
+            if i > 1:
+                print(f"\n🔁 REPEAT_PREVIOUS_STEP action triggered, going back to step {i - 1}")
+                i -= 1
+                continue
+            else:
+                print(f"\n⚠ REPEAT_PREVIOUS_STEP cannot be executed on step 1, continuing instead")
         elif action == "COUNTER_MINUS_ONE":
             # Future implementation for loop counter decrement
             print(f"\n⚠ COUNTER_MINUS_ONE action not yet implemented")
         # CONTINUE is default, do nothing special
+
+        i += 1
 
     print(f"\n{'#'*60}")
     print(f"# Workflow '{workflow.name}' completed successfully!")

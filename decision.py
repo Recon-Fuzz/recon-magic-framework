@@ -42,7 +42,7 @@ class Decision(BaseModel):
     """Decision configuration for DecisionStep."""
     operator: Literal["eq", "gt", "lt", "gte", "lte", "neq"]
     value: float
-    action: Literal["CONTINUE", "COUNTER_MINUS_ONE", "STOP"]
+    action: Literal["CONTINUE", "COUNTER_MINUS_ONE", "STOP", "REPEAT_PREVIOUS_STEP"]
 
 
 class DecisionStep(BaseModel):
