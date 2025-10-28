@@ -42,7 +42,7 @@ class Decision(BaseModel):
     """Decision configuration for DecisionStep."""
     operator: Literal["eq", "gt", "lt", "gte", "lte", "neq"]
     value: float
-    action: Literal["CONTINUE", "COUNTER_MINUS_ONE", "STOP", "REPEAT_PREVIOUS_STEP"]
+    action: Literal["CONTINUE", "STOP", "REPEAT_PREVIOUS_STEP"]
 
 
 class DecisionStep(BaseModel):
@@ -57,6 +57,47 @@ class DecisionStep(BaseModel):
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
     decision: list[Decision]
+
+
+def evaluate_decisions(decisions: list[Decision], actual_value: float, debug: bool = True) -> str:
+    """
+    Evaluate a list of decisions against an actual value.
+
+    Args:
+        decisions: List of Decision objects to evaluate
+        actual_value: The actual value to compare against
+        debug: Whether to print debug information
+
+    Returns:
+        str: The action to take (CONTINUE, STOP, REPEAT_PREVIOUS_STEP)
+    """
+    for decision in decisions:
+        if debug:
+            print(f"Checking: {actual_value} {decision.operator} {decision.value}")
+
+        matched = False
+
+        if decision.operator == "eq" and actual_value == decision.value:
+            matched = True
+        elif decision.operator == "neq" and actual_value != decision.value:
+            matched = True
+        elif decision.operator == "gt" and actual_value > decision.value:
+            matched = True
+        elif decision.operator == "lt" and actual_value < decision.value:
+            matched = True
+        elif decision.operator == "gte" and actual_value >= decision.value:
+            matched = True
+        elif decision.operator == "lte" and actual_value <= decision.value:
+            matched = True
+
+        if matched:
+            if debug:
+                print(f"✓ Decision matched: {decision.action}")
+            return decision.action
+
+    if debug:
+        print("⚠ No decision matched, defaulting to CONTINUE")
+    return "CONTINUE"
 
 
 ## TODO: Repeated visits of the same step should increase a counter, and if the counter is greater than the value, then the step should CONTINUE and ignore the decision.
@@ -76,18 +117,13 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
     if decision_mode == DecisionMode.FILE_EXISTS:
         # Find the file
         matches = list(Path('.').rglob(step.modeInfo["fileName"]))
-        exists = 1 if matches else 0
+        exists = 1.0 if matches else 0.0
 
         print(f"matches: {matches}")
         print(f"File exists: {exists}")
 
-        for decision in step.decision:
-            if decision.operator == "eq" and decision.value == exists:
-                print(f"Decision matched: {decision.action}")
-                return (SUCCESS, decision.action)
-
-        print("⚠ No decision matched, defaulting to CONTINUE")
-        return (SUCCESS, "CONTINUE")
+        action = evaluate_decisions(step.decision, exists)
+        return (SUCCESS, action)
     
     if decision_mode == DecisionMode.READ_FILE:
         # Read the file
@@ -96,15 +132,18 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
         if not matches:
             print("⚠ File doesnt exist, defaulting to CONTINUE")
             return (SUCCESS, "CONTINUE")
-        else:
-            file_path = matches[0]  # Get first match
-            content = file_path.read_text()
 
-        ## TODO: Refactor this match stuff to be more generic
-        for decision in step.decision:
-            if decision.operator == "gte" and decision.value < float(content):
-                print(f"Decision matched: {decision.action}")
-                return (SUCCESS, decision.action)
-        print("⚠ No decision matched, defaulting to CONTINUE")
-        return (SUCCESS, "CONTINUE")
+        file_path = matches[0]  # Get first match
+        content = file_path.read_text().strip()
+
+        print(f"File content: '{content}'")
+
+        try:
+            file_value = float(content)
+        except ValueError:
+            print(f"⚠ Could not parse file content as number: '{content}', defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE")
+
+        action = evaluate_decisions(step.decision, file_value)
+        return (SUCCESS, action)
   
