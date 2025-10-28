@@ -45,7 +45,7 @@ graph = (
     .add_node("phase_0", add_task(
         name="Phase 0",
         description="Initial Scoping",
-        prompt="You are provided an agent definition at ./claude/agents/audit-naive-phase-0.md. Run exclusively the phase audit-naive-phase-0 using the Task tool"
+        prompt="You are provided an agent definition at .claude/agents/audit-naive-phase-0.md. Run exclusively the phase audit-naive-phase-0 using the Task tool"
     ))
     .add_node("stop_decision", add_decision(
         name="Critical Stop Decision",
@@ -60,7 +60,7 @@ graph = (
     .add_node("phase_1", add_task(
         name="Phase 1",
         description="Issues Generation",
-        prompt="You are provided an agent definition at ./claude/agents/audit-naive-phase-1.md. Run exclusively the phase audit-naive-phase-1 using the Task tool"
+        prompt="You are provided an agent definition at .claude/agents/audit-naive-phase-1.md. Run exclusively the phase audit-naive-phase-1 using the Task tool"
     ))
     .add_edge("__start__", "phase_0")
     .add_edge("phase_0", "stop_decision")
