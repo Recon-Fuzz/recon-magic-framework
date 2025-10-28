@@ -74,7 +74,6 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
     print(f"Decision mode: {decision_mode}")
 
     if decision_mode == DecisionMode.FILE_EXISTS:
-        print(f"Decision mode: {decision_mode}")
         # Find the file
         matches = list(Path('.').rglob(step.modeInfo["fileName"]))
         exists = 1 if matches else 0
@@ -103,7 +102,7 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
 
         ## TODO: Refactor this match stuff to be more generic
         for decision in step.decision:
-            if decision.operator == "eq" and decision.value == file_path.read_text():
+            if decision.operator == "eq" and decision.value == float(content):
                 print(f"Decision matched: {decision.action}")
                 return (SUCCESS, decision.action)
         print("⚠ No decision matched, defaulting to CONTINUE")
