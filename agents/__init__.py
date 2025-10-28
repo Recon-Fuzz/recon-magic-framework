@@ -1,8 +1,8 @@
-"""New LangGraph Agent.
+"""LangGraph Agents Package.
 
-This module defines a custom graph.
+This module defines workflow graphs.
 """
 
-from agent.graph import graph
+from agents.audit_graph import graph
 
 __all__ = ["graph"]

@@ -2,9 +2,9 @@
 Node factory functions for creating workflow tasks and decisions.
 """
 
-from agent.decision import DecisionStep
-from agent.task import TaskStep
-from agent.utils import create_task_node, create_decision_node
+from agents.utilities.decision import DecisionStep
+from agents.utilities.task import TaskStep
+from agents.utilities.utils import create_task_node, create_decision_node
 
 
 def add_task(name: str, description: str, prompt: str, 

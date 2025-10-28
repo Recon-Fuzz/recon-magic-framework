@@ -20,11 +20,11 @@ async def run_graph(graph_name: str = "graph"):
     
     # Import the graph dynamically
     try:
-        if graph_name == "graph":
-            from agent.graph import graph
+        if graph_name == "audit_graph":
+            from agents.audit_graph import graph
         else:
-            # For future graphs, import from agent.{graph_name}
-            module = __import__(f"agent.{graph_name}", fromlist=["graph"])
+            # For future graphs, import from agents.{graph_name}
+            module = __import__(f"agents.{graph_name}", fromlist=["graph"])
             graph = module.graph
     except ImportError as e:
         print(f"❌ Error: Could not import graph '{graph_name}'")
@@ -57,7 +57,7 @@ def main():
     The graph_name defaults to "graph" if not specified.
     """
     # Parse command line arguments
-    graph_name = sys.argv[1] if len(sys.argv) > 1 else "graph"
+    graph_name = sys.argv[1] if len(sys.argv) > 1 else "audit_graph"
     
     # Run the async workflow
     return_code = asyncio.run(run_graph(graph_name))

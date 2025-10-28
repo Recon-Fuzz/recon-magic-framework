@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from langgraph.graph import StateGraph, END
 
-from agent.nodes import add_task, add_decision
+from agents.utilities.nodes import add_task, add_decision
 
 
 @dataclass
