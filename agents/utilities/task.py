@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from langgraph.config import get_stream_writer
 
 # Exit codes
 SUCCESS = 0
@@ -45,6 +46,7 @@ class TaskStep(BaseModel):
 
 def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
     """Execute a task step based on its model type."""
+    writer = get_stream_writer()
 
     if step.model.type == ModelType.PROGRAM:
         # Resolve ./ paths to framework root using shlex
@@ -65,6 +67,8 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
             # Rejoin into command string
             command = shlex.join(resolved_tokens)
 
+        writer({"type": "program_exec", "command": command})
+
         # Run the program (CWD remains in target repo)
         result = subprocess.run(
             command,
@@ -84,6 +88,8 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_step_name = step.name.lower().replace(" ", "_")
         log_file = logs_dir / f"{timestamp}_step{step_num}_{safe_step_name}.log"
+
+        writer({"type": "claude_exec", "log_file": str(log_file)})
 
         # Build the command with extended timeouts and streaming output
         env = os.environ.copy()
@@ -128,8 +134,6 @@ for line in sys.stdin:
 --output-format stream-json \
 --verbose 2>&1 | tee {log_file} | python3 -u {parser_script_file}"""
 
-        print(f"📝 Logging to: {log_file}\n")
-
         # Execute the command
         result = subprocess.run(
             cmd,
@@ -140,5 +144,5 @@ for line in sys.stdin:
 
         return (result.returncode, "CONTINUE")
     else:
-        print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")
+        writer({"type": "unsupported_model", "model_type": step.model.type, "step_name": step.name})
         return (SUCCESS, "CONTINUE")
