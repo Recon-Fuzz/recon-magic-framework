@@ -3,6 +3,7 @@ Main workflow execution module.
 """
 
 import json
+import sys
 from enum import Enum
 from typing import Annotated, Literal, Union
 
@@ -198,10 +199,15 @@ def commit_changes(step: Step, step_num: int) -> None:
             print(f"  ❌ Failed to commit changes: {stderr}")
 
 
-def main():
-    """Execute the workflow."""
+def main(workflow_file: str = "workflow.json"):
+    """
+    Execute the workflow.
+
+    Args:
+        workflow_file: Path to the workflow JSON file (defaults to "workflow.json")
+    """
     # Load the workflow
-    workflow = load_workflow("workflow.json")
+    workflow = load_workflow(workflow_file)
 
     print(f"\n{'#'*60}")
     print(f"# Workflow: {workflow.name}")
@@ -249,4 +255,6 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    # Parse command line arguments
+    workflow_file = sys.argv[1] if len(sys.argv) > 1 else "workflow.json"
+    exit(main(workflow_file))
