@@ -40,7 +40,6 @@ class Model(BaseModel):
 
 class Decision(BaseModel):
     """Decision configuration for DecisionStep."""
-    mode: DecisionMode
     operator: Literal["eq", "gt", "lt", "gte", "lte", "neq"]
     value: float
     action: Literal["CONTINUE", "COUNTER_MINUS_ONE", "STOP"]
@@ -51,6 +50,8 @@ class DecisionStep(BaseModel):
     type: Literal["decision"]
     name: str
     description: str | None = None
+    mode: DecisionMode
+    modeInfo: dict[str, str]
     prompt: str
     model: Model
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
@@ -61,19 +62,25 @@ class DecisionStep(BaseModel):
 ## TODO: Repeated visits of the same step should increase a counter, and if the counter is greater than the value, then the step should CONTINUE and ignore the decision.
 def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
     """Execute a decision step based on its model type."""
+    print(f"Executing decision step: {step.name}")
 
-    # Check that we have at least one decision
-    if not step.decision:
-        print("⚠ No decisions defined, defaulting to CONTINUE")
-        return (SUCCESS, "CONTINUE")
+    # # Check that we have at least one decision
+    # if not step.decision:
+    #     print("⚠ No decisions defined, defaulting to CONTINUE")
+    #     return (SUCCESS, "CONTINUE")
 
     # Get the mode from the first decision (all decisions in a step should have the same mode)
-    decision_mode = step.decision[0].mode
+    decision_mode = step.mode
+    print(f"Decision mode: {decision_mode}")
 
     if decision_mode == DecisionMode.FILE_EXISTS:
+        print(f"Decision mode: {decision_mode}")
         # Find the file
-        matches = list(Path('.').rglob(step.modeInfo.fileName))
+        matches = list(Path('.').rglob(step.modeInfo["fileName"]))
         exists = 1 if matches else 0
+
+        print(f"matches: {matches}")
+        print(f"File exists: {exists}")
 
         for decision in step.decision:
             if decision.operator == "eq" and decision.value == exists:
@@ -85,7 +92,7 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
     
     if decision_mode == DecisionMode.READ_FILE:
         # Read the file
-        matches = list(Path('.').rglob(step.modeInfo.fileName))
+        matches = list(Path('.').rglob(step.modeInfo["fileName"]))
 
         if not matches:
             print("⚠ File doesnt exist, defaulting to CONTINUE")
