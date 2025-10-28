@@ -16,13 +16,26 @@
         },
         {
             "name": "Critical Stop Decision Step",
-            "type": "task",
-            "description": "Initial Scoping",
-            "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-0.md. Run exclusively the phase audit-naive-phase-0 using the Task tool",
+            "type": "decision",
+            "description": "Check if CRITICAL_STOP.MD exists to determine if workflow should stop early",
+            "prompt": "Check for existence of CRITICAL_STOP.MD file, if the file exists, return exclusively a 1. If the file doesn't exist, return a 0. Do not return anything else",
             "model": {
-                "type": "CLAUDE_CODE",
-                "model": "inherit"
+                "type": "PROGRAM",
+                "model": "file_exists_check"
             },
+            "decision": [
+                {
+                    "operator": "eq",
+                    "value": 1,
+                    "action": "STOP"
+                },
+                {
+                    "operator": "eq",
+                    "value": 0,
+                    "action": "CONTINUE",
+                    "NOTE": "This can be omitted, as the default action is CONTINUE"
+                }
+            ],
             "shouldCreateSummary": false,
             "shouldCommitChanges": false
         },
