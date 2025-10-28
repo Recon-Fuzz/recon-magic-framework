@@ -100,8 +100,6 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
             file_path = matches[0]  # Get first match
             content = file_path.read_text()
 
-        print(f"Content: {content}")
-
         ## TODO: Refactor this match stuff to be more generic
         for decision in step.decision:
             if decision.operator == "gte" and decision.value < float(content):
