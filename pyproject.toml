@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Smart contract audit workflow automation framework"
 requires-python = ">=3.12"
 dependencies = [
+    "langgraph>=1.0.1",
+    "langgraph-cli[inmem]>=0.4.4",
     "pydantic>=2.0.0",
 ]
 
