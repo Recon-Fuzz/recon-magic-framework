@@ -17,6 +17,9 @@ from git_commit import is_git_repo, init_git_repo, run_command
 SUCCESS = 0
 FAILURE = 1
 
+# Loop hardcap to prevent infinite loops
+LOOP_HARDCAP = 5
+
 
 class ModelType(str, Enum):
     """Model type enum matching TypeScript ModelType."""
@@ -98,13 +101,14 @@ def after_step_execution(step: Step, step_num: int, return_code: int, action: st
     ## TODO: API Specification
     ## Likely POST jobs/:jobId/summaries, and it's an append only list of summaries.
 
-def execute_step(step: Step, step_num: int) -> tuple[int, str]:
+def execute_step(step: Step, step_num: int, execution_count: int) -> tuple[int, str]:
     """
     Execute a workflow step based on its step type.
 
     Args:
         step: The step to execute
         step_num: The step number for logging
+        execution_count: Number of times this step has been executed
 
     Returns:
         tuple[int, str]: (Return code from the execution, Action to take: "CONTINUE", "STOP", etc.)
@@ -114,14 +118,19 @@ def execute_step(step: Step, step_num: int) -> tuple[int, str]:
 
     return_code, action = None, None
 
-    # Switch on step.type first
-    if isinstance(step, TaskStep):
-        return_code, action = execute_task_step(step, step_num)
-    elif isinstance(step, DecisionStep):
-        return_code, action = execute_decision_step(step, step_num)
+    # Check if we've hit the loop hardcap for decision steps
+    if isinstance(step, DecisionStep) and execution_count > LOOP_HARDCAP:
+        print(f"⚠️  Loop hardcap ({LOOP_HARDCAP}) reached for step {step_num}, forcing CONTINUE")
+        return_code, action = (SUCCESS, "CONTINUE")
     else:
-        print(f"❌ Unknown step type: {type(step)}")
-        return_code, action = (FAILURE, "CONTINUE")
+        # Switch on step.type first
+        if isinstance(step, TaskStep):
+            return_code, action = execute_task_step(step, step_num)
+        elif isinstance(step, DecisionStep):
+            return_code, action = execute_decision_step(step, step_num)
+        else:
+            print(f"❌ Unknown step type: {type(step)}")
+            return_code, action = (FAILURE, "CONTINUE")
 
     after_step_execution(step, step_num, return_code, action)
 
@@ -214,16 +223,25 @@ def main(workflow_file: str = "workflow.json"):
     print(f"# Number of steps: {len(workflow.steps)}")
     print(f"{'#'*60}\n")
 
+    # In-memory cache to track step execution counts
+    step_execution_count: dict[int, int] = {}
+
     # Execute each step
     i = 1
     while i <= len(workflow.steps):
         step = workflow.steps[i - 1]
-        print(f"\n[Step {i}/{len(workflow.steps)}] {step.name}")
+
+        # Track execution count for this step
+        if i not in step_execution_count:
+            step_execution_count[i] = 0
+        step_execution_count[i] += 1
+
+        print(f"\n[Step {i}/{len(workflow.steps)}] {step.name} (execution #{step_execution_count[i]})")
         print(f"Type: {step.type}")
         print(f"Model: {step.model.type}")
 
         # Execute the step
-        return_code, action = execute_step(step, i)
+        return_code, action = execute_step(step, i, step_execution_count[i])
 
         if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")
