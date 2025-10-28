@@ -4,12 +4,9 @@ Utility functions for LangGraph workflow execution.
 
 from typing import Any, Dict, Callable
 import asyncio
-import json
-import subprocess
 
-from langgraph.config import get_stream_writer
 from agents.utilities.decision import DecisionStep, execute_decision_step
-from agents.utilities.task import TaskStep, execute_task_step_with_streaming
+from agents.utilities.task import TaskStep, execute_task_step
 from agents.utilities.git_commit import is_git_repo, init_git_repo, run_command
 
 SUCCESS = 0
@@ -27,33 +24,26 @@ def create_task_node(step_config: TaskStep, step_name: str) -> Callable:
         Async function that executes the task
     """
     async def task_node(state, runtime) -> Dict[str, Any]:
-        writer = get_stream_writer()
+        print(f"\n[Task] {step_name}")
+        print(f"Type: {step_config.type}")
+        print(f"Model: {step_config.model.type}")
+        print(f"Description: {step_config.description or 'N/A'}")
         
-        writer({"task": "start", "name": step_name})
-        writer({"log": f"[Task] {step_name}"})
-        writer({"log": f"Type: {step_config.type}"})
-        writer({"log": f"Model: {step_config.model.type}"})
-        writer({"log": f"Description: {step_config.description or 'N/A'}"})
-        
-        # Execute the task in a thread pool with streaming support
-        return_code, action = await asyncio.to_thread(
-            execute_task_step_with_streaming, step_config, 0, writer
-        )
+        # Execute the task in a thread pool to avoid blocking
+        return_code, action = await asyncio.to_thread(execute_task_step, step_config, 0)
         
         if return_code != SUCCESS:
-            writer({"log": f"❌ {step_name} failed with return code {return_code}"})
-            writer({"task": "failed", "name": step_name, "return_code": return_code})
+            print(f"\n❌ {step_name} failed with return code {return_code}")
             return {"should_stop": True}
         
-        writer({"log": f"✓ {step_name} completed successfully"})
-        writer({"task": "complete", "name": step_name})
+        print(f"\n✓ {step_name} completed successfully")
         
         # Handle post-step actions
         if step_config.shouldCreateSummary:
-            await asyncio.to_thread(create_summary, step_config, step_name, writer)
+            await asyncio.to_thread(create_summary, step_config, step_name)
         
         if step_config.shouldCommitChanges:
-            await asyncio.to_thread(commit_changes, step_config, step_name, writer)
+            await asyncio.to_thread(commit_changes, step_config, step_name)
         
         return {}
     
@@ -71,22 +61,17 @@ def create_decision_node(step_config: DecisionStep, step_name: str) -> Callable:
         Async function that evaluates the decision
     """
     async def decision_node(state, runtime) -> Dict[str, Any]:
-        writer = get_stream_writer()
-        
-        writer({"decision": "start", "name": step_name})
-        writer({"log": f"[Decision] {step_name}"})
-        writer({"log": f"Description: {step_config.description or 'N/A'}"})
+        print(f"\n[Decision] {step_name}")
+        print(f"Description: {step_config.description or 'N/A'}")
         
         # Execute the decision in a thread pool to avoid blocking
         return_code, action = await asyncio.to_thread(execute_decision_step, step_config, 0)
         
         if return_code != SUCCESS:
-            writer({"log": f"❌ {step_name} failed with return code {return_code}"})
-            writer({"decision": "failed", "name": step_name, "return_code": return_code})
+            print(f"\n❌ {step_name} failed with return code {return_code}")
             return {"should_stop": True}
         
-        writer({"log": f"✓ {step_name} evaluated: {action}"})
-        writer({"decision": "complete", "name": step_name, "action": action})
+        print(f"\n✓ {step_name} evaluated: {action}")
         
         # Map action to state update
         if action == "STOP":
@@ -97,39 +82,39 @@ def create_decision_node(step_config: DecisionStep, step_name: str) -> Callable:
     return decision_node
 
 
-def create_summary(step: TaskStep | DecisionStep, step_name: str, writer) -> None:
+def create_summary(step: TaskStep | DecisionStep, step_name: str) -> None:
     """Create a summary for the completed step."""
-    writer({"log": f"📝 Creating summary for {step_name}"})
-    writer({"log": "⚠ Summary creation not yet implemented"})
+    print(f"📝 Creating summary for {step_name}")
+    print("⚠ Summary creation not yet implemented")
 
 
-def commit_changes(step: TaskStep | DecisionStep, step_name: str, writer) -> None:
+def commit_changes(step: TaskStep | DecisionStep, step_name: str) -> None:
     """Commit changes made during the step execution."""
-    writer({"log": f"💾 Committing changes for {step_name}"})
+    print(f"\n💾 Committing changes for {step_name}")
     
     # Check if git repo exists, initialize if not
     if not is_git_repo():
-        writer({"log": "  Initializing git repository..."})
+        print("  Initializing git repository...")
         if not init_git_repo(verbose=False):
-            writer({"log": "  ❌ Failed to initialize git repository"})
+            print("  ❌ Failed to initialize git repository")
             return
-        writer({"log": "  ✓ Git repository initialized successfully"})
+        print("  ✓ Git repository initialized successfully")
     
     # Check if there are any changes to commit
     success, stdout, _ = run_command("git status --porcelain")
     if not success:
-        writer({"log": "  ❌ Failed to check git status"})
+        print("  ❌ Failed to check git status")
         return
     
     if not stdout:
-        writer({"log": "  ℹ️  No changes to commit"})
+        print("  ℹ️  No changes to commit")
         return
     
     # Add all changes
-    writer({"log": "  Adding changes..."})
+    print("  Adding changes...")
     success, _, stderr = run_command("git add .")
     if not success:
-        writer({"log": f"  ❌ Failed to add changes: {stderr}"})
+        print(f"  ❌ Failed to add changes: {stderr}")
         return
     
     # Commit changes with a descriptive message
@@ -137,17 +122,17 @@ def commit_changes(step: TaskStep | DecisionStep, step_name: str, writer) -> Non
     if step.description:
         commit_message += f"\n\n{step.description}"
     
-    writer({"log": f"  Committing with message: '{commit_message.split(chr(10))[0]}'"})
+    print(f"  Committing with message: '{commit_message.split(chr(10))[0]}'")
     
     # Escape single quotes in the message
     escaped_message = commit_message.replace("'", "'\\''")
     success, stdout, stderr = run_command(f"git commit -m '{escaped_message}'")
     
     if success:
-        writer({"log": "  ✓ Changes committed successfully!"})
+        print("  ✓ Changes committed successfully!")
     else:
         # Check if the error is due to no changes staged
         if "nothing to commit" in stderr or "nothing to commit" in stdout:
-            writer({"log": "  ℹ️  No changes to commit (all changes may be ignored by .gitignore)"})
+            print("  ℹ️  No changes to commit (all changes may be ignored by .gitignore)")
         else:
-            writer({"log": f"  ❌ Failed to commit changes: {stderr}"})
+            print(f"  ❌ Failed to commit changes: {stderr}")
