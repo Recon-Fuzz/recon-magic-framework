@@ -11,8 +11,8 @@
                 "type": "PROGRAM",
                 "model": "inherit"
             },
-            "shouldCreateSummary": true,
-            "shouldCommitChanges": true
+            "shouldCreateSummary": false,
+            "shouldCommitChanges": false
         },
         {
             "name": "Check the Counter",
@@ -27,7 +27,7 @@
                 {
                     "operator": "lt",
                     "value": 10,
-                    "action": "CONTINUE"
+                    "action": "REPEAT_PREVIOUS_STEP"
                 },
                 {
                     "operator": "gte",
