@@ -4,14 +4,10 @@ Utility functions for LangGraph workflow execution.
 
 from typing import Any, Dict, Callable
 import asyncio
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from decision import DecisionStep, execute_decision_step
-from task import TaskStep, execute_task_step
-from git_commit import is_git_repo, init_git_repo, run_command
+from agent.decision import DecisionStep, execute_decision_step
+from agent.task import TaskStep, execute_task_step
+from agent.git_commit import is_git_repo, init_git_repo, run_command
 
 SUCCESS = 0
 FAILURE = 1
