@@ -104,7 +104,7 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
 
         ## TODO: Refactor this match stuff to be more generic
         for decision in step.decision:
-            if decision.operator == "gte" and decision.value >= float(content):
+            if decision.operator == "gte" and decision.value < float(content):
                 print(f"Decision matched: {decision.action}")
                 return (SUCCESS, decision.action)
         print("⚠ No decision matched, defaulting to CONTINUE")
