@@ -47,7 +47,6 @@ logs/
 node_modules/
 *.tsbuildinfo
 dist/
-*.js
 *.d.ts
 
 # Testing
