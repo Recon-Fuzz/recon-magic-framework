@@ -5,12 +5,15 @@ Workflow reader with typed data structures matching type.ts definitions.
 import json
 import os
 import subprocess
-import sys
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal, Union
 from pydantic import BaseModel, Field
+
+# Exit codes
+SUCCESS = 0
+FAILURE = 1
 
 
 class ModelType(str, Enum):
@@ -86,17 +89,29 @@ def load_workflow(filepath: str) -> Workflow:
     return Workflow(**data)
 
 
-def execute_step(step: Step, step_num: int) -> int:
+def execute_step(step: Step, step_num: int) -> tuple[int, str]:
     """
-    Execute a workflow step based on its model type.
+    Execute a workflow step based on its step type.
 
     Args:
         step: The step to execute
         step_num: The step number for logging
 
     Returns:
-        int: Return code from the execution (0 for success)
+        tuple[int, str]: (Return code from the execution, Action to take: "CONTINUE", "STOP", etc.)
     """
+    # Switch on step.type first
+    if isinstance(step, TaskStep):
+        return _execute_task_step(step, step_num)
+    elif isinstance(step, DecisionStep):
+        return _execute_decision_step(step, step_num)
+    else:
+        print(f"❌ Unknown step type: {type(step)}")
+        return (FAILURE, "CONTINUE")
+
+
+def _execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
+    """Execute a task step based on its model type."""
     if step.model.type == ModelType.CLAUDE_CODE:
         print(f"\n{'='*60}")
         print(f"Executing: {step.name}")
@@ -166,10 +181,57 @@ for line in sys.stdin:
             text=True
         )
 
-        return result.returncode
+        return (result.returncode, "CONTINUE")
     else:
         print(f"Skipping {step.name}: Model type {step.model.type.value} not supported yet")
-        return 0
+        return (SUCCESS, "CONTINUE")
+
+
+def _execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
+    """Execute a decision step based on its model type."""
+    if step.model.type == ModelType.PROGRAM:
+        if step.model.model == "file_exists_check":
+            print(f"\n{'='*60}")
+            print(f"Checking: {step.name}")
+            print(f"Description: {step.description or 'N/A'}")
+            print(f"{'='*60}\n")
+
+            # Check if CRITICAL_STOP.MD exists
+            file_path = Path("CRITICAL_STOP.MD")
+            exists = 1 if file_path.exists() else 0
+
+            print(f"🔍 Checking for CRITICAL_STOP.MD: {'✓ EXISTS' if exists == 1 else '✗ NOT FOUND'}")
+
+            # Evaluate decisions
+            for decision in step.decision:
+                if decision.operator == "eq" and exists == decision.value:
+                    print(f"✓ Decision matched: value={exists}, action={decision.action}")
+                    return (SUCCESS, decision.action)
+                elif decision.operator == "neq" and exists != decision.value:
+                    print(f"✓ Decision matched: value={exists}, action={decision.action}")
+                    return (SUCCESS, decision.action)
+                elif decision.operator == "gt" and exists > decision.value:
+                    print(f"✓ Decision matched: value={exists}, action={decision.action}")
+                    return (SUCCESS, decision.action)
+                elif decision.operator == "lt" and exists < decision.value:
+                    print(f"✓ Decision matched: value={exists}, action={decision.action}")
+                    return (SUCCESS, decision.action)
+                elif decision.operator == "gte" and exists >= decision.value:
+                    print(f"✓ Decision matched: value={exists}, action={decision.action}")
+                    return (SUCCESS, decision.action)
+                elif decision.operator == "lte" and exists <= decision.value:
+                    print(f"✓ Decision matched: value={exists}, action={decision.action}")
+                    return (SUCCESS, decision.action)
+
+            # No decision matched, default to CONTINUE
+            print("⚠ No decision matched, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE")
+        else:
+            print(f"❌ Unknown PROGRAM model: {step.model.model}")
+            return (FAILURE, "CONTINUE")
+    else:
+        print(f"❌ Decision step '{step.name}' has unsupported model type: {step.model.type.value}")
+        return (FAILURE, "CONTINUE")
 
 
 def main():
@@ -189,20 +251,30 @@ def main():
         print(f"Model: {step.model.type.value}")
 
         # Execute the step
-        return_code = execute_step(step, i)
+        return_code, action = execute_step(step, i)
 
-        if return_code != 0:
+        if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")
             print("Stopping workflow execution.")
             return return_code
 
         print(f"\n✓ Step {i} completed successfully")
 
+        # Handle decision actions
+        if action == "STOP":
+            print(f"\n🛑 STOP action triggered by step {i}")
+            print("Halting workflow execution early.")
+            return SUCCESS
+        elif action == "COUNTER_MINUS_ONE":
+            # Future implementation for loop counter decrement
+            print(f"\n⚠ COUNTER_MINUS_ONE action not yet implemented")
+        # CONTINUE is default, do nothing special
+
     print(f"\n{'#'*60}")
     print(f"# Workflow '{workflow.name}' completed successfully!")
     print(f"{'#'*60}\n")
-    return 0
+    return SUCCESS
 
 
 if __name__ == "__main__":
-    main()
+    exit(main())

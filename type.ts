@@ -34,18 +34,48 @@ interface TaskStep extends Step {
     type: 'task';
 }
 
+
+/// === DECISIONS === ///
+
 // TODO: A decision is a if | else if so we always go for first match, important to note as this can cause confusion!
-interface DecisionStep extends Step {
+
+enum DecisionMode {
+    READ_FILE, // Read contents and decide on them
+    READ_FILE_WITH_MODEL_DIGEST, // Have LLM digest down to the decision
+    USE_MODEL // Use a model to decide
+}
+
+interface DecisionBase extends Step {
     type: 'decision';
     decision: Decision[];
 }
 
+interface DecisionStepReadFile extends DecisionBase {
+    mode: DecisionMode.READ_FILE;
+    modeInfo: {
+        fileName: string;
+    }
+}
+
+interface DecisionStepReadFileWithDigest extends DecisionBase {
+    mode: DecisionMode.READ_FILE_WITH_MODEL_DIGEST;
+    modeInfo: {
+        fileName: string;
+    }
+}
+
+interface DecisionStepUseModel extends DecisionBase {
+    mode: DecisionMode.USE_MODEL;
+    modeInfo: {
+        prompt: string;
+    }
+}
+
+type DecisionStep = DecisionStepReadFile | DecisionStepReadFileWithDigest | DecisionStepUseModel;
+
+
 interface Decision {
     operator: 'eq' | 'gt' | 'lt' | 'gte' | 'lte' | 'neq';
     value: number;
-    action: 'CONTINUE' | 'COUNTER_MINUS_ONE' | 'STOP';
+    action: 'CONTINUE' | 'STOP' // | 'JUMP_TO_STEP'; TODO: Add later, also this makes code harder to reason about.
 }
-
-
-// Metaprogramming necessary in order to pass refined context
-// Ingest Context from file, inject context from function
