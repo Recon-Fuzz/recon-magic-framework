@@ -1,0 +1,18 @@
+[project]
+name = "recon-magic"
+version = "0.1.0"
+description = "Smart contract audit workflow automation framework"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+recon = "cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -44,11 +44,26 @@ class TaskStep(BaseModel):
 
 def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
     """Execute a task step based on its model type."""
-    
+
     if step.model.type == ModelType.PROGRAM:
-        # Run the program
+        # Resolve any ./programs/ paths to framework root
+        command = step.prompt
+        framework_root = os.environ.get('RECON_FRAMEWORK_ROOT')
+
+        if framework_root:
+            # Replace any ./programs/ or ./workflows/ paths with framework absolute paths
+            import re
+            def resolve_path(match):
+                rel_path = match.group(1)
+                abs_path = str(Path(framework_root) / rel_path)
+                return abs_path
+
+            # Match patterns like ./programs/script.py or ./workflows/file.json
+            command = re.sub(r'\./([^\s]+)', resolve_path, command)
+
+        # Run the program (CWD remains in target repo)
         result = subprocess.run(
-            step.prompt,
+            command,
             shell=True,
             env=os.environ.copy()
         )
@@ -56,8 +71,9 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
 
     if step.model.type == ModelType.CLAUDE_CODE:
 
-        # Create logs directory if it doesn't exist
-        logs_dir = Path("logs")
+        # Create logs directory in framework, not target repo
+        framework_root = os.environ.get('RECON_FRAMEWORK_ROOT', '.')
+        logs_dir = Path(framework_root) / "logs"
         logs_dir.mkdir(exist_ok=True)
 
         # Generate log filename with timestamp and step name
