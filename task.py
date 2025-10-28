@@ -4,6 +4,7 @@ Task execution module for workflow steps.
 
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 from datetime import datetime
@@ -46,20 +47,23 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
     """Execute a task step based on its model type."""
 
     if step.model.type == ModelType.PROGRAM:
-        # Resolve any ./programs/ paths to framework root
+        # Resolve ./ paths to framework root using shlex
         command = step.prompt
         framework_root = os.environ.get('RECON_FRAMEWORK_ROOT')
 
         if framework_root:
-            # Replace any ./programs/ or ./workflows/ paths with framework absolute paths
-            import re
-            def resolve_path(match):
-                rel_path = match.group(1)
-                abs_path = str(Path(framework_root) / rel_path)
-                return abs_path
+            # Parse command tokens properly
+            tokens = shlex.split(command)
 
-            # Match patterns like ./programs/script.py or ./workflows/file.json
-            command = re.sub(r'\./([^\s]+)', resolve_path, command)
+            # Resolve any tokens starting with ./
+            resolved_tokens = []
+            for token in tokens:
+                if token.startswith('./'):
+                    token = str(Path(framework_root) / token.lstrip('./'))
+                resolved_tokens.append(token)
+
+            # Rejoin into command string
+            command = shlex.join(resolved_tokens)
 
         # Run the program (CWD remains in target repo)
         result = subprocess.run(
