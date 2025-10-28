@@ -256,5 +256,5 @@ def main(workflow_file: str = "workflow.json"):
 
 if __name__ == "__main__":
     # Parse command line arguments
-    workflow_file = sys.argv[1] if len(sys.argv) > 1 else "workflow.json"
+    workflow_file = sys.argv[1] if len(sys.argv) > 1 else "workflows/workflow.json"
     exit(main(workflow_file))

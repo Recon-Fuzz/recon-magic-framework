@@ -44,6 +44,16 @@ class TaskStep(BaseModel):
 
 def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
     """Execute a task step based on its model type."""
+    
+    if step.model.type == ModelType.PROGRAM:
+        # Run the program
+        result = subprocess.run(
+            step.prompt,
+            shell=True,
+            env=os.environ.copy()
+        )
+        return (SUCCESS, "CONTINUE")
+
     if step.model.type == ModelType.CLAUDE_CODE:
 
         # Create logs directory if it doesn't exist

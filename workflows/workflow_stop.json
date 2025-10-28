@@ -1,6 +1,6 @@
 
 {
-    "name": "Audit Workflow",
+    "name": "Debug Workflow",
     "steps": [
         {
             "name": "Critical Stop Decision Step",
