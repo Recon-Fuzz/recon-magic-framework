@@ -40,6 +40,7 @@ interface TaskStep extends Step {
 // TODO: A decision is a if | else if so we always go for first match, important to note as this can cause confusion!
 
 enum DecisionMode {
+    FILE_EXISTS, // Check if a file exists
     READ_FILE, // Read contents and decide on them
     READ_FILE_WITH_MODEL_DIGEST, // Have LLM digest down to the decision
     USE_MODEL // Use a model to decide

@@ -3,25 +3,16 @@
     "name": "Audit Workflow",
     "steps": [
         {
-            "name": "Phase 0",
-            "type": "task",
-            "description": "Initial Scoping",
-            "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-0.md. Run exclusively the phase audit-naive-phase-0 using the Task tool",
-            "model": {
-                "type": "CLAUDE_CODE",
-                "model": "inherit"
-            },
-            "shouldCreateSummary": true,
-            "shouldCommitChanges": true
-        },
-        {
             "name": "Critical Stop Decision Step",
             "type": "decision",
             "description": "Check if CRITICAL_STOP.MD exists to determine if workflow should stop early",
-            "prompt": "Check for existence of CRITICAL_STOP.MD file, if the file exists, return exclusively a 1. If the file doesn't exist, return a 0. Do not return anything else",
+            "prompt": "Ignored",
             "model": {
-                "type": "PROGRAM",
-                "model": "file_exists_check"
+                "NOTE": "Ignored"
+            },
+            "mode": "FILE_EXISTS",
+            "modeInfo": {
+                "fileName": "CRITICAL_STOP.MD"
             },
             "decision": [
                 {
