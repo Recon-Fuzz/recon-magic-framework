@@ -55,7 +55,7 @@ class DecisionStep(BaseModel):
     description: str | None = None
     mode: DecisionMode
     modeInfo: dict[str, str]
-    model: Model
+    model: Model | None = None  # Only required for USE_MODEL and READ_FILE_WITH_MODEL_DIGEST modes
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
     decision: list[Decision]

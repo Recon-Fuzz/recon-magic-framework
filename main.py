@@ -43,7 +43,6 @@ class Step(BaseModel):
     """Base step interface."""
     name: str
     description: str | None = None
-    model: Model
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
 
@@ -84,7 +83,8 @@ def before_step_execution(step: Step, step_num: int) -> None:
     """
     print(f"Before step {step_num}: {step.name}")
     print(f"Type: {step.type}")
-    print(f"Model: {step.model.type}")
+    if hasattr(step, 'model') and step.model:
+        print(f"Model: {step.model.type}")
     print(f"Description: {step.description or 'N/A'}")
     print(f"Should create summary: {step.shouldCreateSummary}")
     print(f"Should commit changes: {step.shouldCommitChanges}")
@@ -258,7 +258,8 @@ def main(workflow_file: str = "workflow.json"):
 
         print(f"\n[Step {i}/{len(workflow.steps)}] {step.name} (execution #{step_execution_count[i]})")
         print(f"Type: {step.type}")
-        print(f"Model: {step.model.type}")
+        if hasattr(step, 'model') and step.model:
+            print(f"Model: {step.model.type}")
 
         # Execute the step
         return_code, action, destination_step_name = execute_step(step, i, step_execution_count[i])

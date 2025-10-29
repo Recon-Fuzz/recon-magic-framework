@@ -25,7 +25,6 @@ interface Workflow {
 interface Step {
     name: string;
     description?: string;
-    model: Model;
     shouldCreateSummary: boolean; // If true, optionally check for summary details, else check for commit changes
     shouldCommitChanges: boolean; // If true, commit changes to the repository
 }
@@ -33,6 +32,7 @@ interface Step {
 interface TaskStep extends Step {
     type: 'task';
     prompt: string; // Command/script to execute for tasks
+    model: Model;
 }
 
 
@@ -72,6 +72,7 @@ interface DecisionStepReadFileWithDigest extends DecisionBase {
         fileName: string;
         prompt: string; // Prompt to guide LLM analysis of file contents
     }
+    model: Model;
 }
 
 interface DecisionStepUseModel extends DecisionBase {
@@ -79,6 +80,7 @@ interface DecisionStepUseModel extends DecisionBase {
     modeInfo: {
         prompt: string; // Prompt for LLM to make decision
     }
+    model: Model;
 }
 
 type DecisionStep = DecisionStepFileExists | DecisionStepReadFile | DecisionStepReadFileWithDigest | DecisionStepUseModel;
