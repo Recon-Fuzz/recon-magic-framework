@@ -2,14 +2,26 @@
   "name": "Jump Example Workflow",
   "steps": [
     {
+      "type": "task",
+      "name": "Step 1: Create files",
+      "description": "Create initial test files",
+      "prompt": "echo 'Initial setup' > test.txt && echo '0' > skip.txt",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
       "type": "decision",
       "name": "Step 2: Check if we should skip",
       "description": "Check skip.txt to decide whether to skip intermediate steps",
-      "mode": "USE_MODEL",
+      "mode": "READ_FILE",
       "modeInfo": {
-        "prompt": "Read skip.txt and pick the most relevant option based on the content"
+        "fileName": "skip.txt"
       },
-      "prompt": "Read skip.txt and pick the most relevant option based on the content",
+      "prompt": "Read skip.txt and decide",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -21,7 +33,7 @@
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 4: Intermediate work B"
+          "destinationStep": "Step 5: Final work"
         },
         {
           "operator": "eq",
@@ -34,7 +46,7 @@
       "type": "task",
       "name": "Step 3: Intermediate work A",
       "description": "This step may be skipped",
-      "prompt": "echo 'Doing intermediate work A'",
+      "prompt": "echo 'Doing intermediate work A' && echo 'Work A done' >> test.txt",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -46,7 +58,19 @@
       "type": "task",
       "name": "Step 4: Intermediate work B",
       "description": "This step may also be skipped",
-      "prompt": "echo 'Doing intermediate work B'",
+      "prompt": "echo 'Doing intermediate work B' && echo 'Work B done' >> test.txt",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "type": "task",
+      "name": "Step 5: Final work",
+      "description": "Final step that always runs",
+      "prompt": "echo 'Doing final work' && echo 'Final work done' >> test.txt",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
