@@ -67,15 +67,28 @@ function renderWorkflow() {
     renderSteps();
 }
 
-// Add new step
+// Add new step - auto-generated from types
 function addStep(type) {
+    // Get default values from parsed types
+    const defaultModelType = parsedTypes.enums['ModelType']?.[0] || 'INHERIT';
+    const defaultDecisionMode = parsedTypes.enums['DecisionMode']?.[0] || 'FILE_EXISTS';
+
+    // Get default operator and action from Decision interface
+    const decisionProps = parsedTypes.interfaces['Decision'] || [];
+    const operatorProp = decisionProps.find(p => p.name === 'operator');
+    const actionProp = decisionProps.find(p => p.name === 'action');
+    const operatorInfo = operatorProp ? formGenerator.parser.getFieldInfo(operatorProp.type) : null;
+    const actionInfo = actionProp ? formGenerator.parser.getFieldInfo(actionProp.type) : null;
+    const defaultOperator = operatorInfo?.types?.[0] || 'eq';
+    const defaultAction = actionInfo?.types?.[0] || 'CONTINUE';
+
     const stepTemplate = type === 'task' ? {
         type: 'task',
         name: `Step ${workflow.steps.length + 1}`,
         description: '',
         prompt: '',
         model: {
-            type: 'CLAUDE_CODE',
+            type: defaultModelType,
             model: 'inherit'
         },
         shouldCreateSummary: false,
@@ -84,16 +97,16 @@ function addStep(type) {
         type: 'decision',
         name: `Decision ${workflow.steps.length + 1}`,
         description: '',
-        mode: 'READ_FILE',
+        mode: defaultDecisionMode,
         modeInfo: {
             fileName: 'result.txt'
         },
         decision: [
-            { operator: 'eq', value: 0, action: 'CONTINUE' }
+            { operator: defaultOperator, value: 0, action: defaultAction }
         ],
         prompt: 'Ignored',
         model: {
-            type: 'PROGRAM',
+            type: defaultModelType,
             model: 'IGNORED'
         },
         shouldCreateSummary: false,
@@ -462,10 +475,20 @@ function addDecisionRule(stepIndex) {
     if (!workflow.steps[stepIndex].decision) {
         workflow.steps[stepIndex].decision = [];
     }
+
+    // Get default operator and action from Decision interface
+    const decisionProps = parsedTypes.interfaces['Decision'] || [];
+    const operatorProp = decisionProps.find(p => p.name === 'operator');
+    const actionProp = decisionProps.find(p => p.name === 'action');
+    const operatorInfo = operatorProp ? formGenerator.parser.getFieldInfo(operatorProp.type) : null;
+    const actionInfo = actionProp ? formGenerator.parser.getFieldInfo(actionProp.type) : null;
+    const defaultOperator = operatorInfo?.types?.[0] || 'eq';
+    const defaultAction = actionInfo?.types?.[0] || 'CONTINUE';
+
     workflow.steps[stepIndex].decision.push({
-        operator: 'eq',
+        operator: defaultOperator,
         value: 0,
-        action: 'CONTINUE'
+        action: defaultAction
     });
     renderSteps();
     updatePreview();
