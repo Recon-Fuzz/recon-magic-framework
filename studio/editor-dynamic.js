@@ -309,7 +309,8 @@ function generateNestedFieldHtml(prop, stepIndex, parentName, currentValue) {
 
 // Render decision mode and modeInfo fields
 function renderDecisionModeFields(step, stepIndex) {
-    const modes = ['READ_FILE', 'READ_FILE_WITH_MODEL_DIGEST', 'USE_MODEL', 'FILE_EXISTS'];
+    // Get DecisionMode enum values from parsed types
+    const modes = parsedTypes.enums['DecisionMode'] || [];
 
     return `
         <div>
@@ -340,6 +341,30 @@ function renderDecisionModeFields(step, stepIndex) {
 function renderDecisionRules(step, stepIndex) {
     if (!step.decision) return '';
 
+    // Get list of available step names for JUMP_TO_STEP
+    const stepNames = workflow.steps.map(s => s.name);
+
+    // Get action values from Decision interface's action property
+    const decisionProps = parsedTypes.interfaces['Decision'] || [];
+    const actionProp = decisionProps.find(p => p.name === 'action');
+    const actionInfo = actionProp ? formGenerator.parser.getFieldInfo(actionProp.type) : null;
+    const actions = actionInfo && actionInfo.kind === 'union' ? actionInfo.types : [];
+
+    // Get operator values from Decision interface's operator property
+    const operatorProp = decisionProps.find(p => p.name === 'operator');
+    const operatorInfo = operatorProp ? formGenerator.parser.getFieldInfo(operatorProp.type) : null;
+    const operators = operatorInfo && operatorInfo.kind === 'union' ? operatorInfo.types : [];
+
+    // Operator display names
+    const operatorLabels = {
+        'eq': '=',
+        'neq': '!=',
+        'gt': '>',
+        'lt': '<',
+        'gte': '≥',
+        'lte': '≤'
+    };
+
     return `
         <div class="border-t pt-3">
             <div class="flex justify-between items-center mb-2">
@@ -352,36 +377,49 @@ function renderDecisionRules(step, stepIndex) {
                 </button>
             </div>
             ${step.decision.map((rule, ruleIndex) => `
-                <div class="flex gap-2 mb-2 items-center">
-                    <select
-                        class="px-2 py-1 border rounded text-xs"
-                        onchange="updateDecisionRule(${stepIndex}, ${ruleIndex}, 'operator', this.value)"
-                    >
-                        <option value="eq" ${rule.operator === 'eq' ? 'selected' : ''}>=</option>
-                        <option value="neq" ${rule.operator === 'neq' ? 'selected' : ''}>!=</option>
-                        <option value="gt" ${rule.operator === 'gt' ? 'selected' : ''}>&gt;</option>
-                        <option value="lt" ${rule.operator === 'lt' ? 'selected' : ''}>&lt;</option>
-                        <option value="gte" ${rule.operator === 'gte' ? 'selected' : ''}>≥</option>
-                        <option value="lte" ${rule.operator === 'lte' ? 'selected' : ''}>≤</option>
-                    </select>
-                    <input
-                        type="number"
-                        value="${rule.value}"
-                        class="px-2 py-1 border rounded text-xs w-20"
-                        oninput="updateDecisionRule(${stepIndex}, ${ruleIndex}, 'value', parseFloat(this.value))"
-                    />
-                    <select
-                        class="px-2 py-1 border rounded text-xs flex-1"
-                        onchange="updateDecisionRule(${stepIndex}, ${ruleIndex}, 'action', this.value)"
-                    >
-                        <option value="CONTINUE" ${rule.action === 'CONTINUE' ? 'selected' : ''}>Continue</option>
-                        <option value="STOP" ${rule.action === 'STOP' ? 'selected' : ''}>Stop</option>
-                        <option value="REPEAT_PREVIOUS_STEP" ${rule.action === 'REPEAT_PREVIOUS_STEP' ? 'selected' : ''}>Repeat Previous</option>
-                    </select>
-                    <button
-                        onclick="removeDecisionRule(${stepIndex}, ${ruleIndex})"
-                        class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                    >✕</button>
+                <div class="border p-2 rounded mb-2 space-y-2">
+                    <div class="flex gap-2 items-center">
+                        <select
+                            class="px-2 py-1 border rounded text-xs"
+                            onchange="updateDecisionRule(${stepIndex}, ${ruleIndex}, 'operator', this.value)"
+                        >
+                            ${operators.map(op => `
+                                <option value="${op}" ${rule.operator === op ? 'selected' : ''}>${operatorLabels[op] || op}</option>
+                            `).join('')}
+                        </select>
+                        <input
+                            type="number"
+                            value="${rule.value}"
+                            class="px-2 py-1 border rounded text-xs w-20"
+                            oninput="updateDecisionRule(${stepIndex}, ${ruleIndex}, 'value', parseFloat(this.value))"
+                        />
+                        <select
+                            class="px-2 py-1 border rounded text-xs flex-1"
+                            onchange="handleActionChange(${stepIndex}, ${ruleIndex}, this.value)"
+                        >
+                            ${actions.map(action => `
+                                <option value="${action}" ${rule.action === action ? 'selected' : ''}>${formatActionLabel(action)}</option>
+                            `).join('')}
+                        </select>
+                        <button
+                            onclick="removeDecisionRule(${stepIndex}, ${ruleIndex})"
+                            class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                        >✕</button>
+                    </div>
+                    ${rule.action === 'JUMP_TO_STEP' ? `
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Destination Step</label>
+                            <select
+                                class="w-full px-2 py-1 border rounded text-xs"
+                                onchange="updateDecisionRule(${stepIndex}, ${ruleIndex}, 'destinationStep', this.value)"
+                            >
+                                <option value="">-- Select Step --</option>
+                                ${stepNames.map(name => `
+                                    <option value="${name}" ${rule.destinationStep === name ? 'selected' : ''}>${name}</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    ` : ''}
                 </div>
             `).join('')}
         </div>
@@ -404,6 +442,19 @@ function updateNestedField(index, parentName, fieldName, value) {
 
 function updateDecisionRule(stepIndex, ruleIndex, field, value) {
     workflow.steps[stepIndex].decision[ruleIndex][field] = value;
+    updatePreview();
+}
+
+function handleActionChange(stepIndex, ruleIndex, action) {
+    workflow.steps[stepIndex].decision[ruleIndex].action = action;
+
+    // Clear destinationStep if not JUMP_TO_STEP
+    if (action !== 'JUMP_TO_STEP') {
+        delete workflow.steps[stepIndex].decision[ruleIndex].destinationStep;
+    }
+
+    // Re-render to show/hide destination field
+    renderSteps();
     updatePreview();
 }
 
@@ -484,6 +535,14 @@ function formatLabel(name) {
         .replace(/([A-Z])/g, ' $1')
         .replace(/^./, str => str.toUpperCase())
         .trim();
+}
+
+function formatActionLabel(action) {
+    // Convert SCREAMING_SNAKE_CASE to Title Case
+    return action
+        .split('_')
+        .map(word => word.charAt(0) + word.slice(1).toLowerCase())
+        .join(' ');
 }
 
 // Initialize on load
