@@ -1,0 +1,17 @@
+{
+  "name": "New Workflow",
+  "steps": [
+    {
+      "type": "task",
+      "name": "Run Echidna for 1 hour",
+      "description": "",
+      "prompt": "echidna --help",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}
