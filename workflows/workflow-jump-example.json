@@ -21,11 +21,6 @@
       "modeInfo": {
         "fileName": "skip.txt"
       },
-      "prompt": "Read skip.txt and decide",
-      "model": {
-        "type": "PROGRAM",
-        "model": "inherit"
-      },
       "shouldCreateSummary": false,
       "shouldCommitChanges": false,
       "decision": [

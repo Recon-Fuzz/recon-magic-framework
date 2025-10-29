@@ -9,7 +9,6 @@
       "modeInfo": {
         "prompt": "Read skip.txt and pick the most relevant option based on the content"
       },
-      "prompt": "Read skip.txt and pick the most relevant option based on the content",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"

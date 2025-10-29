@@ -1,0 +1,45 @@
+{
+  "name": "Test Missing File Handling",
+  "steps": [
+    {
+      "type": "decision",
+      "name": "Try to read non-existent file",
+      "description": "Attempt to read a file that doesn't exist",
+      "mode": "READ_FILE_WITH_MODEL_DIGEST",
+      "modeInfo": {
+        "fileName": "this_file_does_not_exist.txt",
+        "prompt": "This should never execute because the file doesn't exist"
+      },
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0.0,
+          "action": "STOP"
+        },
+        {
+          "operator": "eq",
+          "value": 1.0,
+          "action": "CONTINUE"
+        }
+      ]
+    },
+    {
+      "type": "task",
+      "name": "This should run",
+      "description": "Should run because missing file defaults to CONTINUE",
+      "prompt": "echo 'Successfully continued despite missing file'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}

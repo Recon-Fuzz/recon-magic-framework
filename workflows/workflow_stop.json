@@ -26,12 +26,7 @@
             ],
 
             "shouldCreateSummary": false,
-            "shouldCommitChanges": false,
-            "prompt": "Ignored",
-            "model": {
-                "type": "PROGRAM",
-                "model": "IGNORED"
-            }
+            "shouldCommitChanges": false
         },
         {
             "name": "Phase 1",

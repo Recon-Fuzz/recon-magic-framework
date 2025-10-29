@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Type Parser Test</title>
+</head>
+<body>
+    <h1>Type Parser Test</h1>
+    <pre id="output"></pre>
+
+    <script src="type-parser.js"></script>
+    <script>
+        const testCode = `
+interface DecisionStepReadFileWithDigest extends DecisionBase {
+    mode: DecisionMode.READ_FILE_WITH_MODEL_DIGEST;
+    modeInfo: {
+        fileName: string;
+        prompt: string;
+    }
+}
+`;
+
+        const parser = new TypeParser(testCode);
+        const result = parser.parse();
+
+        const output = document.getElementById('output');
+        output.textContent = JSON.stringify(result, null, 2);
+
+        console.log('Parsed:', result);
+        console.log('Interfaces:', result.interfaces);
+        console.log('DecisionStepReadFileWithDigest:', result.interfaces['DecisionStepReadFileWithDigest']);
+
+        if (result.interfaces['DecisionStepReadFileWithDigest']) {
+            const modeInfo = result.interfaces['DecisionStepReadFileWithDigest'].find(p => p.name === 'modeInfo');
+            console.log('modeInfo property:', modeInfo);
+        }
+    </script>
+</body>
+</html>

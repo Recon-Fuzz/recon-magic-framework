@@ -19,6 +19,14 @@ async function loadTypes() {
         console.log('📋 Interfaces:', Object.keys(parsedTypes.interfaces));
         console.log('🔢 Enums:', Object.keys(parsedTypes.enums));
 
+        // Debug: Check DecisionStepReadFileWithDigest
+        const digestInterface = parsedTypes.interfaces['DecisionStepReadFileWithDigest'];
+        console.log('🔍 DecisionStepReadFileWithDigest:', digestInterface);
+        if (digestInterface) {
+            const modeInfoProp = digestInterface.find(p => p.name === 'modeInfo');
+            console.log('🔍 modeInfo property:', modeInfoProp);
+        }
+
         // Enable UI
         document.getElementById('loadingTypes').classList.add('hidden');
         document.getElementById('mainUI').classList.remove('hidden');
@@ -82,36 +90,50 @@ function addStep(type) {
     const defaultOperator = operatorInfo?.types?.[0] || 'eq';
     const defaultAction = actionInfo?.types?.[0] || 'CONTINUE';
 
-    const stepTemplate = type === 'task' ? {
-        type: 'task',
-        name: `Step ${workflow.steps.length + 1}`,
-        description: '',
-        prompt: '',
-        model: {
-            type: defaultModelType,
-            model: 'inherit'
-        },
-        shouldCreateSummary: false,
-        shouldCommitChanges: true
-    } : {
-        type: 'decision',
-        name: `Decision ${workflow.steps.length + 1}`,
-        description: '',
-        mode: defaultDecisionMode,
-        modeInfo: {
-            fileName: 'result.txt'
-        },
-        decision: [
-            { operator: defaultOperator, value: 0, action: defaultAction }
-        ],
-        prompt: 'Ignored',
-        model: {
-            type: defaultModelType,
-            model: 'IGNORED'
-        },
-        shouldCreateSummary: false,
-        shouldCommitChanges: false
-    };
+    let stepTemplate;
+
+    if (type === 'task') {
+        stepTemplate = {
+            type: 'task',
+            name: `Step ${workflow.steps.length + 1}`,
+            description: '',
+            prompt: '',
+            model: {
+                type: defaultModelType,
+                model: 'inherit'
+            },
+            shouldCreateSummary: false,
+            shouldCommitChanges: true
+        };
+    } else {
+        // Build modeInfo dynamically from schema
+        const modeInfoFields = getModeInfoSchema(defaultDecisionMode);
+        const modeInfo = {};
+        modeInfoFields.forEach(field => {
+            modeInfo[field.name] = '';
+        });
+
+        stepTemplate = {
+            type: 'decision',
+            name: `Decision ${workflow.steps.length + 1}`,
+            description: '',
+            mode: defaultDecisionMode,
+            modeInfo: modeInfo,
+            decision: [
+                { operator: defaultOperator, value: 0, action: defaultAction }
+            ],
+            shouldCreateSummary: false,
+            shouldCommitChanges: false
+        };
+
+        // Only add model if this mode needs it
+        if (modeNeedsModel(defaultDecisionMode)) {
+            stepTemplate.model = {
+                type: defaultModelType,
+                model: 'inherit'
+            };
+        }
+    }
 
     workflow.steps.push(stepTemplate);
     renderSteps();
@@ -171,6 +193,26 @@ function renderSteps() {
     }).join('');
 }
 
+// Check if a decision mode needs a model field
+function modeNeedsModel(mode) {
+    // Get the interface for this mode
+    const decisionInterfaces = Object.keys(parsedTypes.interfaces).filter(name =>
+        name.startsWith('DecisionStep') && name !== 'DecisionStep'
+    );
+
+    for (const interfaceName of decisionInterfaces) {
+        const interfaceProps = parsedTypes.interfaces[interfaceName];
+        const modeProp = interfaceProps.find(p => p.name === 'mode');
+
+        if (modeProp && modeProp.type.includes(mode)) {
+            // Check if this interface has a model property
+            return interfaceProps.some(p => p.name === 'model');
+        }
+    }
+
+    return false;
+}
+
 // Generate form for a step
 function generateStepForm(step, index) {
     if (!formGenerator) {
@@ -184,7 +226,12 @@ function generateStepForm(step, index) {
     console.log(`Step ${index}: Found ${allProps.length} props for ${specificInterface}`);
 
     // Filter out fields we handle specially
-    const skipFields = ['type', 'decision', 'mode', 'modeInfo'];
+    // For decision steps, also skip 'model' if the mode doesn't need it
+    let skipFields = ['type', 'decision', 'mode', 'modeInfo'];
+    if (step.type === 'decision' && !modeNeedsModel(step.mode)) {
+        skipFields.push('model');
+    }
+
     const regularProps = allProps.filter(p => !skipFields.includes(p.name));
 
     return `
@@ -202,9 +249,22 @@ function generateStepForm(step, index) {
 
 // Generate HTML for a field
 function generateFieldHtml(prop, stepIndex, currentValue) {
-    const fieldInfo = formGenerator.parser.getFieldInfo(prop.type);
+    const fieldInfo = formGenerator.parser.getFieldInfo(prop.type, prop);
 
     switch (fieldInfo.kind) {
+        case 'inline_object':
+            // Render inline object (like modeInfo)
+            const inlineProps = fieldInfo.properties;
+            return `
+                <div class="border-l-2 border-green-300 pl-3">
+                    <h5 class="text-xs font-semibold text-gray-600 mb-2">${formatLabel(prop.name)}</h5>
+                    ${inlineProps.map(inlineProp => {
+                        const inlineValue = currentValue?.[inlineProp.name];
+                        return generateNestedFieldHtml(inlineProp, stepIndex, prop.name, inlineValue);
+                    }).join('')}
+                </div>
+            `;
+
         case 'primitive':
             if (prop.type === 'boolean') {
                 return `
@@ -320,32 +380,99 @@ function generateNestedFieldHtml(prop, stepIndex, parentName, currentValue) {
     }
 }
 
-// Render decision mode and modeInfo fields
+// Get modeInfo schema for a specific decision mode from parsed types
+function getModeInfoSchema(mode) {
+    // Search through all interfaces that extend DecisionBase to find the one with this mode
+    const decisionInterfaces = Object.keys(parsedTypes.interfaces).filter(name =>
+        name.startsWith('DecisionStep') && name !== 'DecisionStep'
+    );
+
+    console.log(`Looking for mode "${mode}" in interfaces:`, decisionInterfaces);
+
+    for (const interfaceName of decisionInterfaces) {
+        const interfaceProps = parsedTypes.interfaces[interfaceName];
+
+        // Find the mode property
+        const modeProp = interfaceProps.find(p => p.name === 'mode');
+
+        console.log(`  ${interfaceName}: mode prop =`, modeProp?.type);
+
+        // Check if this interface's mode matches (format: "DecisionMode.FILE_EXISTS")
+        if (modeProp && modeProp.type.includes(mode)) {
+            console.log(`  ✓ Found matching interface: ${interfaceName}`);
+
+            // Find the modeInfo property in this interface
+            const modeInfoProp = interfaceProps.find(p => p.name === 'modeInfo');
+
+            console.log(`  modeInfo prop:`, modeInfoProp);
+
+            if (modeInfoProp) {
+                // Get the properties of the inline object
+                const fieldInfo = formGenerator.parser.getFieldInfo(modeInfoProp.type, modeInfoProp);
+
+                console.log(`  fieldInfo:`, fieldInfo);
+
+                if (fieldInfo.kind === 'inline_object') {
+                    console.log(`  ✓ Returning ${fieldInfo.properties.length} properties`);
+                    return fieldInfo.properties;
+                }
+            }
+        }
+    }
+
+    console.log(`  ✗ No matching interface found for mode "${mode}"`);
+    return [];
+}
+
+// Render decision mode and modeInfo fields dynamically from types
 function renderDecisionModeFields(step, stepIndex) {
     // Get DecisionMode enum values from parsed types
     const modes = parsedTypes.enums['DecisionMode'] || [];
+
+    // Get modeInfo schema for current mode
+    const modeInfoFields = getModeInfoSchema(step.mode);
+    console.log(`Mode: ${step.mode}, Found ${modeInfoFields.length} modeInfo fields:`, modeInfoFields);
 
     return `
         <div>
             <label class="block text-sm font-medium mb-1">Decision Mode</label>
             <select
                 class="w-full px-3 py-2 border rounded text-sm"
-                onchange="updateStepField(${stepIndex}, 'mode', this.value)"
+                onchange="handleModeChange(${stepIndex}, this.value)"
             >
                 ${modes.map(m => `
                     <option value="${m}" ${step.mode === m ? 'selected' : ''}>${m}</option>
                 `).join('')}
             </select>
         </div>
-        <div>
-            <label class="block text-sm font-medium mb-1">File Name</label>
-            <input
-                type="text"
-                value="${step.modeInfo?.fileName || ''}"
-                placeholder="e.g., CRITICAL_STOP.MD"
-                class="w-full px-3 py-2 border rounded text-sm"
-                oninput="updateStepField(${stepIndex}, 'modeInfo', { fileName: this.value })"
-            />
+        <div class="border-l-2 border-purple-300 pl-3 space-y-2">
+            <h5 class="text-xs font-semibold text-gray-600">Mode Info</h5>
+            ${modeInfoFields.length === 0 ? '<p class="text-xs text-gray-500">No fields for this mode</p>' : ''}
+            ${modeInfoFields.map(field => {
+                const value = step.modeInfo?.[field.name] || '';
+                const isPrompt = field.name === 'prompt';
+
+                return `
+                    <div>
+                        <label class="block text-sm font-medium mb-1">${formatLabel(field.name)}</label>
+                        ${isPrompt ? `
+                            <textarea
+                                class="w-full px-3 py-2 border rounded text-sm h-24"
+                                placeholder="${field.name === 'prompt' ? 'Instructions for the LLM to make a decision...' : ''}"
+                                oninput="updateModeInfoField(${stepIndex}, '${field.name}', this.value)"
+                            >${value}</textarea>
+                        ` : `
+                            <input
+                                type="text"
+                                value="${value}"
+                                placeholder="e.g., skip.txt or results.md"
+                                class="w-full px-3 py-2 border rounded text-sm"
+                                oninput="updateModeInfoField(${stepIndex}, '${field.name}', this.value)"
+                            />
+                        `}
+                    </div>
+                `;
+            }).join('')}
         </div>
     `;
 }
@@ -450,6 +577,32 @@ function updateNestedField(index, parentName, fieldName, value) {
         workflow.steps[index][parentName] = {};
     }
     workflow.steps[index][parentName][fieldName] = value;
+    updatePreview();
+}
+
+function updateModeInfoField(stepIndex, fieldName, value) {
+    if (!workflow.steps[stepIndex].modeInfo) {
+        workflow.steps[stepIndex].modeInfo = {};
+    }
+    workflow.steps[stepIndex].modeInfo[fieldName] = value;
+    updatePreview();
+}
+
+function handleModeChange(stepIndex, newMode) {
+    workflow.steps[stepIndex].mode = newMode;
+
+    // Reset modeInfo dynamically based on the schema for this mode
+    const modeInfoFields = getModeInfoSchema(newMode);
+
+    workflow.steps[stepIndex].modeInfo = {};
+
+    // Initialize all fields from the schema with empty values
+    modeInfoFields.forEach(field => {
+        workflow.steps[stepIndex].modeInfo[field.name] = '';
+    });
+
+    // Re-render to show/hide appropriate fields
+    renderSteps();
     updatePreview();
 }
 

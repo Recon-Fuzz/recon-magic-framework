@@ -11,6 +11,11 @@ class TypeParser {
     parse() {
         this.parseEnums();
         this.parseInterfaces();
+
+        // Debug logging
+        console.log('📦 Parsed interfaces:', Object.keys(this.interfaces));
+        console.log('📦 Parsed enums:', Object.keys(this.enums));
+
         return {
             interfaces: this.interfaces,
             enums: this.enums
@@ -41,40 +46,123 @@ class TypeParser {
 
     parseInterfaces() {
         // Match: interface Name { ... } or interface Name extends Other { ... }
-        const interfaceRegex = /interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?\s*\{([^}]+)\}/g;
-        let match;
+        // Need to handle nested braces for inline object types
+        const interfaceMatches = [];
+        const lines = this.code.split('\n');
+        let i = 0;
 
-        while ((match = interfaceRegex.exec(this.code)) !== null) {
-            const name = match[1];
-            const extendsClause = match[2];
-            const body = match[3];
+        while (i < lines.length) {
+            const line = lines[i];
+            const interfaceMatch = line.match(/interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?\s*\{/);
 
-            const properties = this.parseProperties(body);
+            if (interfaceMatch) {
+                const name = interfaceMatch[1];
+                const extendsClause = interfaceMatch[2];
 
-            // Handle extends
-            if (extendsClause) {
-                const baseInterfaces = extendsClause.split(',').map(s => s.trim());
-                // Merge properties from base interfaces
-                baseInterfaces.forEach(baseName => {
-                    if (this.interfaces[baseName]) {
-                        properties.unshift(...this.interfaces[baseName]);
+                // Find the closing brace
+                let braceCount = 1;
+                let bodyLines = [];
+                i++;
+
+                while (i < lines.length && braceCount > 0) {
+                    const currentLine = lines[i];
+                    bodyLines.push(currentLine);
+
+                    // Count braces (simple approach)
+                    for (const char of currentLine) {
+                        if (char === '{') braceCount++;
+                        if (char === '}') braceCount--;
                     }
-                });
-            }
 
-            this.interfaces[name] = properties;
+                    i++;
+                }
+
+                // Remove the last closing brace line
+                if (bodyLines.length > 0) {
+                    bodyLines[bodyLines.length - 1] = bodyLines[bodyLines.length - 1].replace(/\}[^}]*$/, '');
+                }
+
+                const body = bodyLines.join('\n');
+                const properties = this.parseProperties(body);
+
+                console.log(`  Parsed ${name}: ${properties.length} properties`);
+                properties.forEach(p => {
+                    console.log(`    - ${p.name}: ${p.type}${p.type === 'inline_object' ? ` (${p.properties?.length} nested)` : ''}`);
+                });
+
+                // Handle extends
+                if (extendsClause) {
+                    const baseInterfaces = extendsClause.split(',').map(s => s.trim());
+                    // Merge properties from base interfaces
+                    baseInterfaces.forEach(baseName => {
+                        if (this.interfaces[baseName]) {
+                            console.log(`    Merging ${this.interfaces[baseName].length} props from ${baseName}`);
+                            properties.unshift(...this.interfaces[baseName]);
+                        }
+                    });
+                }
+
+                this.interfaces[name] = properties;
+            } else {
+                i++;
+            }
         }
     }
 
     parseProperties(body) {
         const properties = [];
         const lines = body.split('\n');
+        let i = 0;
 
-        for (let line of lines) {
-            line = line.trim();
+        while (i < lines.length) {
+            let line = lines[i].trim();
 
             // Skip empty lines and comments
             if (!line || line.startsWith('//') || line.startsWith('*')) {
+                i++;
+                continue;
+            }
+
+            // Check for inline object type: propertyName: { ... }
+            const inlineObjectMatch = line.match(/(\w+)(\?)?:\s*\{/);
+            if (inlineObjectMatch) {
+                const name = inlineObjectMatch[1];
+                const optional = !!inlineObjectMatch[2];
+
+                // Collect the inline object definition
+                let braceCount = 1;
+                let objectLines = [];
+                i++;
+
+                while (i < lines.length && braceCount > 0) {
+                    const currentLine = lines[i];
+                    objectLines.push(currentLine);
+
+                    // Count braces
+                    for (const char of currentLine) {
+                        if (char === '{') braceCount++;
+                        if (char === '}') braceCount--;
+                    }
+
+                    i++;
+                }
+
+                // Remove the last closing brace
+                if (objectLines.length > 0) {
+                    objectLines[objectLines.length - 1] = objectLines[objectLines.length - 1].replace(/\}[^}]*$/, '');
+                }
+
+                // Parse the inline object's properties
+                const objectBody = objectLines.join('\n');
+                const inlineProperties = this.parseProperties(objectBody);
+
+                properties.push({
+                    name,
+                    type: 'inline_object',
+                    optional,
+                    properties: inlineProperties
+                });
+
                 continue;
             }
 
@@ -94,13 +182,25 @@ class TypeParser {
                     optional
                 });
             }
+
+            i++;
         }
 
         return properties;
     }
 
     // Get field type information
-    getFieldInfo(typeName) {
+    getFieldInfo(typeName, property = null) {
+        // Handle inline objects (passed as property object)
+        console.log('getFieldInfo called:', { typeName, property });
+        if (property && property.type === 'inline_object') {
+            console.log('  → Returning inline_object with', property.properties?.length, 'properties');
+            return {
+                kind: 'inline_object',
+                properties: property.properties
+            };
+        }
+
         // Remove any whitespace
         typeName = typeName.trim();
 

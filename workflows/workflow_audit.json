@@ -1,61 +1,53 @@
-
 {
-    "name": "Audit Workflow",
-    "steps": [
+  "name": "Audit Workflow",
+  "steps": [
+    {
+      "name": "Phase 0",
+      "type": "task",
+      "description": "Initial Scoping",
+      "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-0.md. Run exclusively the phase audit-naive-phase-0 using the Task tool",
+      "model": {
+        "type": "CLAUDE_CODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Critical Stop Decision Step",
+      "type": "decision",
+      "description": "Check if CRITICAL_STOP.MD exists to determine if workflow should stop early",
+      "mode": "READ_FILE",
+      "modeInfo": {
+        "fileName": "CRITICAL_STOP.MD"
+      },
+      "decision": [
         {
-            "name": "Phase 0",
-            "type": "task",
-            "description": "Initial Scoping",
-            "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-0.md. Run exclusively the phase audit-naive-phase-0 using the Task tool",
-            "model": {
-                "type": "CLAUDE_CODE",
-                "model": "inherit"
-            },
-            "shouldCreateSummary": true,
-            "shouldCommitChanges": true
+          "operator": "eq",
+          "value": 1,
+          "action": "STOP"
         },
         {
-            "name": "Critical Stop Decision Step",
-            "type": "decision",
-            "description": "Check if CRITICAL_STOP.MD exists to determine if workflow should stop early",
-
-            "mode": "READ_FILE",
-            "modeInfo": {
-                "fileName": "CRITICAL_STOP.MD"
-            },
-            "decision": [
-                {
-                    "operator": "eq",
-                    "value": 1,
-                    "action": "STOP"
-                },
-                {
-                    "operator": "eq",
-                    "value": 0,
-                    "action": "CONTINUE",
-                    "NOTE": "This can be omitted, as the default action is CONTINUE"
-                }
-            ],
-
-            "shouldCreateSummary": false,
-            "shouldCommitChanges": false,
-            "prompt": "Ignored",
-            "model": {
-                "type": "PROGRAM",
-                "model": "IGNORED"
-            }
-        },
-        {
-            "name": "Phase 1",
-            "type": "task",
-            "description": "Issues Generation",
-            "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-1.md. Run exclusively the phase audit-naive-phase-1 using the Task tool",
-            "model": {
-                "type": "CLAUDE_CODE",
-                "model": "inherit"
-            },
-            "shouldCreateSummary": true,
-            "shouldCommitChanges": true
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE",
+          "NOTE": "This can be omitted, as the default action is CONTINUE"
         }
-    ]
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1",
+      "type": "task",
+      "description": "Issues Generation",
+      "prompt": "You are provided an agent definition at ./claude/agents/audit-naive-phase-1.md. Run exclusively the phase audit-naive-phase-1 using the Task tool",
+      "model": {
+        "type": "CLAUDE_CODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    }
+  ]
 }

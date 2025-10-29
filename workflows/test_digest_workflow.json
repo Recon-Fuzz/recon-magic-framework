@@ -1,0 +1,45 @@
+{
+  "name": "Test READ_FILE_WITH_MODEL_DIGEST",
+  "steps": [
+    {
+      "type": "decision",
+      "name": "Analyze test file",
+      "description": "Read test_digest.txt and make a decision based on its contents",
+      "mode": "READ_FILE_WITH_MODEL_DIGEST",
+      "modeInfo": {
+        "fileName": "test_digest.txt",
+        "prompt": "Analyze the file contents and determine if we should continue or stop. If the status is READY_TO_PROCEED and severity is LOW, return 1.0 to continue. Otherwise return 0.0 to stop."
+      },
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0.0,
+          "action": "STOP"
+        },
+        {
+          "operator": "eq",
+          "value": 1.0,
+          "action": "CONTINUE"
+        }
+      ]
+    },
+    {
+      "type": "task",
+      "name": "Final step",
+      "description": "This runs if we decided to continue",
+      "prompt": "echo 'Successfully continued based on file analysis'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}
