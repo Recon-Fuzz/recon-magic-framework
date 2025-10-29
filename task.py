@@ -46,7 +46,8 @@ class TaskStep(BaseModel):
 def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
     """Execute a task step based on its model type."""
 
-    if step.model.type == ModelType.PROGRAM: ## TODO: This looks wrong af. Need to test it will work with global stuff as well as local stuff.
+    ## NOTE: ./ for programs within this code, PATH/W/e for relative to the pwd. Just the name to run cli stuff, e.g. echidna.
+    if step.model.type == ModelType.PROGRAM:
         # Resolve ./ paths to framework root using shlex
         command = step.prompt
         framework_root = os.environ.get('RECON_FRAMEWORK_ROOT')
