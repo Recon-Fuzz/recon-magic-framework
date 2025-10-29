@@ -78,5 +78,6 @@ type DecisionStep = DecisionStepReadFile | DecisionStepReadFileWithDigest | Deci
 interface Decision {
     operator: 'eq' | 'gt' | 'lt' | 'gte' | 'lte' | 'neq';
     value: number;
-    action: 'CONTINUE' | 'STOP' | 'REPEAT_PREVIOUS_STEP' // | 'JUMP_TO_STEP'; TODO: Add later, also this makes code harder to reason about.
+    action: 'CONTINUE' | 'STOP' | 'REPEAT_PREVIOUS_STEP' | 'JUMP_TO_STEP'; // NOTE: We should use JUMP to JUMP to end or smth, more so than to go back, going back = recursion = problem.
+    destinationStep?: string; // Required when action is JUMP_TO_STEP - the name of the step to jump to
 }
