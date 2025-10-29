@@ -433,6 +433,34 @@ function updatePreview() {
     document.getElementById('preview').textContent = JSON.stringify(workflow, null, 2);
 }
 
+// Copy workflow to clipboard
+async function copyToClipboard() {
+    if (!workflow) {
+        alert('No workflow to copy');
+        return;
+    }
+
+    const json = JSON.stringify(workflow, null, 2);
+    const button = document.getElementById('copyButton');
+    const originalText = button.textContent;
+
+    try {
+        await navigator.clipboard.writeText(json);
+        button.textContent = 'Copied!';
+        button.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+        button.classList.add('bg-green-600', 'hover:bg-green-700');
+
+        setTimeout(() => {
+            button.textContent = originalText;
+            button.classList.remove('bg-green-600', 'hover:bg-green-700');
+            button.classList.add('bg-gray-600', 'hover:bg-gray-700');
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+    }
+}
+
 // Export workflow
 function exportWorkflow() {
     if (!workflow) {

@@ -79,9 +79,14 @@
                 <div class="bg-white rounded-lg shadow p-6">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-xl font-bold">Live Preview</h2>
-                        <button onclick="exportWorkflow()" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
-                            Export JSON
-                        </button>
+                        <div class="flex gap-2">
+                            <button onclick="copyToClipboard()" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors" id="copyButton">
+                                Copy
+                            </button>
+                            <button onclick="exportWorkflow()" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                                Export JSON
+                            </button>
+                        </div>
                     </div>
                     <pre id="preview" class="bg-gray-100 p-4 rounded overflow-auto text-xs max-h-[600px]">
 // Create or import a workflow to see preview
