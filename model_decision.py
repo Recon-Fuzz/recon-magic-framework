@@ -127,6 +127,7 @@ def perform_decision_with_model(
         ...     decisions, "Should we continue?", model_config
         ... )
     """
+    import os
     from langchain_openai import ChatOpenAI
     from langchain_core.tools import tool
     from langgraph.prebuilt import create_react_agent
@@ -166,43 +167,39 @@ def perform_decision_with_model(
 
     # Initialize the LLM using OpenRouter
     # OpenRouter allows you to choose from multiple providers (Anthropic, OpenAI, etc.)
-    default_model = "openai/gpt-5"  # Default to GPT-5
+    default_model = "openai/gpt-4o"  # Default to GPT-4o
     model_name = getattr(model_config, 'model', default_model) if model_config else default_model
+
+    # Handle "inherit" as default model
+    if model_name == "inherit":
+        model_name = default_model
 
     llm = ChatOpenAI(
         model=model_name,  # e.g., "anthropic/claude-3.5-sonnet", "openai/gpt-4o", etc.
         temperature=0,  # Use deterministic output for decisions
         base_url="https://openrouter.ai/api/v1",
-        api_key=model_config.api_key if hasattr(model_config, 'api_key') else None
+        api_key=os.getenv('OPENAI_API_KEY')
     )
 
     # Create the full prompt with decision constraints
     full_prompt = create_decision_prompt(prompt, decisions)
 
-    # Create agent with file reading tool
+    # Create agent with tools for exploration
     tools = [read_file]
     agent = create_react_agent(llm, tools)
 
     print(f"🤖 Asking agent to make decision with file reading capability...")
     print(f"📋 Valid options: {valid_values}")
 
-    # Run the agent
+    # Run agent to gather information
     agent_result = agent.invoke({"messages": [("user", full_prompt)]})
 
-    # Extract the final message from the agent
+    # Extract the final message
     final_message = agent_result["messages"][-1].content
 
-    # Now use structured output to parse the decision
+    # Use structured output to get the final decision
     structured_llm = llm.with_structured_output(DecisionSchema)
-
-    # Create a prompt that includes the agent's reasoning and asks for structured output
-    structured_prompt = f"""Based on the following analysis, provide your decision:
-
-{final_message}
-
-Now provide your final decision as a structured output selecting one of these values: {valid_values}"""
-
-    result = structured_llm.invoke(structured_prompt)
+    result = structured_llm.invoke(final_message)
 
     print(f"✓ Agent selected: {result.selected_value}")
     print(f"💭 Reasoning: {result.reasoning}")
