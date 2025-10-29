@@ -79,20 +79,17 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
     logs_dir = Path(framework_root) / "logs"
     logs_dir.mkdir(exist_ok=True)
 
+    # Build the command with extended timeouts and streaming output
+    env = os.environ.copy()
+    env['BASH_DEFAULT_TIMEOUT_MS'] = '214748364'
+    env['BASH_MAX_TIMEOUT_MS'] = '214748364'
+
+    # Generate log filename with timestamp and step name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_step_name = step.name.lower().replace(" ", "_")
+    log_file = logs_dir / f"{timestamp}_step{step_num}_{safe_step_name}.log"
+
     if step.model.type == ModelType.CLAUDE_CODE:
-
-
-
-        # Generate log filename with timestamp and step name
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_step_name = step.name.lower().replace(" ", "_")
-        log_file = logs_dir / f"{timestamp}_step{step_num}_{safe_step_name}.log"
-
-        # Build the command with extended timeouts and streaming output
-        env = os.environ.copy()
-        env['BASH_DEFAULT_TIMEOUT_MS'] = '214748364'
-        env['BASH_MAX_TIMEOUT_MS'] = '214748364'
-
         # Check if we should skip permissions (only in production)
         runner_env = os.environ.get('RUNNER_ENV', '').lower()
         skip_permissions = '--dangerously-skip-permissions' if runner_env == 'production' else ''
@@ -123,9 +120,17 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
         parser_script_file = Path(framework_root) / 'log_formatters' / 'opencode.py'
 
         cmd = f"""opencode run  \
--p {json.dumps(step.prompt)} \
 {json.dumps(step.prompt)} \
---format json | python3 -u {parser_script_file}"""
+--format json | tee {log_file} | python3 -u {parser_script_file}"""
+
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            env=env,
+            text=True
+        )
+
+        return (result.returncode, "CONTINUE")
 
     else:
         print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")

@@ -1,48 +1,17 @@
-
 {
-    "name": "Counter Workflow",
-    "steps": [
-        {
-            "name": "Run the Counter",
-            "type": "task",
-            "description": "Issues Generation",
-            "prompt": "uv run ./programs/increase_counter.py",
-            "model": {
-                "type": "PROGRAM",
-                "model": "inherit"
-            },
-            "shouldCreateSummary": false,
-            "shouldCommitChanges": false
-        },
-        {
-            "name": "Check the Counter",
-            "type": "decision",
-            "description": "If counter is less than 10, continue, otherwise stop",
-
-            "mode": "READ_FILE",
-            "modeInfo": {
-                "fileName": "Counter.MD"
-            },
-            "decision": [
-                {
-                    "operator": "lt",
-                    "value": 10,
-                    "action": "REPEAT_PREVIOUS_STEP"
-                },
-                {
-                    "operator": "gte",
-                    "value": 10,
-                    "action": "STOP"
-                }
-            ],
-
-            "shouldCreateSummary": false,
-            "shouldCommitChanges": false,
-            "prompt": "Ignored",
-            "model": {
-                "type": "PROGRAM",
-                "model": "IGNORED"
-            }
-        }
-    ]
+  "name": "New Workflow",
+  "steps": [
+    {
+      "type": "task",
+      "name": "Step 2",
+      "description": "",
+      "prompt": "Review the one line intro in the file 'hello.md', create a 'critic.md' file with your thoughts",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
 }
