@@ -73,12 +73,15 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
         )
         return (SUCCESS, "CONTINUE")
 
+    ## AI Models
+    # Create logs directory in framework, not target repo
+    framework_root = os.environ.get('RECON_FRAMEWORK_ROOT', '.')
+    logs_dir = Path(framework_root) / "logs"
+    logs_dir.mkdir(exist_ok=True)
+
     if step.model.type == ModelType.CLAUDE_CODE:
 
-        # Create logs directory in framework, not target repo
-        framework_root = os.environ.get('RECON_FRAMEWORK_ROOT', '.')
-        logs_dir = Path(framework_root) / "logs"
-        logs_dir.mkdir(exist_ok=True)
+
 
         # Generate log filename with timestamp and step name
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -96,31 +99,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
 
         # Create the full pipeline command using shlex for proper escaping
         # We'll write the parser script to a temp file to avoid quoting issues
-        parser_script_content = r"""import sys, json
-for line in sys.stdin:
-    try:
-        data = json.loads(line)
-        if data.get('type') == 'assistant' and data.get('message', {}).get('content'):
-            for item in data['message']['content']:
-                if item.get('type') == 'text':
-                    print('💭 ' + item['text'])
-                elif item.get('type') == 'tool_use':
-                    tool_name = item.get('name', 'unknown')
-                    if 'input' in item and 'command' in item['input']:
-                        print(f'⚡ [{tool_name}] ' + item['input']['command'])
-                    else:
-                        print(f'⚡ [{tool_name}]')
-        elif data.get('type') == 'user' and data.get('message', {}).get('content'):
-            for item in data['message']['content']:
-                if item.get('type') == 'tool_result' and item.get('is_error'):
-                    tool_name = item.get('tool_use', {}).get('name', 'unknown')
-                    print(f'❌ [{tool_name}] ' + item['content'].split('\n')[0])
-    except: pass
-"""
-
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-            f.write(parser_script_content)
-            parser_script_file = f.name
+        parser_script_file = Path(framework_root) / 'log_formatters' / 'claude_code.py'
 
         cmd = f"""claude {skip_permissions} \
 -p {json.dumps(step.prompt)} \
@@ -141,9 +120,12 @@ for line in sys.stdin:
         return (result.returncode, "CONTINUE")
 
     if step.model.type == ModelType.OPENCODE:
-        ## TODO: Implement OpenRouter
-        return (SUCCESS, "CONTINUE")
-        opencode run "prompt" --output-format json
+        parser_script_file = Path(framework_root) / 'log_formatters' / 'opencode.py'
+
+        cmd = f"""opencode run  \
+-p {json.dumps(step.prompt)} \
+{json.dumps(step.prompt)} \
+--format json | python3 -u {parser_script_file}"""
 
     else:
         print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")
