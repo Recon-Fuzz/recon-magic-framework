@@ -1,0 +1,29 @@
+{
+  "name": "New Workflow",
+  "steps": [
+    {
+      "type": "task",
+      "name": "Step 1",
+      "description": "",
+      "prompt": "Create a file `hello.md` write down a one line intro about you",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "type": "task",
+      "name": "Step 2",
+      "description": "",
+      "prompt": "Review the one line intro in the file `hello.md`, create a `critic.md` file with your thoughts",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}

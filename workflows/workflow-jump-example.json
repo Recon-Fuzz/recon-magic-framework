@@ -4,8 +4,8 @@
     {
       "type": "task",
       "name": "Step 1: Create files",
-      "description": "Create initial test files",
-      "prompt": "echo 'Initial setup' > test.txt && echo '0' > skip.txt",
+      "description": "Create initial test files (skip.txt should be pre-created)",
+      "prompt": "echo 'Initial setup' > test.txt && test -f skip.txt || echo '0' > skip.txt",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -31,13 +31,13 @@
       "decision": [
         {
           "operator": "eq",
-          "value": 0,
+          "value": 1.0,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Step 5: Final work"
         },
         {
           "operator": "eq",
-          "value": 1.0,
+          "value": 0.0,
           "action": "CONTINUE"
         }
       ]

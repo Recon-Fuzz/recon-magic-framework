@@ -43,28 +43,25 @@ class TaskStep(BaseModel):
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
 
 
-def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
-    """Execute a task step based on its model type."""
+def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | None]:
+    """
+    Execute a task step based on its model type.
+
+    Returns:
+        tuple[int, str, str | None]: (return_code, action, destination_step_name)
+            - For task steps, destination_step_name is always None
+    """
 
     ## NOTE: ./ for programs within this code, PATH/W/e for relative to the pwd. Just the name to run cli stuff, e.g. echidna.
     if step.model.type == ModelType.PROGRAM:
-        # Resolve ./ paths to framework root using shlex
+        # Resolve ./ paths to framework root
         command = step.prompt
         framework_root = os.environ.get('RECON_FRAMEWORK_ROOT')
 
-        if framework_root:
-            # Parse command tokens properly
-            tokens = shlex.split(command)
-
-            # Resolve any tokens starting with ./
-            resolved_tokens = []
-            for token in tokens:
-                if token.startswith('./'):
-                    token = str(Path(framework_root) / token.lstrip('./'))
-                resolved_tokens.append(token)
-
-            # Rejoin into command string
-            command = shlex.join(resolved_tokens)
+        if framework_root and './' in command:
+            # Only process if command contains ./ references
+            # Use simple string replacement to avoid breaking shell operators
+            command = command.replace('./', str(Path(framework_root)) + '/')
 
         # Run the program (CWD remains in target repo)
         result = subprocess.run(
@@ -72,7 +69,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
             shell=True,
             env=os.environ.copy()
         )
-        return (SUCCESS, "CONTINUE")
+        return (SUCCESS, "CONTINUE", None)
 
     ## AI Models
     # Create logs directory in framework, not target repo
@@ -115,7 +112,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
             text=True
         )
 
-        return (result.returncode, "CONTINUE")
+        return (result.returncode, "CONTINUE", None)
 
     if step.model.type == ModelType.OPENCODE:
         parser_script_file = Path(framework_root) / 'log_formatters' / 'opencode.py'
@@ -131,8 +128,8 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
             text=True
         )
 
-        return (result.returncode, "CONTINUE")
+        return (result.returncode, "CONTINUE", None)
 
     else:
         print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")
-        return (SUCCESS, "CONTINUE")
+        return (SUCCESS, "CONTINUE", None)

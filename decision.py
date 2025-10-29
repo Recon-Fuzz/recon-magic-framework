@@ -42,7 +42,8 @@ class Decision(BaseModel):
     """Decision configuration for DecisionStep."""
     operator: Literal["eq", "gt", "lt", "gte", "lte", "neq"]
     value: float
-    action: Literal["CONTINUE", "STOP", "REPEAT_PREVIOUS_STEP"]
+    action: Literal["CONTINUE", "STOP", "REPEAT_PREVIOUS_STEP", "JUMP_TO_STEP"]
+    destinationStep: str | None = None  # Required when action is JUMP_TO_STEP
 
 
 class DecisionStep(BaseModel):
@@ -59,7 +60,7 @@ class DecisionStep(BaseModel):
     decision: list[Decision]
 
 
-def evaluate_decisions(decisions: list[Decision], actual_value: float, debug: bool = True) -> str:
+def evaluate_decisions(decisions: list[Decision], actual_value: float, debug: bool = True) -> tuple[str, str | None]:
     """
     Evaluate a list of decisions against an actual value.
 
@@ -69,7 +70,9 @@ def evaluate_decisions(decisions: list[Decision], actual_value: float, debug: bo
         debug: Whether to print debug information
 
     Returns:
-        str: The action to take (CONTINUE, STOP, REPEAT_PREVIOUS_STEP)
+        tuple[str, str | None]: (action, destination_step_name)
+            - action: The action to take (CONTINUE, STOP, REPEAT_PREVIOUS_STEP, JUMP_TO_STEP)
+            - destination_step_name: The name of step to jump to (only set when action is JUMP_TO_STEP)
     """
     for decision in decisions:
         if debug:
@@ -93,22 +96,29 @@ def evaluate_decisions(decisions: list[Decision], actual_value: float, debug: bo
         if matched:
             if debug:
                 print(f"✓ Decision matched: {decision.action}")
-            return decision.action
+                if decision.action == "JUMP_TO_STEP":
+                    print(f"  Destination: {decision.destinationStep}")
+            return (decision.action, decision.destinationStep)
 
     if debug:
         print("⚠ No decision matched, defaulting to CONTINUE")
-    return "CONTINUE"
+    return ("CONTINUE", None)
 
 
 ## TODO: Repeated visits of the same step should increase a counter, and if the counter is greater than the value, then the step should CONTINUE and ignore the decision.
-def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
-    """Execute a decision step based on its model type."""
+def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, str | None]:
+    """
+    Execute a decision step based on its model type.
+
+    Returns:
+        tuple[int, str, str | None]: (return_code, action, destination_step_name)
+    """
     print(f"Executing decision step: {step.name}")
 
     # # Check that we have at least one decision
     # if not step.decision:
     #     print("⚠ No decisions defined, defaulting to CONTINUE")
-    #     return (SUCCESS, "CONTINUE")
+    #     return (SUCCESS, "CONTINUE", None)
 
     # Get the mode from the first decision (all decisions in a step should have the same mode)
     decision_mode = step.mode
@@ -122,16 +132,16 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
         print(f"matches: {matches}")
         print(f"File exists: {exists}")
 
-        action = evaluate_decisions(step.decision, exists)
-        return (SUCCESS, action)
-    
+        action, destination = evaluate_decisions(step.decision, exists)
+        return (SUCCESS, action, destination)
+
     if decision_mode == DecisionMode.READ_FILE:
         # Read the file
         matches = list(Path('.').rglob(step.modeInfo["fileName"]))
 
         if not matches:
             print("⚠ File doesnt exist, defaulting to CONTINUE")
-            return (SUCCESS, "CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
 
         file_path = matches[0]  # Get first match
         content = file_path.read_text().strip()
@@ -142,8 +152,8 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str]:
             file_value = float(content)
         except ValueError:
             print(f"⚠ Could not parse file content as number: '{content}', defaulting to CONTINUE")
-            return (SUCCESS, "CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
 
-        action = evaluate_decisions(step.decision, file_value)
-        return (SUCCESS, action)
+        action, destination = evaluate_decisions(step.decision, file_value)
+        return (SUCCESS, action, destination)
   

@@ -101,7 +101,7 @@ def after_step_execution(step: Step, step_num: int, return_code: int, action: st
     ## TODO: API Specification
     ## Likely POST jobs/:jobId/summaries, and it's an append only list of summaries.
 
-def execute_step(step: Step, step_num: int, execution_count: int) -> tuple[int, str]:
+def execute_step(step: Step, step_num: int, execution_count: int) -> tuple[int, str, str | None]:
     """
     Execute a workflow step based on its step type.
 
@@ -111,30 +111,30 @@ def execute_step(step: Step, step_num: int, execution_count: int) -> tuple[int, 
         execution_count: Number of times this step has been executed
 
     Returns:
-        tuple[int, str]: (Return code from the execution, Action to take: "CONTINUE", "STOP", etc.)
+        tuple[int, str, str | None]: (Return code, Action, Destination step name)
     """
 
     before_step_execution(step, step_num)
 
-    return_code, action = None, None
+    return_code, action, destination = None, None, None
 
     # Check if we've hit the loop hardcap for decision steps
     if isinstance(step, DecisionStep) and execution_count > LOOP_HARDCAP:
         print(f"⚠️  Loop hardcap ({LOOP_HARDCAP}) reached for step {step_num}, forcing CONTINUE")
-        return_code, action = (SUCCESS, "CONTINUE")
+        return_code, action, destination = (SUCCESS, "CONTINUE", None)
     else:
         # Switch on step.type first
         if isinstance(step, TaskStep):
-            return_code, action = execute_task_step(step, step_num)
+            return_code, action, destination = execute_task_step(step, step_num)
         elif isinstance(step, DecisionStep):
-            return_code, action = execute_decision_step(step, step_num)
+            return_code, action, destination = execute_decision_step(step, step_num)
         else:
             print(f"❌ Unknown step type: {type(step)}")
-            return_code, action = (FAILURE, "CONTINUE")
+            return_code, action, destination = (FAILURE, "CONTINUE", None)
 
     after_step_execution(step, step_num, return_code, action)
 
-    return (return_code, action)
+    return (return_code, action, destination)
 
 
 ## TODO: Separate File
@@ -152,6 +152,23 @@ def create_summary(step: Step, step_num: int) -> None:
 
 
 ## TODO: Separate File
+def find_step_index_by_name(workflow: Workflow, step_name: str) -> int | None:
+    """
+    Find the step index (1-based) by step name.
+
+    Args:
+        workflow: The workflow containing the steps
+        step_name: The name of the step to find
+
+    Returns:
+        int | None: The 1-based index of the step, or None if not found
+    """
+    for idx, step in enumerate(workflow.steps, start=1):
+        if step.name == step_name:
+            return idx
+    return None
+
+
 def commit_changes(step: Step, step_num: int) -> None:
     """
     Commit changes made during the step execution.
@@ -241,7 +258,7 @@ def main(workflow_file: str = "workflow.json"):
         print(f"Model: {step.model.type}")
 
         # Execute the step
-        return_code, action = execute_step(step, i, step_execution_count[i])
+        return_code, action, destination_step_name = execute_step(step, i, step_execution_count[i])
 
         if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")
@@ -263,6 +280,34 @@ def main(workflow_file: str = "workflow.json"):
             print(f"\n🛑 STOP action triggered by step {i}")
             print("Halting workflow execution early.")
             return SUCCESS
+        elif action == "JUMP_TO_STEP":
+            if not destination_step_name:
+                print(f"\n❌ JUMP_TO_STEP action requires destinationStep, but none was provided")
+                print("Stopping workflow execution.")
+                return FAILURE
+
+            target_step_index = find_step_index_by_name(workflow, destination_step_name)
+
+            if target_step_index is None:
+                print(f"\n❌ JUMP_TO_STEP failed: Step '{destination_step_name}' not found in workflow")
+                print("Stopping workflow execution.")
+                return FAILURE
+
+            # Validate the jump (prevent jumping to same step)
+            if target_step_index == i:
+                print(f"\n❌ JUMP_TO_STEP failed: Cannot jump to current step (would cause infinite loop)")
+                print("Stopping workflow execution.")
+                return FAILURE
+
+            # Log the jump
+            jump_direction = "forward" if target_step_index > i else "backward"
+            jump_distance = abs(target_step_index - i)
+            print(f"\n⏭️  JUMP_TO_STEP action triggered by step {i}")
+            print(f"   Jumping {jump_direction} from '{step.name}' to '{destination_step_name}' ({jump_distance} steps)")
+
+            # Perform the jump
+            i = target_step_index
+            continue
         elif action == "REPEAT_PREVIOUS_STEP":
             if i > 1:
                 print(f"\n🔁 REPEAT_PREVIOUS_STEP action triggered, going back to step {i - 1}")
