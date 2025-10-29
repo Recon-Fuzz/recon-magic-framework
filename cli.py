@@ -5,8 +5,12 @@ CLI entry point for recon-magic framework.
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 from main import main as run_workflow
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def main():

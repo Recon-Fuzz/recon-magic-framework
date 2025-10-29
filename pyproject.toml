@@ -5,6 +5,7 @@ description = "Smart contract audit workflow automation framework"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.scripts]
