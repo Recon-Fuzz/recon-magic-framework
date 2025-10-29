@@ -55,7 +55,6 @@ class DecisionStep(BaseModel):
     description: str | None = None
     mode: DecisionMode
     modeInfo: dict[str, str]
-    prompt: str
     model: Model
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
@@ -161,7 +160,10 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
 
     if decision_mode == DecisionMode.USE_MODEL:
         # Use LLM to make decision based on prompt
-        prompt = step.modeInfo.get("prompt", step.prompt)
+        prompt = step.modeInfo.get("prompt")
+        if not prompt:
+            print("⚠ prompt not specified in modeInfo for USE_MODEL, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
 
         try:
             selected_value, reasoning = perform_decision_with_model(
@@ -178,6 +180,52 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
 
         except Exception as e:
             print(f"⚠ Error calling model: {e}, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+    if decision_mode == DecisionMode.READ_FILE_WITH_MODEL_DIGEST:
+        # Find and read file, then use LLM to digest content and make decision
+        file_name = step.modeInfo.get("fileName")
+        if not file_name:
+            print("⚠ fileName not specified in modeInfo, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        prompt = step.modeInfo.get("prompt")
+        if not prompt:
+            print("⚠ prompt not specified in modeInfo for READ_FILE_WITH_MODEL_DIGEST, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        # Try to find the file
+        matches = list(Path('.').rglob(file_name))
+
+        if not matches:
+            print(f"⚠ File not found: {file_name}, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        file_path = matches[0]  # Get first match
+        print(f"📄 Found file: {file_path}")
+
+        try:
+            content = file_path.read_text()
+            print(f"📖 Read {len(content)} characters from file")
+
+            # Combine prompt with file contents
+            combined_prompt = f"{prompt}\n\n---\nFile contents:\n{content}"
+
+            # Use model to digest and make decision
+            selected_value, reasoning = perform_decision_with_model(
+                decisions=step.decision,
+                prompt=combined_prompt,
+                model_config=step.model
+            )
+
+            print(f"Model decision: {selected_value}")
+            print(f"Reasoning: {reasoning}")
+
+            action, destination = evaluate_decisions(step.decision, selected_value)
+            return (SUCCESS, action, destination)
+
+        except Exception as e:
+            print(f"⚠ Error processing file or calling model: {e}, defaulting to CONTINUE")
             return (SUCCESS, "CONTINUE", None)
 
     # Default case if no mode matches

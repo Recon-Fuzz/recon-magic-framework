@@ -43,7 +43,6 @@ class Step(BaseModel):
     """Base step interface."""
     name: str
     description: str | None = None
-    prompt: str
     model: Model
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
