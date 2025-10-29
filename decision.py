@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from model_decision import perform_decision_with_model
+
 
 
 # Exit codes
@@ -26,10 +28,9 @@ class ModelType:
 class DecisionMode(str, Enum):
     """Decision mode enum defining how decisions are evaluated."""
     FILE_EXISTS = "FILE_EXISTS"      # check if a file exists
-    READ_FILE = "READ_FILE"      # Read from filesystem (e.g., file exists check)
-    API_CALL = "API_CALL"        # Make an API call to evaluate decision
-    COUNTER = "COUNTER"          # Counter-based decision (for loops)
-    COMPUTED = "COMPUTED"        # Computed value from previous steps
+    READ_FILE = "READ_FILE"          # Read from filesystem (e.g., file exists check)
+    USE_MODEL = "USE_MODEL"          # Use a model to decide
+    READ_FILE_WITH_MODEL_DIGEST = "READ_FILE_WITH_MODEL_DIGEST" # Read from filesystem and use a model to digest the file contents
 
 
 class Model(BaseModel):
@@ -156,4 +157,28 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
 
         action, destination = evaluate_decisions(step.decision, file_value)
         return (SUCCESS, action, destination)
-  
+
+    if decision_mode == DecisionMode.USE_MODEL:
+        # Use LLM to make decision based on prompt
+        prompt = step.modeInfo.get("prompt", step.prompt)
+
+        try:
+            selected_value, reasoning = perform_decision_with_model(
+                decisions=step.decision,
+                prompt=prompt,
+                model_config=step.model
+            )
+
+            print(f"Model decision: {selected_value}")
+            print(f"Reasoning: {reasoning}")
+
+            action, destination = evaluate_decisions(step.decision, selected_value)
+            return (SUCCESS, action, destination)
+
+        except Exception as e:
+            print(f"⚠ Error calling model: {e}, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+    # Default case if no mode matches
+    print(f"⚠ Unhandled decision mode: {decision_mode}, defaulting to CONTINUE")
+    return (SUCCESS, "CONTINUE", None)
