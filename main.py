@@ -26,7 +26,7 @@ class ModelType(str, Enum):
     INHERIT = "INHERIT"
     PROGRAM = "PROGRAM"
     CLAUDE_CODE = "CLAUDE_CODE"
-    OPENROUTER = "OPENROUTER"
+    OPENCODE = "OPENCODE"
 
 
 class Model(BaseModel):

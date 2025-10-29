@@ -29,3 +29,19 @@ This reads markdown files from ai-agent-primers and generates workflow JSON file
 Visual workflow editor at `http://localhost:8000/studio/` - auto-syncs with type.ts.
 
 Paste a workflow or create a new one and download it.
+
+## Looper
+
+Repeat a Claude Code prompt X times.
+
+**Install:**
+```bash
+cd looper && uv tool install --editable .
+```
+
+**Usage:**
+```bash
+looper "your prompt" --times 5 [--dangerous]
+```
+
+Streams raw JSON logs. Use `--dangerous` to skip permissions.

@@ -23,7 +23,7 @@ class ModelType:
     INHERIT = "INHERIT"
     PROGRAM = "PROGRAM"
     CLAUDE_CODE = "CLAUDE_CODE"
-    OPENROUTER = "OPENROUTER"
+    OPENCODE = "OPENCODE"
 
 
 class Model(BaseModel):
@@ -46,7 +46,7 @@ class TaskStep(BaseModel):
 def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str]:
     """Execute a task step based on its model type."""
 
-    if step.model.type == ModelType.PROGRAM:
+    if step.model.type == ModelType.PROGRAM: ## TODO: This looks wrong af. Need to test it will work with global stuff as well as local stuff.
         # Resolve ./ paths to framework root using shlex
         command = step.prompt
         framework_root = os.environ.get('RECON_FRAMEWORK_ROOT')
@@ -139,6 +139,12 @@ for line in sys.stdin:
         )
 
         return (result.returncode, "CONTINUE")
+
+    if step.model.type == ModelType.OPENCODE:
+        ## TODO: Implement OpenRouter
+        return (SUCCESS, "CONTINUE")
+        opencode run "prompt" --output-format json
+
     else:
         print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")
         return (SUCCESS, "CONTINUE")

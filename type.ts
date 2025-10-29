@@ -9,7 +9,7 @@ enum ModelType {
     
     // Prompt is used as prompt / cli arg
     CLAUDE_CODE,
-    OPENROUTER
+    OPENCODE
 }
 
 interface Model {
