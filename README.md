@@ -30,6 +30,13 @@ Visual workflow editor at `http://localhost:8000/studio/` - auto-syncs with type
 
 Paste a workflow or create a new one and download it.
 
+**Run:**
+```bash
+uv run python -m http.server 8000
+```
+
+Then open http://localhost:8000/studio/ in your browser.
+
 ## Looper
 
 Repeat a Claude Code prompt X times.
