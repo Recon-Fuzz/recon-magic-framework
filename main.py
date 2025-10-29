@@ -10,9 +10,9 @@ from typing import Annotated, Literal, Union
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-from decision import DecisionStep, execute_decision_step
-from task import TaskStep, execute_task_step
-from git_commit import is_git_repo, init_git_repo, run_command
+from core.decision import DecisionStep, execute_decision_step
+from core.task import TaskStep, execute_task_step
+from core.git_commit import is_git_repo, init_git_repo, run_command
 
 # Load environment variables from .env file
 load_dotenv()
