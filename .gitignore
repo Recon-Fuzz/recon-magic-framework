@@ -67,3 +67,5 @@ htmlcov/
 *.tmp
 *.bak
 *.swp
+
+.claude

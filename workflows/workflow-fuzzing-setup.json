@@ -1,0 +1,76 @@
+{
+  "name": "Fuzzing Setup Workflow",
+  "steps": [
+    {
+      "name": "Phase 0: Foundry Migration & Compilation",
+      "type": "task",
+      "description": "Convert Hardhat project to Foundry and ensure successful compilation",
+      "prompt": "You are provided an agent definition at ./.claude/agents/setup-phase-0.md. Run exclusively the setup-phase-0 agent using the Task tool. This phase will migrate the project to Foundry (if needed) and verify compilation artifacts are generated successfully.",
+      "model": {
+        "type": "CLAUDE_CODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Compilation Check Decision",
+      "type": "decision",
+      "description": "Check if COMPILATION_FAILED.md exists to determine if workflow should stop",
+      "mode": "READ_FILE",
+      "modeInfo": {
+        "fileName": "COMPILATION_FAILED.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "STOP"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1: Contract Analysis & Scaffolding Preparation",
+      "type": "task",
+      "description": "Identify contracts for invariant testing and prepare scaffolding requirements",
+      "prompt": "You are provided an agent definition at ./.claude/agents/setup-phase-1.md. Run exclusively the setup-phase-1 agent using the Task tool.",
+      "model": {
+        "type": "CLAUDE_CODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 2: Setup.sol Configuration",
+      "type": "task",
+      "description": "Modify Setup.sol to deploy and configure all target contracts for fuzzing",
+      "prompt": "You are provided an agent definition at ./.claude/agents/setup-phase-2.md. Run exclusively the setup-phase-2 agent using the Task tool. This phase will modify the Setup.sol contract to properly deploy and configure target contracts, validate compilation and test execution, and generate documentation in magic/setup-notes.md.",
+      "model": {
+        "type": "CLAUDE_CODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Workflow Completion Summary",
+      "type": "task",
+      "description": "Generate final summary of fuzzing setup completion",
+      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all three phases (Phase 0: Foundry Migration, Phase 1: Contract Analysis, Phase 2: Setup.sol Configuration)\n2. List the key artifacts created (foundry.toml, Setup.sol, magic/setup-notes.md)\n3. Confirm that forge build compiles successfully\n4. Confirm that forge test runs without reverts\n5. Provide next steps: user can now run fuzzing campaigns using Echidna or other fuzzing tools",
+      "model": {
+        "type": "CLAUDE_CODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    }
+  ]
+}
