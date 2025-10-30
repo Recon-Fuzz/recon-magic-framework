@@ -14,8 +14,15 @@ The Key can be from Openrouter!
 
 ## Usage
 
+**CLI (recommended):**
 ```bash
-uv run workflow_reader.py
+recon --workflow ./workflows/audit.json
+recon --workflow ./my-workflow.json --dangerous --cap 10 --logs ./logs
+```
+
+**Direct (simple):**
+```bash
+python main.py workflows/workflow.json
 ```
 
 
