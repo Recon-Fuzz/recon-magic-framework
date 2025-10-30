@@ -63,10 +63,19 @@ Workflows can be run from any directory.
         help='Directory to store logs (default: framework logs/)'
     )
 
+    parser.add_argument(
+        '--repo',
+        type=str,
+        default=None,
+        help='Path to repository directory (default: current directory)'
+    )
+
     args = parser.parse_args()
 
-    # Store the repository root (where the command is run from)
-    repo_root = os.getcwd()
+    # Store the repository root (use --repo if provided, otherwise current dir)
+    repo_root = args.repo if args.repo else os.getcwd()
+    if args.repo:
+        repo_root = os.path.abspath(args.repo)
 
     # Get framework root (where this cli.py is installed)
     framework_root = Path(__file__).parent.resolve()
@@ -104,13 +113,13 @@ Workflows can be run from any directory.
         print(f"📝 Logs directory: {args.logs}")
     print()
 
-    # Run the workflow (repo_path is None since we're running in current dir)
+    # Run the workflow
     exit_code = run_workflow(
         workflow_file=workflow_file,
         dangerous=args.dangerous,
         loop_hardcap=args.cap,
         logs_dir=args.logs,
-        repo_path=None  # CLI runs in current directory
+        repo_path=repo_root if args.repo else None
     )
     sys.exit(exit_code)
 

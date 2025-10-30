@@ -1,0 +1,29 @@
+{
+  "name": "Compile and Fuzz Workflow",
+  "steps": [
+    {
+      "type": "task",
+      "name": "Review and Fix Compilation",
+      "description": "Use Claude Code to review the code and fix any compilation issues",
+      "prompt": "Review all Solidity contracts in the current directory and subdirectories. Identify and fix any compilation errors. Run `forge build` to verify the code compiles successfully. If there are compilation errors, fix them and run `forge build` again until the code compiles without errors.",
+      "model": {
+        "type": "CLAUDE_CODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "type": "task",
+      "name": "Run Echidna Fuzzing",
+      "description": "Run Echidna fuzzer with specified configuration",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --workers 16 --test-limit 1000000",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": false
+    }
+  ]
+}
