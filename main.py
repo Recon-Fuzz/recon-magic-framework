@@ -8,7 +8,7 @@ import json
 import os
 import sys
 from enum import Enum
-from typing import Annotated, Union
+from typing import Annotated, Callable, Union
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -80,9 +80,10 @@ def load_workflow(filepath: str) -> Workflow:
 
     return Workflow(**data)
 
-def before_step_execution(step: Step, step_num: int) -> None:
+def default_before_step_execution(step: Step, step_num: int) -> None:
     """
-    Run before the step execution.
+    Default hook that runs before step execution.
+    Can be overridden by passing a custom before_hook to run_workflow().
     """
     print(f"Before step {step_num}: {step.name}")
     print(f"Type: {step.type}")
@@ -92,22 +93,22 @@ def before_step_execution(step: Step, step_num: int) -> None:
     print(f"Should create summary: {step.shouldCreateSummary}")
     print(f"Should commit changes: {step.shouldCommitChanges}")
 
-    ## TODO: How do we allow the step to call the API and set it's current state?
-    ## TODO: Call an API with /step and the data (basically the title), the api specification is not done
-    ## But basically we'll have something like POST: jobs/:jobId/step, which updates the current step
 
-def after_step_execution(step: Step, step_num: int, return_code: int, action: str) -> None:
+def default_after_step_execution(step: Step, step_num: int, return_code: int, action: str) -> None:
     """
-    Run after the step execution.
+    Default hook that runs after step execution.
+    Can be overridden by passing a custom after_hook to run_workflow().
     """
-    ## Create summary
-    ## Commit
+    pass  # Default implementation does nothing
 
-    ## TODO: How do we allow the step to call the API and set it's current summary?
-    ## TODO: API Specification
-    ## Likely POST jobs/:jobId/summaries, and it's an append only list of summaries.
-
-def execute_step(step: Step, step_num: int, execution_count: int, loop_hardcap: int = DEFAULT_LOOP_HARDCAP) -> tuple[int, str, str | None]:
+def execute_step(
+    step: Step,
+    step_num: int,
+    execution_count: int,
+    loop_hardcap: int = DEFAULT_LOOP_HARDCAP,
+    before_hook: Callable[[Step, int], None] | None = None,
+    after_hook: Callable[[Step, int, int, str], None] | None = None
+) -> tuple[int, str, str | None]:
     """
     Execute a workflow step based on its step type.
 
@@ -116,12 +117,17 @@ def execute_step(step: Step, step_num: int, execution_count: int, loop_hardcap: 
         step_num: The step number for logging
         execution_count: Number of times this step has been executed
         loop_hardcap: Maximum number of times a decision step can loop
+        before_hook: Optional callback to run before step execution
+        after_hook: Optional callback to run after step execution
 
     Returns:
         tuple[int, str, str | None]: (Return code, Action, Destination step name)
     """
+    # Use provided hooks or default ones
+    _before_hook = before_hook or default_before_step_execution
+    _after_hook = after_hook or default_after_step_execution
 
-    before_step_execution(step, step_num)
+    _before_hook(step, step_num)
 
     return_code, action, destination = None, None, None
 
@@ -139,7 +145,7 @@ def execute_step(step: Step, step_num: int, execution_count: int, loop_hardcap: 
             print(f"❌ Unknown step type: {type(step)}")
             return_code, action, destination = (FAILURE, "CONTINUE", None)
 
-    after_step_execution(step, step_num, return_code, action)
+    _after_hook(step, step_num, return_code, action)
 
     return (return_code, action, destination)
 
@@ -237,7 +243,9 @@ def run_workflow(
     dangerous: bool = False,
     loop_hardcap: int = DEFAULT_LOOP_HARDCAP,
     logs_dir: str | None = None,
-    repo_path: str | None = None
+    repo_path: str | None = None,
+    before_hook: Callable[[Step, int], None] | None = None,
+    after_hook: Callable[[Step, int, int, str], None] | None = None
 ) -> int:
     """
     Execute a workflow with explicit parameters.
@@ -248,6 +256,8 @@ def run_workflow(
         loop_hardcap: Maximum number of times a decision step can loop
         logs_dir: Directory to store logs (defaults to framework logs/)
         repo_path: Path to cd to for PROGRAM execution (None = run in current dir)
+        before_hook: Optional callback to run before each step execution
+        after_hook: Optional callback to run after each step execution
 
     Returns:
         Exit code (0 = success, 1 = failure)
@@ -289,7 +299,9 @@ def run_workflow(
             print(f"Model: {step.model.type}")
 
         # Execute the step
-        return_code, action, destination_step_name = execute_step(step, i, step_execution_count[i], loop_hardcap)
+        return_code, action, destination_step_name = execute_step(
+            step, i, step_execution_count[i], loop_hardcap, before_hook, after_hook
+        )
 
         if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")

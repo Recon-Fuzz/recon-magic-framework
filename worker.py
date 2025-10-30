@@ -15,6 +15,57 @@ from server.setup import clone_claude_config, clone_repository, setup_workspace
 from server.utils import parse_repo_info
 
 
+def worker_before_step_hook(step, step_num: int) -> None:
+    """
+    Worker-specific hook that runs before step execution.
+    This is where you can add API calls to update job status.
+
+    Args:
+        step: The workflow step being executed
+        step_num: The step number (1-indexed)
+    """
+    print(f"[Worker] Before step {step_num}: {step.name}")
+    print(f"Type: {step.type}")
+    if hasattr(step, 'model') and step.model:
+        print(f"Model: {step.model.type}")
+    print(f"Description: {step.description or 'N/A'}")
+
+    ## TODO: Add API call to update job step status
+    # Example:
+    # api_url = os.environ.get('WORKER_API_URL')
+    # bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+    # job_id = os.environ.get('WORKER_JOB_ID')
+    # if api_url and bearer_token and job_id:
+    #     update_job_step_status(api_url, bearer_token, job_id, step.name, "in_progress")
+
+
+def worker_after_step_hook(step, step_num: int, return_code: int, action: str) -> None:
+    """
+    Worker-specific hook that runs after step execution.
+    This is where you can add API calls to save step summaries or results.
+
+    Args:
+        step: The workflow step that was executed
+        step_num: The step number (1-indexed)
+        return_code: The exit code from step execution (0 = success)
+        action: The action taken (CONTINUE, STOP, JUMP_TO_STEP, etc.)
+    """
+    print(f"[Worker] After step {step_num}: {step.name}")
+    print(f"Return code: {return_code}, Action: {action}")
+
+    ## TODO: Add API call to save step summary/results
+    # Example:
+    # api_url = os.environ.get('WORKER_API_URL')
+    # bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+    # job_id = os.environ.get('WORKER_JOB_ID')
+    # if api_url and bearer_token and job_id:
+    #     save_step_summary(api_url, bearer_token, job_id, step_num, {
+    #         "name": step.name,
+    #         "return_code": return_code,
+    #         "action": action
+    #     })
+
+
 def start_job_listener(
     api_url: str,
     bearer_token: str,
@@ -94,19 +145,26 @@ def start_job_listener(
                 # Set environment variable for framework root
                 os.environ['RECON_FRAMEWORK_ROOT'] = str(Path(__file__).parent.resolve())
 
+                # Set worker context in environment for hooks to use
+                os.environ['WORKER_API_URL'] = api_url
+                os.environ['WORKER_BEARER_TOKEN'] = bearer_token
+                os.environ['WORKER_JOB_ID'] = str(job_id)
+
                 # Determine workflow file path
                 workflow_name = prompt  # TODO: API should provide workflow name, not full prompt
                 workflow_file = f".claude/workflows/{workflow_name}.json"
 
                 print(f"Executing workflow: {workflow_file}")
 
-                # Run the workflow
+                # Run the workflow with worker-specific hooks
                 workflow_result = run_workflow(
                     workflow_file=workflow_file,
                     dangerous=permissions_flag,
                     loop_hardcap=5,  # TODO: Make configurable via API
                     logs_dir="./logs",
-                    repo_path="./repo"
+                    repo_path="./repo",
+                    before_hook=worker_before_step_hook,
+                    after_hook=worker_after_step_hook
                 )
 
                 if workflow_result != 0:
