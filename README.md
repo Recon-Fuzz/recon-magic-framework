@@ -17,7 +17,7 @@ The Key can be from Openrouter!
 **CLI (recommended):**
 ```bash
 recon --workflow ./workflows/audit.json
-recon --workflow ./my-workflow.json --dangerous --cap 10 --logs ./logs
+recon --workflow ./my-workflow.json --dangerous --cap 10 --logs ./logs --repo ./target
 ```
 
 **Direct (simple):**
