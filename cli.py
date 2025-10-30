@@ -27,7 +27,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  recon --workflow ./workflows/audit.json
+  recon --workflow audit              # Uses framework's workflows/audit.json
+  recon --workflow workflow-loop      # Uses framework's workflows/workflow-loop.json
   recon --workflow ./my-workflow.json --dangerous --cap 10
   recon --workflow /absolute/path/to/workflow.json --logs ./custom-logs
 
@@ -39,7 +40,7 @@ Workflows can be run from any directory.
         '--workflow',
         type=str,
         required=True,
-        help='Path to workflow JSON file (relative or absolute)'
+        help='Workflow name (e.g. "audit") or path to workflow JSON file (relative or absolute)'
     )
 
     parser.add_argument(
@@ -76,14 +77,24 @@ Workflows can be run from any directory.
     # Resolve workflow file
     workflow_file = args.workflow
 
-    # If relative path, resolve it relative to current directory (not framework)
-    if not os.path.isabs(workflow_file):
-        workflow_file = os.path.abspath(workflow_file)
+    # If it's just a name (no path separators), look in framework workflows/
+    if os.sep not in workflow_file and '/' not in workflow_file:
+        # Look in framework's workflows directory
+        framework_workflow = framework_root / 'workflows' / f"{workflow_file}.json"
+        if framework_workflow.exists():
+            workflow_file = str(framework_workflow)
+        else:
+            print(f"❌ Error: Workflow '{workflow_file}.json' not found in framework workflows/")
+            sys.exit(1)
+    else:
+        # If relative path, resolve it relative to current directory (not framework)
+        if not os.path.isabs(workflow_file):
+            workflow_file = os.path.abspath(workflow_file)
 
-    # Check if workflow file exists
-    if not os.path.exists(workflow_file):
-        print(f"❌ Error: Workflow file not found: {workflow_file}")
-        sys.exit(1)
+        # Check if workflow file exists
+        if not os.path.exists(workflow_file):
+            print(f"❌ Error: Workflow file not found: {workflow_file}")
+            sys.exit(1)
 
     print(f"🎯 Target repo: {repo_root}")
     print(f"📋 Workflow: {workflow_file}")
