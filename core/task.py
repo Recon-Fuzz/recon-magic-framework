@@ -76,12 +76,14 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         return (SUCCESS, "CONTINUE", None)
 
     ## AI Models
+    # Get framework root for later use
+    framework_root = os.environ.get('RECON_FRAMEWORK_ROOT', '.')
+
     # Create logs directory - use custom logs dir if provided, otherwise framework logs/
     logs_dir_override = os.environ.get('RECON_LOGS_DIR')
     if logs_dir_override:
         logs_dir = Path(logs_dir_override)
     else:
-        framework_root = os.environ.get('RECON_FRAMEWORK_ROOT', '.')
         logs_dir = Path(framework_root) / "logs"
     logs_dir.mkdir(exist_ok=True)
 
