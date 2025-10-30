@@ -84,7 +84,10 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
     # Generate log filename with timestamp and step name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Sanitize step name: replace spaces with underscores and remove special characters
+    import re
     safe_step_name = step.name.lower().replace(" ", "_")
+    safe_step_name = re.sub(r'[^a-z0-9_-]', '', safe_step_name)
     log_file = logs_dir / f"{timestamp}_step{step_num}_{safe_step_name}.log"
 
     if step.model.type == ModelType.CLAUDE_CODE:
