@@ -1,5 +1,6 @@
 """
 CLI entry point for recon-magic framework.
+Use this when using recon-magic framework locally.
 """
 
 import os
