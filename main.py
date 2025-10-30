@@ -6,7 +6,7 @@ Use this when using recon-magic framework as a library.
 import json
 import sys
 from enum import Enum
-from typing import Annotated, Literal, Union
+from typing import Annotated, Union
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
