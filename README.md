@@ -6,6 +6,12 @@
 uv pip install pydantic
 ```
 
+## Setup
+
+Setup a .env with OPENAI_API_KEY
+
+The Key can be from Openrouter!
+
 ## Usage
 
 ```bash
