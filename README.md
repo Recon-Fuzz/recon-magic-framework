@@ -30,24 +30,23 @@ cd recon-magic-framework
 uv tool install --editable .
 ```
 
-This installs the `recon` command globally on your system.
+## Setup
+
+Setup a .env with OPENAI_API_KEY
+
+The Key can be from Openrouter!
 
 ## Usage
 
-### Basic Usage
-
-The `recon` command executes workflows on target repositories:
-
+**CLI (recommended):**
 ```bash
-# Navigate to your target repository (must be a git repo)
-cd /path/to/your/target-repo
+recon --workflow ./workflows/audit.json
+recon --workflow ./my-workflow.json --dangerous --cap 10 --logs ./logs
+```
 
-# Run the default workflow
-recon
-
-# Or specify a custom workflow file
-recon /path/to/workflow.json
-recon workflows/workflow_audit.json
+**Direct (simple):**
+```bash
+python main.py workflows/workflow.json
 ```
 
 **Important**: The command must be run from the root of a git repository.

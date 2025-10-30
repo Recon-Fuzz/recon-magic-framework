@@ -1,11 +1,14 @@
 """
 Main workflow execution module.
+Use this when using recon-magic framework as a library.
 """
 
+import argparse
 import json
+import os
 import sys
 from enum import Enum
-from typing import Annotated, Literal, Union
+from typing import Annotated, Union
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -21,8 +24,8 @@ load_dotenv()
 SUCCESS = 0
 FAILURE = 1
 
-# Loop hardcap to prevent infinite loops
-LOOP_HARDCAP = 5
+# Default loop hardcap to prevent infinite loops
+DEFAULT_LOOP_HARDCAP = 5
 
 
 class ModelType(str, Enum):
@@ -104,7 +107,7 @@ def after_step_execution(step: Step, step_num: int, return_code: int, action: st
     ## TODO: API Specification
     ## Likely POST jobs/:jobId/summaries, and it's an append only list of summaries.
 
-def execute_step(step: Step, step_num: int, execution_count: int) -> tuple[int, str, str | None]:
+def execute_step(step: Step, step_num: int, execution_count: int, loop_hardcap: int = DEFAULT_LOOP_HARDCAP) -> tuple[int, str, str | None]:
     """
     Execute a workflow step based on its step type.
 
@@ -112,6 +115,7 @@ def execute_step(step: Step, step_num: int, execution_count: int) -> tuple[int, 
         step: The step to execute
         step_num: The step number for logging
         execution_count: Number of times this step has been executed
+        loop_hardcap: Maximum number of times a decision step can loop
 
     Returns:
         tuple[int, str, str | None]: (Return code, Action, Destination step name)
@@ -122,8 +126,8 @@ def execute_step(step: Step, step_num: int, execution_count: int) -> tuple[int, 
     return_code, action, destination = None, None, None
 
     # Check if we've hit the loop hardcap for decision steps
-    if isinstance(step, DecisionStep) and execution_count > LOOP_HARDCAP:
-        print(f"⚠️  Loop hardcap ({LOOP_HARDCAP}) reached for step {step_num}, forcing CONTINUE")
+    if isinstance(step, DecisionStep) and execution_count > loop_hardcap:
+        print(f"⚠️  Loop hardcap ({loop_hardcap}) reached for step {step_num}, forcing CONTINUE")
         return_code, action, destination = (SUCCESS, "CONTINUE", None)
     else:
         # Switch on step.type first
@@ -228,13 +232,36 @@ def commit_changes(step: Step, step_num: int) -> None:
             print(f"  ❌ Failed to commit changes: {stderr}")
 
 
-def main(workflow_file: str = "workflow.json"):
+def run_workflow(
+    workflow_file: str,
+    dangerous: bool = False,
+    loop_hardcap: int = DEFAULT_LOOP_HARDCAP,
+    logs_dir: str | None = None,
+    repo_path: str | None = None
+) -> int:
     """
-    Execute the workflow.
+    Execute a workflow with explicit parameters.
 
     Args:
-        workflow_file: Path to the workflow JSON file (defaults to "workflow.json")
+        workflow_file: Path to the workflow JSON file
+        dangerous: Enable dangerous mode (skip permissions)
+        loop_hardcap: Maximum number of times a decision step can loop
+        logs_dir: Directory to store logs (defaults to framework logs/)
+        repo_path: Path to cd to for PROGRAM execution (None = run in current dir)
+
+    Returns:
+        Exit code (0 = success, 1 = failure)
     """
+    # Set environment variables for use by task/decision executors
+    if dangerous:
+        os.environ['RUNNER_ENV'] = 'production'
+
+    if logs_dir:
+        os.environ['RECON_LOGS_DIR'] = logs_dir
+
+    if repo_path:
+        os.environ['RECON_REPO_PATH'] = repo_path
+
     # Load the workflow
     workflow = load_workflow(workflow_file)
 
@@ -262,7 +289,7 @@ def main(workflow_file: str = "workflow.json"):
             print(f"Model: {step.model.type}")
 
         # Execute the step
-        return_code, action, destination_step_name = execute_step(step, i, step_execution_count[i])
+        return_code, action, destination_step_name = execute_step(step, i, step_execution_count[i], loop_hardcap)
 
         if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")
@@ -333,6 +360,29 @@ def main(workflow_file: str = "workflow.json"):
 
 
 if __name__ == "__main__":
-    # Parse command line arguments
-    workflow_file = sys.argv[1] if len(sys.argv) > 1 else "workflows/workflow.json"
-    exit(main(workflow_file))
+    # Simple entry point: python main.py workflow.json
+    # For full-featured CLI with flags, use: recon --workflow ...
+
+    from pathlib import Path
+
+    # Set framework root
+    os.environ['RECON_FRAMEWORK_ROOT'] = str(Path(__file__).parent.resolve())
+
+    # Parse single positional argument
+    if len(sys.argv) < 2:
+        print("Usage: python main.py <workflow_file>")
+        print("Example: python main.py workflows/audit.json")
+        print("\nFor advanced options, use: recon --workflow <file> [--dangerous] [--cap N] [--logs DIR] [--repo PATH]")
+        sys.exit(1)
+
+    workflow_file = sys.argv[1]
+
+    # Run with defaults
+    exit_code = run_workflow(
+        workflow_file=workflow_file,
+        dangerous=False,
+        loop_hardcap=DEFAULT_LOOP_HARDCAP,
+        logs_dir=None,
+        repo_path=None
+    )
+    sys.exit(exit_code)
