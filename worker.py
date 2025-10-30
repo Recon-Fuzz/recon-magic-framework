@@ -87,10 +87,31 @@ def start_job_listener(
                     print("Failed to clone Claude config")
                     continue
 
-                # TODO: Execute workflow using main.py
-                # This would involve importing and calling main.main() or running it as subprocess
-                print("TODO: Execute workflow")
-                ## TODO: ADD THE WORKFLOW PART
+                # Execute workflow using main.py
+                from pathlib import Path
+                from main import run_workflow
+
+                # Set environment variable for framework root
+                os.environ['RECON_FRAMEWORK_ROOT'] = str(Path(__file__).parent.resolve())
+
+                # Determine workflow file path
+                workflow_name = prompt  # TODO: API should provide workflow name, not full prompt
+                workflow_file = f".claude/workflows/{workflow_name}.json"
+
+                print(f"Executing workflow: {workflow_file}")
+
+                # Run the workflow
+                workflow_result = run_workflow(
+                    workflow_file=workflow_file,
+                    dangerous=permissions_flag,
+                    loop_hardcap=5,  # TODO: Make configurable via API
+                    logs_dir="./logs",
+                    repo_path="./repo"
+                )
+
+                if workflow_result != 0:
+                    print(f"Workflow execution failed with code {workflow_result}")
+                    continue
 
                 # Create GitHub repo for results
                 timestamp = int(time.time())
