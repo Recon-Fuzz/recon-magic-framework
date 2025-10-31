@@ -52,18 +52,22 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
             - For task steps, destination_step_name is always None
     """
 
-    ## NOTE: ./ for programs within this code, PATH/W/e for relative to the pwd. Just the name to run cli stuff, e.g. echidna.
+    ## NOTE: Use ${RECON_FRAMEWORK_ROOT} to reference framework programs
+    ## Example: ${RECON_FRAMEWORK_ROOT}/programs/my_script.py
     if step.model.type == ModelType.PROGRAM:
-        # Resolve ./ paths to framework root
         command = step.prompt
         framework_root = os.environ.get('RECON_FRAMEWORK_ROOT')
 
-        if framework_root and './' in command:
-            # Only process if command contains ./ references
-            # Use simple string replacement to avoid breaking shell operators
-            command = command.replace('./', str(Path(framework_root)) + '/')
+        # Expand ${RECON_FRAMEWORK_ROOT} placeholder
+        if framework_root and '${RECON_FRAMEWORK_ROOT}' in command:
+            command = command.replace('${RECON_FRAMEWORK_ROOT}', framework_root)
 
-        # Run the program (CWD remains in target repo)
+        # If repo_path is set, prefix command to cd there first
+        repo_path = os.environ.get('RECON_REPO_PATH')
+        if repo_path:
+            command = f"cd {repo_path} && {command}"
+
+        # Run the program
         result = subprocess.run(
             command,
             shell=True,
@@ -72,9 +76,13 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         return (SUCCESS, "CONTINUE", None)
 
     ## AI Models
-    # Create logs directory in framework, not target repo
-    framework_root = os.environ.get('RECON_FRAMEWORK_ROOT', '.')
-    logs_dir = Path(framework_root) / "logs"
+    # Create logs directory - use custom logs dir if provided, otherwise framework logs/
+    logs_dir_override = os.environ.get('RECON_LOGS_DIR')
+    if logs_dir_override:
+        logs_dir = Path(logs_dir_override)
+    else:
+        framework_root = os.environ.get('RECON_FRAMEWORK_ROOT', '.')
+        logs_dir = Path(framework_root) / "logs"
     logs_dir.mkdir(exist_ok=True)
 
     # Build the command with extended timeouts and streaming output

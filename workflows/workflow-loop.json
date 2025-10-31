@@ -5,7 +5,7 @@
       "name": "Run the Counter",
       "type": "task",
       "description": "Issues Generation",
-      "prompt": "uv run ./programs/increase_counter.py",
+      "prompt": "uv run ${RECON_FRAMEWORK_ROOT}/programs/increase_counter.py",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
