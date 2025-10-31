@@ -14,6 +14,24 @@
       "shouldCommitChanges": true
     },
     {
+      "type": "decision",
+      "name": "Check that testing_priority.md exists",
+      "description": "Confirms that the previous step generated a testing_priority.md file ",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "testing_priority.md "
+      },
+      "decision": [
+        {
+          "operator": "neq",
+          "value": 1,
+          "action": "REPEAT_PREVIOUS_STEP"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+    {
       "name": "Phase 1: Identify Contracts to Cover",
       "type": "task",
       "description": "Determine which contracts need full coverage by analyzing Setup.sol and contract dependencies",
@@ -26,24 +44,18 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Contracts Identification Check",
       "type": "decision",
-      "description": "Check if contracts-to-cover.md was successfully created",
-      "mode": "READ_FILE",
+      "name": "Check that contracts-to-cover.md exists",
+      "description": "Confirms that the previous step generated a contracts-to-cover.md file ",
+      "mode": "FILE_EXISTS",
       "modeInfo": {
-        "fileName": "magic/coverage/contracts-to-cover.md"
+        "fileName": "testing_priority.md "
       },
       "decision": [
         {
-          "operator": "eq",
-          "value": 0,
-          "action": "STOP",
-          "NOTE": "Stop if contracts-to-cover.md doesn't exist - Phase 1 failed"
-        },
-        {
-          "operator": "eq",
+          "operator": "neq",
           "value": 1,
-          "action": "CONTINUE"
+          "action": "REPEAT_PREVIOUS_STEP"
         }
       ],
       "shouldCreateSummary": false,
@@ -74,6 +86,24 @@
       "shouldCommitChanges": true
     },
     {
+      "type": "decision",
+      "name": "Rerun prevoius phase if handlers_missing_covg.md exists",
+      "description": "Confirms if the previous step generated a handlers_missing_covg.md file and reruns the phase of generating unit tests if so",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "handlers_missing_covg.md"
+      },
+      "decision": [
+        {
+          "operator": "neq",
+          "value": 1,
+          "action": "REPEAT_PREVIOUS_STEP"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+    {
       "name": "Phase 4: Create Clamped Handlers",
       "type": "task",
       "description": "Implement clamped handlers to improve coverage for functions in handlers_missing_covg.md",
@@ -98,30 +128,34 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Coverage Completion Check",
       "type": "decision",
-      "description": "Check if coverage is complete or needs another iteration",
-      "mode": "READ_FILE",
+      "name": "Rerun previous phase if remaining-uncovered.md exists",
+      "description": "Confirms if the previous step generated a remaining-uncovered.md file and reruns the phase of generating unit tests if so",
+      "mode": "FILE_EXISTS",
       "modeInfo": {
-        "fileName": "COVERAGE_COMPLETE.md"
+        "fileName": "remaining-uncovered.md"
       },
       "decision": [
         {
-          "operator": "eq",
+          "operator": "neq",
           "value": 1,
-          "action": "CONTINUE",
-          "NOTE": "Coverage complete, proceed to final summary"
-        },
-        {
-          "operator": "eq",
-          "value": 0,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 4: Create Clamped Handlers",
-          "NOTE": "Coverage incomplete, call Phase 4 agent outlined at ./.claude/agents/coverage-phase-4.md with updated remaining-uncovered.md"
+          "action": "REPEAT_PREVIOUS_STEP"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
+    },
+    {
+      "type": "task",
+      "name": "Run Linting Agent",
+      "description": "Runs the linting agent to determine if the suite was setup according to best practices",
+      "prompt": "You are provided an agent definition at ./.claude/agents/chimera-test-linter.md. Exclusively run the coverage-phase-5 agent using the Task tool.",
+      "model": {
+        "type": "INHERIT",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
     }
   ]
 }
