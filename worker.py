@@ -31,12 +31,16 @@ def worker_before_step_hook(step, step_num: int) -> None:
     print(f"Description: {step.description or 'N/A'}")
 
     ## TODO: Add API call to update job step status
+
     # Example:
     # api_url = os.environ.get('WORKER_API_URL')
     # bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
     # job_id = os.environ.get('WORKER_JOB_ID')
     # if api_url and bearer_token and job_id:
     #     update_job_step_status(api_url, bearer_token, job_id, step.name, "in_progress")
+
+    ## Set Status for the step.
+    ## Maybe set Repo on the first loop if that is not already done somewhere else.
 
 
 def worker_after_step_hook(step, step_num: int, return_code: int, action: str) -> None:
@@ -52,6 +56,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str) -
     """
     print(f"[Worker] After step {step_num}: {step.name}")
     print(f"Return code: {return_code}, Action: {action}")
+
+    ## Commit and summary | Just do Local Commit for now.
 
     ## TODO: Add API call to save step summary/results
     # Example:
