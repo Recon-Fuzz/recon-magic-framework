@@ -40,13 +40,13 @@ The Key can be from Openrouter!
 
 **CLI (recommended):**
 ```bash
-recon --workflow ./workflows/audit.json
-recon --workflow ./my-workflow.json --dangerous --cap 10 --logs ./logs
+recon --workflow audit
+recon --workflow workflow-loop --dangerous --cap 10 --logs ./logs
 ```
 
 **Direct (simple):**
 ```bash
-python main.py workflows/workflow.json
+python main.py workflow
 ```
 
 **Important**: The command must be run from the root of a git repository.
@@ -180,7 +180,7 @@ Then open http://localhost:8000/studio/ in your browser. The editor auto-syncs w
 ### Security Audit Workflow
 
 ```bash
-recon workflows/workflow_audit.json
+recon workflow_audit
 ```
 
 This runs a multi-phase smart contract audit with decision points to stop early if critical issues are found.
@@ -188,7 +188,7 @@ This runs a multi-phase smart contract audit with decision points to stop early 
 ### Echidna Fuzzing Workflow
 
 ```bash
-recon workflows/workflow-echidna-example.json
+recon workflow-echidna-example
 ```
 
 Automated fuzzing setup and execution workflow.
@@ -259,4 +259,4 @@ The workflow schema is defined using Pydantic models in `main.py` and TypeScript
 
 ## License
 
-[Your License Here]
+GPL-2.0
