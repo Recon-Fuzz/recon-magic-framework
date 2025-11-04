@@ -1,5 +1,7 @@
 # docker build -t recon-magic-framework .
 # docker run -it recon-magic-framework /bin/bash
+
+# docker run -it -v .:/source:ro recon-magic-framework bash -c "cp -r /source /workspace && /bin/bash"
 FROM python:3.12-slim
 
 # Install Node.js and Go
