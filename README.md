@@ -257,6 +257,20 @@ The framework automatically:
 
 The workflow schema is defined using Pydantic models in `main.py` and TypeScript types in `type.ts` for the visual editor.
 
+## Usage
+
+### Programmatic
+
+use `main`
+
+### Cli
+
+use `cli`
+
+### For Server
+
+use `worker`
+
 ## License
 
 GPL-2.0

@@ -3,7 +3,6 @@ Main workflow execution module.
 Use this when using recon-magic framework as a library.
 """
 
-import argparse
 import json
 import os
 import sys
