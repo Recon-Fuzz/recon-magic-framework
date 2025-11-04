@@ -1,0 +1,40 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - '.github/workflows/docker-build-push.yml'
+      - '**/*.py'
+      - 'pyproject.toml'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 600
+
+      - name: Build Docker image
+        run: docker build -t registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:$(echo $GITHUB_SHA | head -c7) .
+
+      - name: Tag as latest
+        run: docker tag registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:$(echo $GITHUB_SHA | head -c7) registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:latest
+
+      - name: Push image to DigitalOcean Container Registry
+        run: |
+          docker push registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:$(echo $GITHUB_SHA | head -c7)
+          docker push registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:latest
