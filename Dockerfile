@@ -1,15 +1,42 @@
-# Build: docker build -t recon-magic-framework .
-# Run interactively: docker run -it recon-magic-framework /bin/bash
+# docker build -t recon-magic-framework .
+# docker run -it recon-magic-framework /bin/bash
 FROM python:3.12-slim
 
-# Install Node.js
-RUN apt-get update && apt-get install -y curl && \
+# Install Node.js and Go
+RUN apt-get update && apt-get install -y curl git wget ripgrep && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
+    wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz && \
+    rm go1.21.5.linux-amd64.tar.gz && \
     rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/root/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+# Install Homebrew
+RUN useradd -m -s /bin/bash linuxbrew && \
+    echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+USER linuxbrew
+RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
+RUN brew install echidna
+USER root
 
 # Install UV
 RUN pip install uv
+
+# Install Node.js packages globally
+RUN npm install -g @anthropic-ai/claude-code opencode-ai
+
+# Install Medusa fuzzer
+RUN go install github.com/crytic/medusa@latest
+
+# Install Foundry
+RUN curl -L https://foundry.paradigm.xyz | bash
+ENV PATH="/root/.foundry/bin:${PATH}"
+RUN foundryup
 
 # Set working directory
 WORKDIR /app
@@ -20,6 +47,5 @@ COPY . .
 # Install dependencies and build project
 RUN uv tool install --editable .
 
-## TOOD: MOve to something else
-
-
+# Set working directory to /tmp for user operations
+WORKDIR /tmp
