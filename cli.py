@@ -4,8 +4,10 @@ Use this when using recon-magic framework locally.
 """
 
 import argparse
+import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -21,26 +23,48 @@ def main():
 
     Usage:
         recon --workflow <workflow_file> [options]
+        recon --prompt "your prompt" [options]
     """
     parser = argparse.ArgumentParser(
-        description='Execute a recon-magic workflow',
+        description='Execute a recon-magic workflow or direct prompt',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Run a workflow by name
   recon --workflow audit              # Uses framework's workflows/audit.json
   recon --workflow workflow-loop      # Uses framework's workflows/workflow-loop.json
   recon --workflow ./my-workflow.json --dangerous --cap 10
   recon --workflow /absolute/path/to/workflow.json --logs ./custom-logs
 
+  # Run a direct prompt
+  recon --prompt "Analyze this code for security issues" --dangerous
+  recon --prompt "Add tests" --model-type CLAUDE_CODE --repo ./my-repo
+  recon --prompt "npm run build" --model-type PROGRAM
+
 Workflows can be run from any directory.
         """
     )
 
-    parser.add_argument(
+    # Mutually exclusive group for workflow vs prompt
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument(
         '--workflow',
         type=str,
-        required=True,
         help='Workflow name (e.g. "audit") or path to workflow JSON file (relative or absolute)'
+    )
+
+    mode_group.add_argument(
+        '--prompt',
+        type=str,
+        help='Direct prompt to execute (creates a single-step workflow)'
+    )
+
+    parser.add_argument(
+        '--model-type',
+        type=str,
+        default='CLAUDE_CODE',
+        choices=['CLAUDE_CODE', 'OPENCODE', 'PROGRAM'],
+        help='Model type for direct prompt mode (default: CLAUDE_CODE)'
     )
 
     parser.add_argument(
@@ -83,30 +107,59 @@ Workflows can be run from any directory.
     # Set environment variable for framework root so other modules can resolve paths
     os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
 
-    # Resolve workflow file
-    workflow_file = args.workflow
+    # Determine workflow file
+    if args.prompt:
+        # Direct prompt mode - create dynamic workflow
+        workflow = {
+            "name": "Direct Prompt Execution",
+            "steps": [{
+                "type": "task",
+                "name": "Execute Direct Prompt",
+                "description": f"Direct prompt execution with {args.model_type}",
+                "prompt": args.prompt,
+                "model": {
+                    "type": args.model_type,
+                    "model": "inherit"
+                },
+                "shouldCreateSummary": False,
+                "shouldCommitChanges": True
+            }]
+        }
 
-    # If it's just a name (no path separators), look in framework workflows/
-    if os.sep not in workflow_file and '/' not in workflow_file:
-        # Look in framework's workflows directory
-        framework_workflow = framework_root / 'workflows' / f"{workflow_file}.json"
-        if framework_workflow.exists():
-            workflow_file = str(framework_workflow)
-        else:
-            print(f"❌ Error: Workflow '{workflow_file}.json' not found in framework workflows/")
-            sys.exit(1)
+        # Write to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(workflow, f, indent=2)
+            workflow_file = f.name
+
+        print(f"🎯 Target repo: {repo_root}")
+        print(f"💬 Direct Prompt Mode - Model: {args.model_type}")
+        print(f"📝 Prompt: {args.prompt[:100]}..." if len(args.prompt) > 100 else f"📝 Prompt: {args.prompt}")
     else:
-        # If relative path, resolve it relative to current directory (not framework)
-        if not os.path.isabs(workflow_file):
-            workflow_file = os.path.abspath(workflow_file)
+        # Workflow mode - resolve workflow file
+        workflow_file = args.workflow
 
-        # Check if workflow file exists
-        if not os.path.exists(workflow_file):
-            print(f"❌ Error: Workflow file not found: {workflow_file}")
-            sys.exit(1)
+        # If it's just a name (no path separators), look in framework workflows/
+        if os.sep not in workflow_file and '/' not in workflow_file:
+            # Look in framework's workflows directory
+            framework_workflow = framework_root / 'workflows' / f"{workflow_file}.json"
+            if framework_workflow.exists():
+                workflow_file = str(framework_workflow)
+            else:
+                print(f"❌ Error: Workflow '{workflow_file}.json' not found in framework workflows/")
+                sys.exit(1)
+        else:
+            # If relative path, resolve it relative to current directory (not framework)
+            if not os.path.isabs(workflow_file):
+                workflow_file = os.path.abspath(workflow_file)
 
-    print(f"🎯 Target repo: {repo_root}")
-    print(f"📋 Workflow: {workflow_file}")
+            # Check if workflow file exists
+            if not os.path.exists(workflow_file):
+                print(f"❌ Error: Workflow file not found: {workflow_file}")
+                sys.exit(1)
+
+        print(f"🎯 Target repo: {repo_root}")
+        print(f"📋 Workflow: {workflow_file}")
+
     if args.dangerous:
         print(f"⚠️  Dangerous mode: ENABLED")
     if args.logs:
