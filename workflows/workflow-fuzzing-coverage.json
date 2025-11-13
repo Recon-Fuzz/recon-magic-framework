@@ -7,7 +7,7 @@
       "description": "Identify all contracts in the current repository that must always be fully covered by the fuzzer",
       "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify all contracts that must be covered.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -19,7 +19,7 @@
       "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
       "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to identify all touched contracts that we care about.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -31,7 +31,7 @@
       "description": "Identify values that could be in the Echidna fuzzer's dictionary",
       "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to identify possible dictionary values.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -43,7 +43,7 @@
       "description": "Implement clamped function handlers to achieve full coverage on the system setup",
       "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to implement clamped handlers",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -55,7 +55,7 @@
       "description": "Run Echidna and establish a base level of coverage",
       "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to establish a baseline level of fuzzer coverage",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -67,7 +67,7 @@
       "description": "Assess clamped handlers and determine if more iterations are needed",
       "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to determine if the clamped handlers have been implemented correctly",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -79,7 +79,7 @@
       "description": "Evaluate the coverage report from the latest run of Echidna to determine if full coverage was achieved",
       "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to determine if the fuzzer has covered all the functions of interest",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
