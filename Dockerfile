@@ -47,7 +47,23 @@ WORKDIR /app
 COPY . .
 
 # Install dependencies and build project
-RUN uv tool install --editable .
+RUN uv pip install --system --break-system-packages -e .
+
+# Create non-root user for running commands
+RUN useradd -m -s /bin/bash reconuser && \
+    mkdir -p /tmp && \
+    chown -R reconuser:reconuser /tmp /app
+
+# Switch to non-root user
+USER reconuser
 
 # Set working directory to /tmp for user operations
 WORKDIR /tmp
+
+# Environment variables (override at runtime with -e flag)
+ENV ANTHROPIC_API_KEY=""
+ENV OPENROUTER_API_KEY=""
+
+## Run a command to clone a project
+## Clone some prompts
+## Run some tests.
