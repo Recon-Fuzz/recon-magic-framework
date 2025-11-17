@@ -106,8 +106,30 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         # We'll write the parser script to a temp file to avoid quoting issues
         parser_script_file = Path(framework_root) / 'log_formatters' / 'claude_code.py'
 
+        # Process prompt - if it references an agent file, read and inject its content
+        prompt = step.prompt
+        import re
+        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
+        if agent_file_match:
+            # Handle both 'agent' and 'agents' directory names
+            agent_dir = 'agents' if agent_file_match.group(1) == '.claude' else 'agent'
+            agent_file_path = Path(framework_root) / agent_file_match.group(1) / agent_dir / f"{agent_file_match.group(2)}.md"
+            if agent_file_path.exists():
+                print(f"  Loading agent definition from: {agent_file_path}")
+                agent_content = agent_file_path.read_text()
+                # Extract content after frontmatter (between --- markers)
+                parts = agent_content.split('---', 2)
+                if len(parts) >= 3:
+                    # Use everything after the second ---
+                    prompt = parts[2].strip()
+                else:
+                    # No frontmatter, use full content
+                    prompt = agent_content
+            else:
+                print(f"  ⚠ Agent file not found: {agent_file_path}")
+
         cmd = f"""claude {skip_permissions} \
--p {json.dumps(step.prompt)} \
+-p {shlex.quote(json.dumps(prompt))} \
 --max-turns 9999999999 \
 --output-format stream-json \
 --verbose 2>&1 | tee {log_file} | python3 -u {parser_script_file}"""
@@ -127,8 +149,32 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
     if step.model.type == ModelType.OPENCODE:
         parser_script_file = Path(framework_root) / 'log_formatters' / 'opencode.py'
 
+        # Default model - can be overridden via OPENCODE_MODEL env var
+        model = os.environ.get('OPENCODE_MODEL', 'openrouter/anthropic/claude-sonnet-4.5')
+
+        # Process prompt - if it references an agent file, read and inject its content
+        prompt = step.prompt
+        import re
+        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agent/([^.\s]+)\.md', prompt)
+        if agent_file_match:
+            agent_file_path = Path(framework_root) / agent_file_match.group(1) / 'agent' / f"{agent_file_match.group(2)}.md"
+            if agent_file_path.exists():
+                print(f"  Loading agent definition from: {agent_file_path}")
+                agent_content = agent_file_path.read_text()
+                # Extract content after frontmatter (between --- markers)
+                parts = agent_content.split('---', 2)
+                if len(parts) >= 3:
+                    # Use everything after the second ---
+                    prompt = parts[2].strip()
+                else:
+                    # No frontmatter, use full content
+                    prompt = agent_content
+            else:
+                print(f"  ⚠ Agent file not found: {agent_file_path}")
+
         cmd = f"""opencode run  \
-{json.dumps(step.prompt)} \
+{shlex.quote(json.dumps(prompt))} \
+-m {model} \
 --format json | tee {log_file} | python3 -u {parser_script_file}"""
 
         result = subprocess.run(
