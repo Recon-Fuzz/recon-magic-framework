@@ -5,7 +5,7 @@
       "name": "Phase 0: Identifying Contracts to Cover",
       "type": "task",
       "description": "Identify all contracts in the current repository that must always be fully covered by the fuzzer",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify all contracts that must be covered.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify all contracts that must be covered.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -17,7 +17,7 @@
       "name": "Phase 1: Identifying Touched Functions",
       "type": "task",
       "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to identify all touched contracts that we care about.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to identify all touched contracts that we care about.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -29,7 +29,7 @@
       "name": "Phase 2: Identifying Dictionary Values",
       "type": "task",
       "description": "Identify values that could be in the Echidna fuzzer's dictionary",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to identify possible dictionary values.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to identify possible dictionary values.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -41,7 +41,7 @@
       "name": "Phase 3: Create Clamped Handler",
       "type": "task",
       "description": "Implement clamped function handlers to achieve full coverage on the system setup",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to implement clamped handlers",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to implement clamped handlers",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -53,7 +53,7 @@
       "name": "Phase 4: Initial Coverage",
       "type": "task",
       "description": "Run Echidna and establish a base level of coverage",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to establish a baseline level of fuzzer coverage",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to establish a baseline level of fuzzer coverage",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -65,7 +65,7 @@
       "name": "Phase 5: Handler Evaluation",
       "type": "task",
       "description": "Assess clamped handlers and determine if more iterations are needed",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to determine if the clamped handlers have been implemented correctly",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to determine if the clamped handlers have been implemented correctly",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -77,7 +77,7 @@
       "name": "Phase 6: Evaluate Coverage",
       "type": "task",
       "description": "Evaluate the coverage report from the latest run of Echidna to determine if full coverage was achieved",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to determine if the fuzzer has covered all the functions of interest",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to determine if the fuzzer has covered all the functions of interest",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -99,7 +99,7 @@
           "value": 1,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Phase 3: Create Clamped Handler",
-          "NOTE": "Coverage incomplete, call Phase 3 agent outlined at ./.claude/agents/coverage-phase-3.md to fix the clamped handler implementations and increase coverage"
+          "NOTE": "Coverage incomplete, call Phase 3 agent outlined at ./.opencode/agent/coverage-phase-3.md to fix the clamped handler implementations and increase coverage"
         },
         {
           "operator": "eq",
@@ -113,4 +113,3 @@
     }
   ]
 }
-// Todo: add shortcut phase that can be used for achieving coverage for complex required call sequences
