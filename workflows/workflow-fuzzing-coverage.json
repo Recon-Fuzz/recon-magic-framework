@@ -99,7 +99,7 @@
           "value": 1,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Phase 3: Create Clamped Handler",
-          "NOTE": "Coverage incomplete, call Phase 3 agent outlined at ./.opencode/agent/coverage-phase-3.md to fix the clamped handler implementations and increase coverage"
+          "NOTE": "Coverage incomplete, call Phase 3 agent outlined at ./.opencode/agent/coverage-phase-3.md to fix the clamped handler implementations or add additional clamped handlers to achieve coverage over functions that aren't currently covered in functions-missing-covg.json"
         },
         {
           "operator": "eq",
