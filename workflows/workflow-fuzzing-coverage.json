@@ -26,10 +26,10 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 2: Identifying Dictionary Values",
+      "name": "Phase 2: Identifying Meaningful Values",
       "type": "task",
-      "description": "Identify values that could be in the Echidna fuzzer's dictionary",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to identify possible dictionary values.",
+      "description": "Identify values that are useful for clamping target function handlers with",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to identify values useful for clamping.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -38,7 +38,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 3: Create Clamped Handler",
+      "name": "Phase 3: Creating Clamped Handlers",
       "type": "task",
       "description": "Implement clamped function handlers to achieve full coverage on the system setup",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to implement clamped handlers",
@@ -50,10 +50,10 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 4: Initial Coverage",
+      "name": "Phase 4: Creating Shortcut Handlers ",
       "type": "task",
-      "description": "Run Echidna and establish a base level of coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to establish a baseline level of fuzzer coverage",
+      "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to implement shortcut functions",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -62,10 +62,10 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 5: Handler Evaluation",
+      "name": "Phase 5: Initial Coverage With Fuzzer",
       "type": "task",
-      "description": "Assess clamped handlers and determine if more iterations are needed",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to determine if the clamped handlers have been implemented correctly",
+      "description": "Run Echidna and establish a base level of coverage",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-5 agent to establish a baseline level of fuzzer coverage",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -76,8 +76,8 @@
     {
       "name": "Phase 6: Evaluate Coverage",
       "type": "task",
-      "description": "Evaluate the coverage report from the latest run of Echidna to determine if full coverage was achieved",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to determine if the fuzzer has covered all the functions of interest",
+      "description": "Evaluate the coverage report from the latest run of Echidna",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to evaluate the coverage report from the latest run of Echidna",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -98,7 +98,7 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 3: Create Clamped Handler",
+          "destinationStep": "Phase 3: Creating Clamped Handlers",
           "NOTE": "Coverage incomplete, call Phase 3 agent outlined at ./.opencode/agent/coverage-phase-3.md to fix the clamped handler implementations or add additional clamped handlers to achieve coverage over functions that aren't currently covered in functions-missing-covg.json"
         },
         {
