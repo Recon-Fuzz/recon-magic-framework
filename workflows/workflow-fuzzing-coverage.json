@@ -65,7 +65,7 @@
       "name": "Phase 5: Initial Coverage With Fuzzer",
       "type": "task",
       "description": "Run Echidna and establish a base level of coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-5 agent to establish a baseline level of fuzzer coverage",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to establish a baseline level of fuzzer coverage",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
