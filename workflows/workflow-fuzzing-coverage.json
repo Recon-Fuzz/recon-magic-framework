@@ -89,7 +89,7 @@
       "name": "Coverage Completion Check",
       "type": "decision",
       "description": "Check if coverage is complete or needs another iteration",
-      "mode": "READ_FILE",
+      "mode": "FILE_EXISTS",
       "modeInfo": {
         "fileName": "functions-missing-covg.json"
       },
@@ -99,13 +99,14 @@
           "value": 1,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Phase 3: Creating Clamped Handlers",
-          "NOTE": "Coverage incomplete, call Phase 3 agent outlined at ./.opencode/agent/coverage-phase-3.md to fix the clamped handler implementations or add additional clamped handlers to achieve coverage over functions that aren't currently covered in functions-missing-covg.json"
+          "NOTE": "Coverage incomplete, jump back to Phase 3 to fix clamped handlers"
         },
         {
           "operator": "eq",
           "value": 0,
-          "action": "CONTINUE",
-          "NOTE": "Coverage complete, exit"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 6: Evaluate Coverage",
+          "NOTE": "No missing functions file found, re-run Phase 6 to verify coverage evaluation (will loop 3 times when workflow run with --cap 3)"
         }
       ],
       "shouldCreateSummary": false,
