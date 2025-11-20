@@ -128,8 +128,12 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
             else:
                 print(f"  ⚠ Agent file not found: {agent_file_path}")
 
-        cmd = f"""claude {skip_permissions} \
--p {shlex.quote(json.dumps(prompt))} \
+        # If repo_path is set, prefix command to cd there first
+        repo_path = os.environ.get('RECON_REPO_PATH')
+        cd_prefix = f"cd {repo_path} && " if repo_path else ""
+
+        cmd = f"""{cd_prefix}claude {skip_permissions} \
+-p {shlex.quote(prompt)} \
 --max-turns 9999999999 \
 --output-format stream-json \
 --verbose 2>&1 | tee {log_file} | python3 -u {parser_script_file}"""
@@ -172,8 +176,12 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
             else:
                 print(f"  ⚠ Agent file not found: {agent_file_path}")
 
-        cmd = f"""opencode run  \
-{shlex.quote(json.dumps(prompt))} \
+        # If repo_path is set, prefix command to cd there first
+        repo_path = os.environ.get('RECON_REPO_PATH')
+        cd_prefix = f"cd {repo_path} && " if repo_path else ""
+
+        cmd = f"""{cd_prefix}opencode run  \
+{shlex.quote(prompt)} \
 -m {model} \
 --format json | tee {log_file} | python3 -u {parser_script_file}"""
 
