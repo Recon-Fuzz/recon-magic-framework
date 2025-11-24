@@ -86,69 +86,6 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Coverage Completion Check",
-      "type": "decision",
-      "description": "Check if coverage is complete or needs another iteration",
-      "mode": "READ_FILE_WITH_MODEL_DIGEST",
-      "modeInfo": {
-        "fileName": "functions-missing-covg-*.json",
-        "prompt": "Analyze the functions-missing-covg file. If the file contains an empty object {} or has no function entries, return 0 (coverage complete). If the file contains any functions with missing coverage, return 1 (coverage incomplete)."
-      },
-      "model": {
-        "type": "OPENCODE",
-        "model": "inherit"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": 1,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 3: Creating Clamped Handlers",
-          "NOTE": "Coverage incomplete, jump back to Phase 3 to fix clamped handlers"
-        },
-        {
-          "operator": "eq",
-          "value": 0,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 6: Evaluate Coverage",
-          "NOTE": "No missing functions file found, re-run Phase 6 to verify coverage evaluation (will loop 3 times when workflow run with --cap 3)"
-        }
-      ],
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Missing Coverage File Check",
-      "type": "decision",
-      "description": "Check if functions-missing-covg-*.json is non-empty to determine if we should improve coverage",
-      "mode": "READ_FILE_WITH_MODEL_DIGEST",
-      "modeInfo": {
-        "fileName": "functions-missing-covg-*.json",
-        "prompt": "Analyze the functions-missing-covg file. If the file contains an empty object {} or has no function entries, return 0 (no missing coverage). If the file contains any functions with missing coverage, return 1 (has missing coverage)."
-      },
-      "model": {
-        "type": "OPENCODE",
-        "model": "inherit"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": 1,
-          "action": "CONTINUE",
-          "destinationStep": "Phase 7: Improving Coverage",
-          "NOTE": "Missing coverage file exists, jump to improving coverage step"
-        },
-        {
-          "operator": "eq",
-          "value": 0,
-          "action": "STOP",
-          "NOTE": "No missing coverage file, workflow complete"
-        }
-      ],
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": true
-    },
-    {
       "name": "Phase 7: Improving Coverage",
       "type": "task",
       "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
@@ -187,15 +124,10 @@
     {
       "name": "Coverage Improvement Iteration Check",
       "type": "decision",
-      "description": "Check if more coverage improvements are needed",
-      "mode": "READ_FILE_WITH_MODEL_DIGEST",
+      "description": "Force loop back to Phase 7 to continue improving coverage",
+      "mode": "FILE_EXISTS",
       "modeInfo": {
-        "fileName": "functions-missing-covg-*.json",
-        "prompt": "Analyze the functions-missing-covg file. If the file contains an empty object {} or has no function entries, return 0 (no missing coverage). If the file contains any functions with missing coverage, return 1 (has missing coverage)."
-      },
-      "model": {
-        "type": "OPENCODE",
-        "model": "inherit"
+        "fileName": "functions-missing-covg-*.json"
       },
       "decision": [
         {
@@ -203,13 +135,14 @@
           "value": 1,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Phase 7: Improving Coverage",
-          "NOTE": "Missing coverage file still exists, jump back to Phase 7 for another iteration"
+          "NOTE": "Loop back to Phase 7"
         },
         {
           "operator": "eq",
           "value": 0,
-          "action": "STOP",
-          "NOTE": "No missing coverage file, workflow complete - full coverage achieved"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 7: Improving Coverage",
+          "NOTE": "Loop back to Phase 7"
         }
       ],
       "shouldCreateSummary": false,
