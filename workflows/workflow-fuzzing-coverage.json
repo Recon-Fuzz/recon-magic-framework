@@ -153,8 +153,8 @@
     {
       "name": "Phase 8: Additional Coverage With Fuzzer",
       "type": "task",
-      "description": "Run Echidna and establish if latest changes improved coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to determine if coverage has improved",
+      "description": "Run Echidna and save the latest run",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to generate a new coverage report",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
