@@ -89,9 +89,14 @@
       "name": "Coverage Completion Check",
       "type": "decision",
       "description": "Check if coverage is complete or needs another iteration",
-      "mode": "FILE_EXISTS",
+      "mode": "READ_FILE_WITH_MODEL_DIGEST",
       "modeInfo": {
-        "fileName": "functions-missing-covg.json"
+        "fileName": "functions-missing-covg-*.json",
+        "prompt": "Analyze the functions-missing-covg file. If the file contains an empty object {} or has no function entries, return 0 (coverage complete). If the file contains any functions with missing coverage, return 1 (coverage incomplete)."
+      },
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
       },
       "decision": [
         {
@@ -115,10 +120,15 @@
     {
       "name": "Missing Coverage File Check",
       "type": "decision",
-      "description": "Check if functions-missing-covg.json exists to determine if we should improve coverage",
-      "mode": "FILE_EXISTS",
+      "description": "Check if functions-missing-covg-*.json is non-empty to determine if we should improve coverage",
+      "mode": "READ_FILE_WITH_MODEL_DIGEST",
       "modeInfo": {
-        "fileName": "functions-missing-covg.json"
+        "fileName": "functions-missing-covg-*.json",
+        "prompt": "Analyze the functions-missing-covg file. If the file contains an empty object {} or has no function entries, return 0 (no missing coverage). If the file contains any functions with missing coverage, return 1 (has missing coverage)."
+      },
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
       },
       "decision": [
         {
@@ -178,9 +188,14 @@
       "name": "Coverage Improvement Iteration Check",
       "type": "decision",
       "description": "Check if more coverage improvements are needed",
-      "mode": "FILE_EXISTS",
+      "mode": "READ_FILE_WITH_MODEL_DIGEST",
       "modeInfo": {
-        "fileName": "functions-missing-covg.json"
+        "fileName": "functions-missing-covg-*.json",
+        "prompt": "Analyze the functions-missing-covg file. If the file contains an empty object {} or has no function entries, return 0 (no missing coverage). If the file contains any functions with missing coverage, return 1 (has missing coverage)."
+      },
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
       },
       "decision": [
         {
