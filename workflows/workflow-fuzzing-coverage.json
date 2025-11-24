@@ -89,7 +89,7 @@
       "name": "Phase 7: Improving Coverage",
       "type": "task",
       "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
-      "prompt": "You are provided with guidance at ./.opencode/improving-coverage.md. Use this guide to analyze coverage gaps, identify blockages, and improve the clamped handlers to achieve better coverage.",
+      "prompt": "You are provided with guidance at ./.opencode/improving-coverage.md. Use this guide to analyze coverage gaps only for the functions in the `functions-missing-covg-N.json` file with the largest value of N and identify blockages to achieve better coverage.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
