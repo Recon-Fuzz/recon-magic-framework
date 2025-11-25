@@ -3,6 +3,7 @@ Worker module for recon-magic framework.
 Main job listener loop that orchestrates the workflow.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -72,6 +73,41 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str) -
     #     })
 
 
+def create_dynamic_workflow(prompt: str, model_type: str = "CLAUDE_CODE", job_id: str = "dynamic") -> str:
+    """
+    Create a single-step workflow from a direct prompt.
+
+    Args:
+        prompt: The prompt to execute
+        model_type: The model type to use (CLAUDE_CODE, OPENCODE, PROGRAM)
+        job_id: Job ID for unique temp file naming
+
+    Returns:
+        Path to the generated workflow JSON file
+    """
+    workflow = {
+        "name": f"Dynamic Job {job_id}",
+        "steps": [{
+            "type": "task",
+            "name": "Execute Direct Prompt",
+            "description": f"Direct prompt execution with {model_type}",
+            "prompt": prompt,
+            "model": {
+                "type": model_type,
+                "model": "inherit"
+            },
+            "shouldCreateSummary": False,
+            "shouldCommitChanges": True
+        }]
+    }
+
+    workflow_file = f"/tmp/dynamic_workflow_{job_id}.json"
+    with open(workflow_file, 'w') as f:
+        json.dump(workflow, f, indent=2)
+
+    return workflow_file
+
+
 def start_job_listener(
     api_url: str,
     bearer_token: str,
@@ -121,12 +157,17 @@ def start_job_listener(
             try:
                 # Extract job information
                 data = job_data.get("data", {})
+                job_info = data.get("job", {})
+
                 repo_url = data.get("repoAccessData", {}).get("url")
                 claude_url = data.get("claudeAccessData", {}).get("url")
-                prompt = data.get("job", {}).get("claudePromptCommand") ## TODO: Workflow identifier ot content of the workflow
-                repo_ref = data.get("job", {}).get("ref", "main")
-                claude_ref = data.get("job", {}).get("claudeRef", "main")
+                repo_ref = job_info.get("ref", "main")
+                claude_ref = job_info.get("claudeRef", "main")
 
+                # Get job type (directPrompt, workflowName, relativeWorkflow)
+                job_type = job_info.get("jobType", "directPrompt")
+
+                print(f"Job Type: {job_type}")
                 print(f"Repo URL: {repo_url}")
                 print(f"Claude URL: {claude_url}")
 
@@ -135,13 +176,9 @@ def start_job_listener(
                     print("Failed to setup workspace")
                     continue
 
-                # Clone repositories
+                # Clone target repository
                 if not clone_repository(repo_url, repo_ref):
                     print("Failed to clone repository")
-                    continue
-
-                if not clone_claude_config(claude_url, claude_ref):
-                    print("Failed to clone Claude config")
                     continue
 
                 # Execute workflow using main.py
@@ -149,16 +186,54 @@ def start_job_listener(
                 from main import run_workflow
 
                 # Set environment variable for framework root
-                os.environ['RECON_FRAMEWORK_ROOT'] = str(Path(__file__).parent.resolve())
+                framework_root = Path(__file__).parent.resolve()
+                os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
 
                 # Set worker context in environment for hooks to use
                 os.environ['WORKER_API_URL'] = api_url
                 os.environ['WORKER_BEARER_TOKEN'] = bearer_token
                 os.environ['WORKER_JOB_ID'] = str(job_id)
 
-                # Determine workflow file path
-                workflow_name = prompt  # TODO: API should provide workflow name, not full prompt
-                workflow_file = f".claude/workflows/{workflow_name}.json"
+                # Determine workflow file based on job type
+                if job_type == "directPrompt":
+                    # Mode 1: Direct prompt execution
+                    prompt = job_info.get("claudePromptCommand")
+                    model_type = job_info.get("modelType", "CLAUDE_CODE")
+
+                    print(f"Direct Prompt Mode - Model: {model_type}")
+                    print(f"Prompt: {prompt[:100]}..." if len(prompt) > 100 else f"Prompt: {prompt}")
+
+                    workflow_file = create_dynamic_workflow(prompt, model_type, str(job_id))
+
+                elif job_type == "workflowName":
+                    # Mode 2: Use workflow from framework workflows/
+                    workflow_name = job_info.get("workflowName")
+                    workflow_file = str(framework_root / "workflows" / f"{workflow_name}.json")
+
+                    print(f"Framework Workflow Mode: {workflow_name}")
+
+                    if not os.path.exists(workflow_file):
+                        print(f"Error: Workflow not found: {workflow_file}")
+                        continue
+
+                elif job_type == "relativeWorkflow":
+                    # Mode 3: Use workflow from .claude repo (legacy)
+                    workflow_name = job_info.get("workflowName")
+
+                    # Clone claude config for this mode
+                    if not clone_claude_config(claude_url, claude_ref):
+                        print("Failed to clone Claude config")
+                        continue
+
+                    workflow_file = f".claude/workflows/{workflow_name}.json"
+                    print(f"Relative Workflow Mode: {workflow_name}")
+
+                    if not os.path.exists(workflow_file):
+                        print(f"Error: Workflow not found: {workflow_file}")
+                        continue
+                else:
+                    print(f"Error: Unknown job type: {job_type}")
+                    continue
 
                 print(f"Executing workflow: {workflow_file}")
 

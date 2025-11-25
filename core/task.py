@@ -43,6 +43,29 @@ class TaskStep(BaseModel):
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
 
 
+def resolve_model_string(model_type: str, model_string: str) -> str:
+    """
+    Resolve the model string, handling 'inherit' by returning appropriate defaults.
+
+    Args:
+        model_type: The model type (CLAUDE_CODE, OPENCODE, etc.)
+        model_string: The model string from the workflow (may be "inherit")
+
+    Returns:
+        str: The resolved model string to use in commands
+    """
+    if model_string.lower() != "inherit":
+        return model_string
+
+    # Handle inherit based on model type
+    if model_type == ModelType.CLAUDE_CODE:
+        return "sonnet"
+    elif model_type == ModelType.OPENCODE:
+        return "openrouter/anthropic/claude-sonnet-4.5"
+    else:
+        return model_string  # For PROGRAM or unknown types, return as-is
+
+
 def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | None]:
     """
     Execute a task step based on its model type.
@@ -98,6 +121,9 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
     log_file = logs_dir / f"{timestamp}_step{step_num}_{safe_step_name}.log"
 
     if step.model.type == ModelType.CLAUDE_CODE:
+        # Resolve the model string (handle "inherit")
+        resolved_model = resolve_model_string(step.model.type, step.model.model)
+
         # Check if we should skip permissions (only in production)
         runner_env = os.environ.get('RUNNER_ENV', '').lower()
         skip_permissions = '--dangerously-skip-permissions' if runner_env == 'production' else ''
@@ -134,6 +160,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         cmd = f"""{cd_prefix}claude {skip_permissions} \
 -p {shlex.quote(prompt)} \
+-m {resolved_model} \
 --max-turns 9999999999 \
 --output-format stream-json \
 --verbose 2>&1 | tee {log_file} | python3 -u {parser_script_file}"""
@@ -151,10 +178,10 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         return (result.returncode, "CONTINUE", None)
 
     if step.model.type == ModelType.OPENCODE:
-        parser_script_file = Path(framework_root) / 'log_formatters' / 'opencode.py'
+        # Resolve the model string (handle "inherit")
+        resolved_model = resolve_model_string(step.model.type, step.model.model)
 
-        # Default model - can be overridden via OPENCODE_MODEL env var
-        model = os.environ.get('OPENCODE_MODEL', 'openrouter/anthropic/claude-sonnet-4.5')
+        parser_script_file = Path(framework_root) / 'log_formatters' / 'opencode.py'
 
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
@@ -182,8 +209,10 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         cmd = f"""{cd_prefix}opencode run  \
 {shlex.quote(prompt)} \
--m {model} \
+-m {resolved_model} \
 --format json | tee {log_file} | python3 -u {parser_script_file}"""
+
+        print(f"📝 Logging to: {log_file}\n")
 
         result = subprocess.run(
             cmd,
