@@ -62,10 +62,22 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 5: Initial Coverage With Fuzzer",
+      "name": "Phase 6: Run Echidna Programmatically",
       "type": "task",
-      "description": "Run Echidna and establish a base level of coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to establish a baseline level of fuzzer coverage",
+      "description": "Run Echidna programmatically",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 6b: Track Fuzzer Results",
+      "type": "task",
+      "description": "Track the latest fuzzer run and save results",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to track and save the latest fuzzer run results",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -74,12 +86,12 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 6: Evaluate Coverage",
+      "name": "Phase 6c: Identify Coverage Gaps",
       "type": "task",
-      "description": "Run Echidna programmatically and evaluate coverage",
-      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "description": "Analyze coverage report and identify gaps",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to evaluate the coverage report and identify gaps",
       "model": {
-        "type": "PROGRAM",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -98,10 +110,22 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 8: Additional Coverage With Fuzzer",
+      "name": "Phase 9: Run Echidna Programmatically",
       "type": "task",
-      "description": "Run Echidna and save the latest run",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to generate a new coverage report",
+      "description": "Run Echidna programmatically",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 9b: Track Fuzzer Results",
+      "type": "task",
+      "description": "Track the latest fuzzer run and save results",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to track and save the latest fuzzer run results",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -110,12 +134,12 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 9: Evaluate Coverage",
+      "name": "Phase 9c: Identify Coverage Gaps",
       "type": "task",
-      "description": "Run Echidna programmatically and evaluate coverage",
-      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "description": "Analyze coverage report and identify gaps",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to evaluate the coverage report and identify gaps",
       "model": {
-        "type": "PROGRAM",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
