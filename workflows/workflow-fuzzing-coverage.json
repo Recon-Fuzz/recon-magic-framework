@@ -76,10 +76,10 @@
     {
       "name": "Phase 6: Evaluate Coverage",
       "type": "task",
-      "description": "Evaluate the coverage report from the latest run of Echidna",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to evaluate the coverage report from the latest run of Echidna",
+      "description": "Run Echidna programmatically and evaluate coverage",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
       "model": {
-        "type": "OPENCODE",
+        "type": "PROGRAM",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
@@ -112,10 +112,10 @@
     {
       "name": "Phase 9: Evaluate Coverage",
       "type": "task",
-      "description": "Evaluate the coverage report from the latest run of Echidna",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-6.md. Exclusively run the coverage-phase-6 agent to evaluate the coverage report from the latest run of Echidna",
+      "description": "Run Echidna programmatically and evaluate coverage",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
       "model": {
-        "type": "OPENCODE",
+        "type": "PROGRAM",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
