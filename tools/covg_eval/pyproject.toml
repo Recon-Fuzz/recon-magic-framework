@@ -1,0 +1,13 @@
+[project]
+name = "covg-eval"
+version = "0.1.0"
+description = "Coverage evaluation tool for Echidna fuzzing reports"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+covg-eval = "covg_eval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

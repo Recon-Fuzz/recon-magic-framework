@@ -77,7 +77,7 @@
       "name": "Phase 6b: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
-      "prompt": "covg-eval magic/ echidna/",
+      "prompt": "python tools/covg_eval/cli.py magic/ echidna/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -113,7 +113,7 @@
       "name": "Phase 9b: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
-      "prompt": "covg-eval magic/ echidna/",
+      "prompt": "python tools/covg_eval/cli.py magic/ echidna/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
