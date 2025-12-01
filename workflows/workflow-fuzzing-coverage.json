@@ -2,126 +2,151 @@
   "name": "Fuzzing Coverage Workflow",
   "steps": [
     {
-      "name": "Phase 0: Identify Functions to Test",
+      "name": "Phase 0: Identifying Contracts to Cover",
       "type": "task",
-      "description": "Analyze target functions and create prioritized testing list",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-0.md. Run exclusively the coverage-phase-0 agent using the Task tool. This phase will identify all public functions in target contracts (excluding Admin, Managers, and Doomsday targets), analyze their dependencies, and create a prioritized ordered list in magic/testing_priority.md.",
+      "description": "Identify all contracts in the current repository that must always be fully covered by the fuzzer",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify all contracts that must be covered.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
-      "shouldCreateSummary": true,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Phase 1: Identify Contracts to Cover",
-      "type": "task",
-      "description": "Determine which contracts need full coverage by analyzing Setup.sol and contract dependencies",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-1.md. Run exclusively the coverage-phase-1 agent using the Task tool. This phase will identify all contracts deployed in Setup.sol (excluding mocks), run forge build with build-info, use sol-expand to extract context, and create magic/coverage/contracts-to-cover.md with an exhaustive list of contracts that need coverage.",
-      "model": {
-        "type": "CLAUDE_CODE",
-        "model": "inherit"
-      },
-      "shouldCreateSummary": true,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Contracts Identification Check",
-      "type": "decision",
-      "description": "Check if contracts-to-cover.md was successfully created",
-      "mode": "READ_FILE",
-      "modeInfo": {
-        "fileName": "magic/coverage/contracts-to-cover.md"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": 0,
-          "action": "STOP",
-          "NOTE": "Stop if contracts-to-cover.md doesn't exist - Phase 1 failed"
-        },
-        {
-          "operator": "eq",
-          "value": 1,
-          "action": "CONTINUE"
-        }
-      ],
       "shouldCreateSummary": false,
-      "shouldCommitChanges": false
-    },
-    {
-      "name": "Phase 2: Setup Testing - Implement Unit Tests",
-      "type": "task",
-      "description": "Implement unit tests for all functions in testing_priority.md and verify Setup.sol configuration",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-2.md. Run exclusively the coverage-phase-2 agent using the Task tool. This phase will: 1) Move admin-only functions to AdminTargets.sol, 2) Implement unit tests in CryticToFoundry.sol for all functions in testing_priority.md (in order), 3) Fix Setup.sol configuration and permissions issues, 4) Document any justified reverting handlers in magic/reverting_handlers.md, and 5) Generate magic/test-notes.md summarizing the test implementation.",
-      "model": {
-        "type": "CLAUDE_CODE",
-        "model": "inherit"
-      },
-      "shouldCreateSummary": true,
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 3: Initial Coverage Assessment",
+      "name": "Phase 1: Identifying Touched Functions",
       "type": "task",
-      "description": "Run Echidna to establish baseline coverage and identify handlers missing coverage",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-3.md. Run exclusively the coverage-phase-3 agent using the Task tool. This phase will: 1) Verify Echidna runs successfully with test-limit 10000 and check for specific success messages, 2) Run Echidna for 30 minutes to generate coverage report, 3) Read the latest covered.<timestamp>.txt file using reading-coverage.md guidelines, 4) Verify all unit-tested functions show coverage, and 5) Create magic/coverage/handlers_missing_covg.md listing functions from contracts-to-cover.md that lack coverage.",
+      "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to identify all touched contracts that we care about.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
-      "shouldCreateSummary": true,
+      "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 4: Create Clamped Handlers",
+      "name": "Phase 2: Identifying Meaningful Values",
       "type": "task",
-      "description": "Implement clamped handlers to improve coverage for functions in handlers_missing_covg.md",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-4.md. Run exclusively the coverage-phase-4 agent using the Task tool. This phase will: 1) Review handlers_missing_covg.md to identify which functions need clamping, 2) Create dictionary_entries.md with possible Echidna dictionary values, 3) Implement clamped handlers (with _clamped postfix) following all 7 clamping rules, 4) Only add clamped handlers to files in recon/targets/ directory above the CUSTOM TARGET FUNCTIONS header, and 5) Run Echidna for 2 hours to validate the clamped handlers improve coverage.",
+      "description": "Identify values that are useful for clamping target function handlers with",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to identify values useful for clamping.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
-      "shouldCreateSummary": true,
+      "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 5: Coverage Loop Assessment",
+      "name": "Phase 3: Creating Clamped Handlers",
       "type": "task",
-      "description": "Assess coverage and determine if more iterations are needed",
-      "prompt": "You are provided an agent definition at ./.claude/agents/coverage-phase-5.md. Run exclusively the coverage-phase-5 agent using the Task tool. This phase will: 1) Read the latest coverage report using reading-coverage.md guidelines, 2) If remaining-uncovered.md doesn't exist, create it with all uncovered functions from contracts-to-cover.md, 3) If remaining-uncovered.md exists, update it by removing now-covered functions, 4) If all functions are covered, create COVERAGE_COMPLETE.md, otherwise create COVERAGE_NEEDS_ITERATION.md.",
+      "description": "Implement clamped function handlers to achieve full coverage on the system setup",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to implement clamped handlers",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
-      "shouldCreateSummary": true,
+      "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
-      "name": "Coverage Completion Check",
+      "name": "Phase 4: Creating Shortcut Handlers ",
+      "type": "task",
+      "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to implement shortcut functions",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 6: Run Echidna Programmatically",
+      "type": "task",
+      "description": "Run Echidna programmatically",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 6b: Evaluate Coverage",
+      "type": "task",
+      "description": "Run coverage evaluation tool",
+      "prompt": "covg-eval magic/ echidna/",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 7: Improving Coverage",
+      "type": "task",
+      "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
+      "prompt": "You are provided an agent definition at ./.opencode/coverage-phase-7.md. Exclusively run the coverage-phase-7 agent to improve coverage of the system",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 9: Run Echidna Programmatically",
+      "type": "task",
+      "description": "Run Echidna programmatically",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 9b: Evaluate Coverage",
+      "type": "task",
+      "description": "Run coverage evaluation tool",
+      "prompt": "covg-eval magic/ echidna/",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Coverage Improvement Iteration Check",
       "type": "decision",
-      "description": "Check if coverage is complete or needs another iteration",
-      "mode": "READ_FILE",
+      "description": "Force loop back to Phase 7 to continue improving coverage",
+      "mode": "FILE_EXISTS",
       "modeInfo": {
-        "fileName": "COVERAGE_COMPLETE.md"
+        "fileName": "functions-missing-covg-*.json"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 1,
-          "action": "CONTINUE",
-          "NOTE": "Coverage complete, proceed to final summary"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 7: Improving Coverage",
+          "NOTE": "Loop back to Phase 7"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 4: Create Clamped Handlers",
-          "NOTE": "Coverage incomplete, call Phase 4 agent outlined at ./.claude/agents/coverage-phase-4.md with updated remaining-uncovered.md"
+          "destinationStep": "Phase 7: Improving Coverage",
+          "NOTE": "Loop back to Phase 7"
         }
       ],
       "shouldCreateSummary": false,
-      "shouldCommitChanges": false
+      "shouldCommitChanges": true
     }
   ]
 }

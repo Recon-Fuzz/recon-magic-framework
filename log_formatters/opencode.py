@@ -56,12 +56,20 @@ for line in sys.stdin:
             elif tool == 'write':
                 file = inp.get('filePath', '').split('/')[-1][:30]
                 print(f'✏️ Write: {file}', flush=True)
-            elif tool == 'todowrite': 
+            elif tool == 'todowrite':
                 todos = inp.get('todos', [])
                 done = len([t for t in todos if t.get('status') == 'completed'])
                 active = len([t for t in todos if t.get('status') != 'completed'])
                 print(f'✅ Todos: {done}/{len(todos)} done', flush=True)
-            else: 
+            elif tool == 'bash':
+                # For bash commands, check if it's an echidna command and show it
+                command = inp.get('command', '')
+                if 'echidna' in command:
+                    # Show the full echidna command
+                    print(f'🔍 ECHIDNA: {command}', flush=True)
+                else:
+                    print(f'🔧 bash', flush=True)
+            else:
                 print(f'🔧 {tool}', flush=True)
     except:
         pass
