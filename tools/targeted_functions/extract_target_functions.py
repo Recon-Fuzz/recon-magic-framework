@@ -85,8 +85,12 @@ def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str]) -
     Returns:
         Dict mapping contract names to sets of target function names
     """
+    # Contracts to ignore
+    IGNORED_CONTRACTS = {"DoomsdayTargets", "ManagersTargets"}
+
     contract_functions = defaultdict(set)
     unmapped_vars = set()
+    ignored_files = []
 
     # Find all .sol files in the targets directory and parent directory
     sol_files = []
@@ -106,6 +110,13 @@ def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str]) -
         sol_files = list(targets_dir.glob("*.sol"))
 
     for sol_file in sol_files:
+        # Check if this file should be ignored based on filename
+        file_stem = sol_file.stem  # Gets filename without extension
+        if file_stem in IGNORED_CONTRACTS:
+            print(f"Skipping: {sol_file.name} (ignored contract)")
+            ignored_files.append(sol_file.name)
+            continue
+
         print(f"Processing: {sol_file.name}")
 
         with open(sol_file, 'r') as f:
@@ -116,9 +127,15 @@ def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str]) -
         for state_var, function_name in function_calls:
             if state_var in state_var_mapping:
                 contract_name = state_var_mapping[state_var]
-                contract_functions[contract_name].add(function_name)
+                # Also filter out any contracts that match the ignored list
+                if contract_name not in IGNORED_CONTRACTS:
+                    contract_functions[contract_name].add(function_name)
             else:
                 unmapped_vars.add(state_var)
+
+    # Report ignored files
+    if ignored_files:
+        print(f"\nIgnored {len(ignored_files)} contract(s): {', '.join(ignored_files)}")
 
     # Report unmapped variables as warnings
     if unmapped_vars:
