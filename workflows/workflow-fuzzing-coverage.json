@@ -14,12 +14,36 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 0: Identifying Touched Functions",
+      "name": "Phase 0a: Build Artifacts",
+      "type": "task",
+      "description": "Generate Forge build artifacts with build-info",
+      "prompt": "forge clean && forge build --build-info",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 0b: Extract Context with sol-expand",
+      "type": "task",
+      "description": "Run sol-expand tool to extract context from build artifacts",
+      "prompt": "sol-expand --extract-context $(find out/build-info -name '*.json' | head -1)",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 0c: Identifying Touched Functions",
       "type": "task",
       "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify all touched contracts that we care about.",
+      "prompt": "python3 tools/touched_function_identifier/touched_function_identifier.py --sol-expand-dir context_output --target-functions magic/target-functions.json --output magic/functions-to-cover.json",
       "model": {
-        "type": "OPENCODE",
+        "type": "PROGRAM",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
