@@ -32,9 +32,11 @@ uv tool install --editable .
 
 ## Setup
 
-Setup a .env with OPENAI_API_KEY
+### Environment Variables
 
-The Key can be from Openrouter!
+The framework requires the following environment variables to be set:
+
+1. **API Key** - Setup a .env with OPENAI_API_KEY (The Key can be from Openrouter!)
 
 ## Usage
 

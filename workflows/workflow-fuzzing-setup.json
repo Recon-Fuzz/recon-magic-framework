@@ -2,59 +2,162 @@
   "name": "Fuzzing Setup Workflow",
   "steps": [
     {
-      "name": "Phase 0: Foundry Migration & Compilation",
+      "name": "Phase 0: Setup.sol Configuration",
       "type": "task",
-      "description": "Convert Hardhat project to Foundry and ensure successful compilation",
-      "prompt": "You are provided an agent definition at ./.claude/agents/setup-phase-0.md. Run exclusively the setup-phase-0 agent using the Task tool. This phase will migrate the project to Foundry (if needed) and verify compilation artifacts are generated successfully.",
+      "description": "Modify Setup.sol to deploy and configure all target contracts for fuzzing",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-0.md. Run exclusively the setup-phase-0 agent using the Task tool. This phase will modify the Setup.sol contract to properly deploy and configure target contracts, validate compilation and test execution, and generate documentation in magic/setup-notes.md.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
       "shouldCommitChanges": true
     },
     {
-      "name": "Compilation Check Decision",
+      "name": "Phase 1: Run Echidna",
+      "type": "task",
+      "description": "Run Echidna to test the fuzzing setup",
+      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 1.5: Save Echidna Logs",
+      "type": "task",
+      "description": "Save Echidna output logs to magic/ directory for later analysis",
+      "prompt": "save-echidna-logs",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Echidna Output Check",
       "type": "decision",
-      "description": "Check if COMPILATION_FAILED.md exists to determine if workflow should stop",
-      "mode": "READ_FILE",
+      "description": "Check if echidna/ directory exists to verify Echidna ran successfully",
+      "mode": "FILE_EXISTS",
       "modeInfo": {
-        "fileName": "COMPILATION_FAILED.md"
+        "fileName": "echidna/*.txt"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 1,
-          "action": "STOP"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 2: Extract Target Functions",
+          "NOTE": "Echidna ran successfully, jump to extract target functions"
         },
         {
           "operator": "eq",
           "value": 0,
-          "action": "CONTINUE"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Fix Echidna Failure",
+          "NOTE": "Echidna failed to create output directory, jump to fix step"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
     {
-      "name": "Phase 1: Contract Analysis & Scaffolding Preparation",
+      "name": "Fix Echidna Failure",
       "type": "task",
-      "description": "Identify contracts for invariant testing and prepare scaffolding requirements",
-      "prompt": "You are provided an agent definition at ./.claude/agents/setup-phase-1.md. Run exclusively the setup-phase-1 agent using the Task tool.",
+      "description": "Resolve issues preventing Echidna from running successfully",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-echidna-failures.md. Exclusively run the fix-echidna-failures agent using the Task tool. This agent will analyze the saved Echidna logs and implement fixes to resolve the issues.",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 2: Setup.sol Configuration",
+      "name": "Retry Echidna After Fix",
+      "type": "decision",
+      "description": "Loop back to run Echidna again to verify the fix worked",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/fix-echidna-running.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 1: Run Echidna",
+          "NOTE": "Fix was implemented, loop back to run Echidna again to verify"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 1: Run Echidna",
+          "NOTE": "Fallback to run Echidna again regardless since fix was still implemented"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 2: Extract Target Functions",
       "type": "task",
-      "description": "Modify Setup.sol to deploy and configure all target contracts for fuzzing",
-      "prompt": "You are provided an agent definition at ./.claude/agents/setup-phase-2.md. Run exclusively the setup-phase-2 agent using the Task tool. This phase will modify the Setup.sol contract to properly deploy and configure target contracts, validate compilation and test execution, and generate documentation in magic/setup-notes.md.",
+      "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
+      "prompt": "extract-target-functions --targets test/recon",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 3: Order Prerequisite Functions",
+      "type": "task",
+      "description": "Sort functions in testing-priority.json based on prerequisite count",
+      "prompt": "order-prerequisite-func ./magic/testing-priority.json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 1 Agent: Setup Phase 1",
+      "type": "task",
+      "description": "Execute setup-phase-1 agent for additional setup tasks",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-1.md. Run exclusively the setup-phase-1 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 2 Agent: Setup Phase 2",
+      "type": "task",
+      "description": "Execute setup-phase-2 agent for final setup tasks",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-2.md. Run exclusively the setup-phase-2 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 3 Agent: Setup Phase 3",
+      "type": "task",
+      "description": "Execute setup-phase-3 agent for final setup tasks",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-3.md. Run exclusively the setup-phase-3 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
@@ -64,9 +167,9 @@
       "name": "Workflow Completion Summary",
       "type": "task",
       "description": "Generate final summary of fuzzing setup completion",
-      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all three phases (Phase 0: Foundry Migration, Phase 1: Contract Analysis, Phase 2: Setup.sol Configuration)\n2. List the key artifacts created (foundry.toml, Setup.sol, magic/setup-notes.md)\n3. Confirm that forge build compiles successfully\n4. Confirm that forge test runs without reverts\n5. Provide next steps: user can now run fuzzing campaigns using Echidna or other fuzzing tools",
+      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all phases (Phase 0 through Phase 3)\n2. List the key artifacts created (Setup.sol, magic/setup-notes.md, testing-priority.json, echidna output)\n3. Confirm that forge build compiles successfully\n4. Confirm that forge test runs without reverts\n5. Provide next steps: user can now run fuzzing campaigns using Echidna or other fuzzing tools",
       "model": {
-        "type": "CLAUDE_CODE",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": false,
