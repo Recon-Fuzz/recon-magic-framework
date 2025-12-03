@@ -1,0 +1,52 @@
+{
+  "name": "Fuzzing Scouting Workflow",
+  "steps": [
+    {
+      "name": "Phase 0: Foundry Migration & Compilation",
+      "type": "task",
+      "description": "Convert Hardhat project to Foundry and ensure successful compilation",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/scouting-phase-0.md. Run exclusively the scouting-phase-0 agent using the Task tool. This phase will migrate the project to Foundry (if needed) and verify compilation artifacts are generated successfully.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Compilation Check Decision",
+      "type": "decision",
+      "description": "Check if COMPILATION_FAILED.md exists to determine if workflow should stop",
+      "mode": "READ_FILE",
+      "modeInfo": {
+        "fileName": "COMPILATION_FAILED.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "STOP"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1: Contract Analysis & Scaffolding Preparation",
+      "type": "task",
+      "description": "Identify contracts for invariant testing and prepare scaffolding requirements",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/scouting-phase-1.md. Run exclusively the scouting-phase-1 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    }
+  ]
+}
