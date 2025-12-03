@@ -2,34 +2,46 @@
 import sys
 import json
 
+# Set to control verbosity - set to False to hide all intermediate events
+VERBOSE = False
+
 for line in sys.stdin:
     try:
         d = json.loads(line)
         t = d.get('type', '')
-        
-        if t == 'step_start': 
-            print('⏳ Step...', flush=True)
+
+        # Silently ignore these verbose event types
+        if t in ['text', 'thinking', 'session_start', 'session_end']:
+            continue
+
+        if t == 'step_start':
+            if VERBOSE:
+                print('⏳ Step...', flush=True)
         elif t == 'step_finish':
             p = d.get('part', {})
             c = p.get('cost', 0)
             tokens = p.get('tokens', {})
             reasoning = tokens.get('reasoning', 0)
             output = tokens.get('output', 0)
-            
+
             # Show thinking if present
             if reasoning > 0:
                 print(f'💭 Thinking... ({reasoning} tokens)', flush=True)
-            
+
             # Show cost and output
-            if c > 0: 
+            if c > 0:
                 print(f'✓ ${c:.3f} ({output} output)', flush=True)
-                
+
         elif t == 'tool_use':
             p = d.get('part', {})
             tool = p.get('tool', '')
             st = p.get('state', {})
             inp = st.get('input', {})
-            
+
+            # Only show completed tool uses to reduce noise
+            if st.get('status') != 'completed' and not VERBOSE:
+                continue
+
             if tool == 'task':
                 desc = inp.get('description', '')[:40]
                 if st.get('status') == 'completed':
@@ -39,19 +51,21 @@ for line in sys.stdin:
                         print(f'🤖 {desc} [{dur:.1f}s]', flush=True)
                     else:
                         print(f'🤖 {desc}', flush=True)
-                else: 
+                else:
                     print(f'🤖 Starting: {desc}...', flush=True)
-            elif tool == 'list': 
+            elif tool == 'list':
                 path = inp.get('path', '.')
-                print(f'📂 List {path}', flush=True)
-            elif tool == 'glob': 
+                if VERBOSE:
+                    print(f'📂 List {path}', flush=True)
+            elif tool == 'glob':
                 pattern = inp.get('pattern', '')[:30]
-                print(f'🔍 Search: {pattern}', flush=True)
-            elif tool == 'read': 
+                if VERBOSE:
+                    print(f'🔍 Search: {pattern}', flush=True)
+            elif tool == 'read':
                 file = inp.get('filePath', '').split('/')[-1][:30]
                 if st.get('status') == 'error':
                     print(f'❌ Not found: {file}', flush=True)
-                else:
+                elif VERBOSE:
                     print(f'📖 Read: {file}', flush=True)
             elif tool == 'write':
                 file = inp.get('filePath', '').split('/')[-1][:30]
@@ -67,9 +81,14 @@ for line in sys.stdin:
                 if 'echidna' in command:
                     # Show the full echidna command
                     print(f'🔍 ECHIDNA: {command}', flush=True)
-                else:
+                elif VERBOSE:
                     print(f'🔧 bash', flush=True)
-            else:
+            # Suppress other tools in non-verbose mode
+            elif VERBOSE:
                 print(f'🔧 {tool}', flush=True)
-    except:
+    except json.JSONDecodeError:
+        # Silently ignore non-JSON lines
+        pass
+    except Exception as e:
+        # Silently ignore other errors to avoid breaking the pipe
         pass

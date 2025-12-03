@@ -117,7 +117,9 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
     # Generate log filename with timestamp and step name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_step_name = step.name.lower().replace(" ", "_")
+    # Sanitize step name: remove/replace all special characters
+    import re
+    safe_step_name = re.sub(r'[^a-z0-9_-]', '_', step.name.lower().replace(" ", "_"))
     log_file = logs_dir / f"{timestamp}_step{step_num}_{safe_step_name}.log"
 
     if step.model.type == ModelType.CLAUDE_CODE:
@@ -210,7 +212,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         cmd = f"""{cd_prefix}opencode run  \
 {shlex.quote(prompt)} \
 -m {resolved_model} \
---format json | tee {log_file} | python3 -u {parser_script_file}"""
+--format json 2>&1 | tee {shlex.quote(str(log_file))} | python3 -u {shlex.quote(str(parser_script_file))}"""
 
         print(f"📝 Logging to: {log_file}\n")
 

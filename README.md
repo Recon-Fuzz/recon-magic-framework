@@ -38,24 +38,6 @@ The framework requires the following environment variables to be set:
 
 1. **API Key** - Setup a .env with OPENAI_API_KEY (The Key can be from Openrouter!)
 
-2. **RECON_TOOLS_PATH** - Required for workflows that use Python tools (e.g., fuzzing coverage workflow)
-
-Add this to your shell configuration (`~/.zshrc` or `~/.bashrc`):
-
-```bash
-export RECON_TOOLS_PATH="/path/to/recon-magic-framework"
-```
-
-For example:
-```bash
-export RECON_TOOLS_PATH="/Users/nelsonpereira/Documents/GitHub/Auditing/Fuzzing/Recon_Magic_Framework/recon-magic-framework"
-```
-
-After adding this, reload your shell configuration:
-```bash
-source ~/.zshrc  # or source ~/.bashrc
-```
-
 ## Usage
 
 **CLI (recommended):**
