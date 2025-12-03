@@ -26,6 +26,18 @@
       "shouldCommitChanges": true
     },
     {
+      "name": "Phase 1.5: Save Echidna Logs",
+      "type": "task",
+      "description": "Save Echidna output logs to magic/ directory for later analysis",
+      "prompt": "save-echidna-logs",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
       "name": "Echidna Output Check",
       "type": "decision",
       "description": "Check if echidna/ directory exists to verify Echidna ran successfully",
@@ -56,13 +68,40 @@
       "name": "Fix Echidna Failure",
       "type": "task",
       "description": "Resolve issues preventing Echidna from running successfully",
-      "prompt": "Echidna failed to run successfully. The echidna/ directory was not created. Use the styleguide.MD file at ./.opencode/styleguide.MD to understand the expected setup and resolve the issue. Review the Setup.sol contract, echidna.yaml configuration, and CryticTester contract to identify and fix any problems preventing Echidna from executing properly.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-echidna-failures.md. Exclusively run the fix-echidna-failures agent using the Task tool. This agent will analyze the saved Echidna logs and implement fixes to resolve the issues.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
       "shouldCommitChanges": true
+    },
+    {
+      "name": "Retry Echidna After Fix",
+      "type": "decision",
+      "description": "Loop back to run Echidna again to verify the fix worked",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/fix-echidna-running.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 1: Run Echidna",
+          "NOTE": "Fix was implemented, loop back to run Echidna again to verify"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 1: Run Echidna",
+          "NOTE": "Fallback to run Echidna again regardless since fix was still implemented"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
     },
     {
       "name": "Phase 2: Extract Target Functions",
