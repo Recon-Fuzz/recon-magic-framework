@@ -115,7 +115,7 @@
       "name": "Phase 4: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "prompt": "env python3 ${RECON_TOOLS_PATH}/tools/targeted_functions/extract_target_functions.py --targets test/recon",
+      "prompt": "extract-target-functions --targets test/recon",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -127,7 +127,7 @@
       "name": "Phase 5: Order Prerequisite Functions",
       "type": "task",
       "description": "Sort functions in testing-priority.json based on prerequisite count",
-      "prompt": "env python3 ${RECON_TOOLS_PATH}/tools/order_prerequisite_func/order_prerequisite_func.py ./magic/testing-priority.json",
+      "prompt": "order-prerequisite-func ./magic/testing-priority.json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"

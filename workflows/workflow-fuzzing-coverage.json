@@ -5,7 +5,7 @@
       "name": "Phase -1: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "prompt": "env python3 ${RECON_TOOLS_PATH}/tools/targeted_functions/extract_target_functions.py --targets test/recon",
+      "prompt": "extract-target-functions --targets test/recon",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -41,7 +41,7 @@
       "name": "Phase 0c: Identifying Touched Functions",
       "type": "task",
       "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
-      "prompt": "env python3 ${RECON_TOOLS_PATH}/tools/touched_function_identifier/touched_function_identifier.py --sol-expand-dir context_output --target-functions magic/target-functions.json --output magic/functions-to-cover.json",
+      "prompt": "touched-function-identifier --sol-expand-dir context_output --target-functions magic/target-functions.json --output magic/functions-to-cover.json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -101,7 +101,7 @@
       "name": "Phase 4b: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
-      "prompt": "env python3 ${RECON_TOOLS_PATH}/tools/covg_eval/covg_eval.py magic/ echidna/",
+      "prompt": "covg-eval magic/ echidna/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -137,7 +137,7 @@
       "name": "Phase 6b: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
-      "prompt": "env python3 ${RECON_TOOLS_PATH}/tools/covg_eval/covg_eval.py magic/ echidna/",
+      "prompt": "covg-eval magic/ echidna/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
