@@ -15,6 +15,7 @@ extract-target-functions = "tools.targeted_functions.extract_target_functions:ma
 order-prerequisite-func = "tools.order_prerequisite_func.order_prerequisite_func:main"
 touched-function-identifier = "tools.touched_function_identifier.touched_function_identifier:main"
 covg-eval = "tools.covg_eval.covg_eval:main"
+save-echidna-logs = "tools.save_echidna_logs.save_echidna_logs:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
