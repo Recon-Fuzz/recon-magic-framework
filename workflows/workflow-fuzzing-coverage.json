@@ -2,7 +2,7 @@
   "name": "Fuzzing Coverage Workflow",
   "steps": [
     {
-      "name": "Phase -1: Extract Target Functions",
+      "name": "Step 1: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
       "prompt": "extract-target-functions --targets test/recon",
@@ -14,7 +14,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 0a: Build Artifacts",
+      "name": "Step 2: Build Artifacts",
       "type": "task",
       "description": "Generate Forge build artifacts with build-info",
       "prompt": "forge clean && forge build --build-info",
@@ -26,7 +26,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Phase 0b: Extract Context with sol-expand",
+      "name": "Step 3: Extract Context with sol-expand",
       "type": "task",
       "description": "Run sol-expand tool to extract context from build artifacts",
       "prompt": "sol-expand --extract-context $(find out/build-info -name '*.json' | head -1)",
@@ -38,7 +38,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Phase 0c: Identifying Touched Functions",
+      "name": "Step 4: Identifying Touched Functions",
       "type": "task",
       "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
       "prompt": "touched-function-identifier --sol-expand-dir context_output --target-functions magic/target-functions.json --output magic/functions-to-cover.json",
@@ -50,7 +50,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 1: Identifying Meaningful Values",
+      "name": "Step 5: Identifying Meaningful Values",
       "type": "task",
       "description": "Identify values that are useful for clamping target function handlers with",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to identify values useful for clamping.",
@@ -62,7 +62,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 2: Creating Clamped Handlers",
+      "name": "Step 6: Creating Clamped Handlers",
       "type": "task",
       "description": "Implement clamped function handlers to achieve full coverage on the system setup",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to implement clamped handlers",
@@ -74,7 +74,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 3: Creating Shortcut Handlers ",
+      "name": "Step 7: Creating Shortcut Handlers",
       "type": "task",
       "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to implement shortcut functions",
@@ -86,7 +86,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 4: Run Echidna Programmatically",
+      "name": "Step 8: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -98,7 +98,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 4b: Evaluate Coverage",
+      "name": "Step 9: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/",
@@ -110,7 +110,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Initial Check of Coverage",
+      "name": "Step 10: Initial Check of Coverage",
       "type": "decision",
       "description": "Determine if coverage needs to be improved",
       "mode": "FILE_EXISTS",
@@ -122,14 +122,14 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 6: Improving Coverage",
+          "destinationStep": "Step 11: Improving Coverage",
           "NOTE": "Branch to improve coverage by identifying source of blockages"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Workflow Complete",
+          "destinationStep": "Step 15: Workflow Complete",
           "NOTE": "No missing coverage file found, skip to workflow completion"
         }
       ],
@@ -137,7 +137,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 6: Improving Coverage",
+      "name": "Step 11: Improving Coverage",
       "type": "task",
       "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to improve coverage of the system",
@@ -149,7 +149,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 7: Run Echidna Programmatically",
+      "name": "Step 12: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -161,7 +161,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 8: Evaluate Coverage",
+      "name": "Step 13: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/",
@@ -173,9 +173,9 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Coverage Improvement Iteration Check",
+      "name": "Step 14: Coverage Improvement Decision Check",
       "type": "decision",
-      "description": "Force loop back to Phase 6 to continue improving coverage",
+      "description": "Force loop back to Step 11 to continue improving coverage",
       "mode": "FILE_EXISTS",
       "modeInfo": {
         "fileName": "functions-missing-covg-*.json"
@@ -185,8 +185,8 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 6: Improving Coverage",
-          "NOTE": "Loop back to Phase 6 to continue with coverage improvement"
+          "destinationStep": "Step 11: Improving Coverage",
+          "NOTE": "Loop back to Step 11 to continue with coverage improvement"
         },
         {
           "operator": "eq",
@@ -199,7 +199,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Workflow Complete",
+      "name": "Step 15: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",
