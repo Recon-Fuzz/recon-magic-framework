@@ -5,10 +5,14 @@
       "name": "Step 1: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "prompt": "extract-target-functions --targets test/recon",
+      "prompt": "extract-target-functions --targets test/recon --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/target-functions.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
@@ -41,10 +45,14 @@
       "name": "Step 4: Identifying Touched Functions",
       "type": "task",
       "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
-      "prompt": "touched-function-identifier --sol-expand-dir context_output --target-functions magic/target-functions.json --output magic/functions-to-cover.json",
+      "prompt": "touched-function-identifier --sol-expand-dir context_output --target-functions magic/target-functions.json --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-to-cover.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
@@ -101,10 +109,14 @@
       "name": "Step 9: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
-      "prompt": "covg-eval magic/ echidna/",
+      "prompt": "covg-eval magic/ echidna/ --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
@@ -164,10 +176,14 @@
       "name": "Step 13: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
-      "prompt": "covg-eval magic/ echidna/",
+      "prompt": "covg-eval magic/ echidna/ --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true

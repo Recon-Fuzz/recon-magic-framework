@@ -369,6 +369,11 @@ This will:
         action="store_true",
         help="Enable verbose output",
     )
+    parser.add_argument(
+        "--return-json",
+        action="store_true",
+        help="Return JSON output to stdout instead of writing to file",
+    )
 
     args = parser.parse_args()
 
@@ -463,6 +468,16 @@ This will:
                 print(f"  {func_name} (lines {start_line}-{end_line}): {percentage:.2f}% coverage")
 
             if percentage < 100.0:
+                # Extract lines within function range that have coverage data
+                function_lines = {
+                    ln: hits
+                    for ln, hits in line_coverage.items()
+                    if start_line <= ln <= end_line
+                }
+                total_lines = len(function_lines)
+                covered_lines = sum(1 for hits in function_lines.values() if hits > 0)
+                uncovered_count = len(uncovered_lines)
+
                 # Extract code snippets for uncovered lines
                 code_snippets = extract_code_snippets(source_path, uncovered_lines)
 
@@ -473,22 +488,45 @@ This will:
                         "start": start_line,
                         "end": end_line,
                     },
+                    "coverage_stats": {
+                        "total_lines": total_lines,
+                        "covered_lines": covered_lines,
+                        "uncovered_lines": uncovered_count,
+                        "percentage": round(percentage, 2),
+                    },
                     "uncovered_code": code_snippets,
                 }
 
-    # Write output file
-    output_path = magic_dir / f"functions-missing-covg-{timestamp}.json"
-    with open(output_path, "w") as f:
-        json.dump(missing_coverage, f, indent=2)
+    # Prepare output data
+    output_data = {
+        "timestamp": timestamp,
+        "lcov_file": str(lcov_path),
+        "missing_coverage": missing_coverage,
+        "summary": {
+            "functions_analyzed": sum(len(v) for v in functions_to_cover.values()),
+            "functions_with_missing_coverage": len(missing_coverage),
+            "full_coverage": len(missing_coverage) == 0
+        }
+    }
 
-    print(f"Results written to: {output_path}")
-
-    if missing_coverage:
-        print(f"Found {len(missing_coverage)} functions with < 100% coverage")
+    # Return JSON or write to file
+    if args.return_json:
+        print(json.dumps(output_data, indent=2))
+        return 0
     else:
-        print("All functions have 100% coverage!")
+        # Write output file (backward compatible)
+        output_path = magic_dir / f"functions-missing-covg-{timestamp}.json"
+        with open(output_path, "w") as f:
+            json.dump(missing_coverage, f, indent=2)
 
-    return 0
+        print(f"Results written to: {output_path}")
+
+        if missing_coverage:
+            print(f"Found {len(missing_coverage)} functions with < 100% coverage")
+        else:
+            print("All functions have 100% coverage!")
+
+        return 0
 
 
 if __name__ == "__main__":

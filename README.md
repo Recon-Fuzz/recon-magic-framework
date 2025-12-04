@@ -81,6 +81,10 @@ Workflows are JSON files that define a sequence of steps to execute. Each step c
         "type": "CLAUDE_CODE",
         "model": "inherit"
       },
+      "output": {
+        "capture": true,
+        "save_to": "analysis-results-{timestamp}.json"
+      },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
@@ -133,6 +137,13 @@ Each step supports these options:
 
 - `shouldCreateSummary`: Create a summary after step completion (future feature)
 - `shouldCommitChanges`: Automatically commit git changes after the step
+- `output`: Optional configuration to capture and save step output
+  - `capture`: Set to `true` to capture the step's output (stdout/stderr for PROGRAM steps, response content for LLM steps)
+  - `save_to`: File path where the output should be saved
+    - Supports `{timestamp}` placeholder which is replaced with the timestamp value from the tool's output data
+    - Captured output is automatically written to the specified file path
+    - For PROGRAM model types, captures command execution output
+    - For LLM model types (CLAUDE_CODE, OPENCODE), captures the agent's response
 
 ## Creating Workflows
 

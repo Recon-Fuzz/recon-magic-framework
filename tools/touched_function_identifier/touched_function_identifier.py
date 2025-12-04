@@ -184,8 +184,8 @@ class TouchedFunctionIdentifier:
             for func_name in target_funcs:
                 self.process_target_function(contract_name, func_name)
 
-    def write_output(self) -> None:
-        """Write the functions-to-cover.json file."""
+    def get_output_data(self) -> dict:
+        """Get the output data as a dictionary."""
         # Convert sets to sorted lists for consistent output
         output = {
             contract: {
@@ -193,30 +193,56 @@ class TouchedFunctionIdentifier:
             }
             for contract, functions in sorted(self.functions_to_cover.items())
         }
+        return output
 
-        # Ensure output directory exists
-        self.output_file.parent.mkdir(parents=True, exist_ok=True)
+    def write_output(self, return_json: bool = False) -> None:
+        """Write the functions-to-cover.json file or return JSON to stdout.
 
-        # Write the JSON file
-        with open(self.output_file, 'w') as f:
-            json.dump(output, f, indent=2)
+        Args:
+            return_json: If True, print JSON to stdout instead of writing to file
+        """
+        output = self.get_output_data()
 
-        print(f"\n✓ Successfully wrote output to {self.output_file}")
-        print(f"  Found {len(output)} contracts with {sum(len(v['functions_to_cover']) for v in output.values())} total functions")
+        if return_json:
+            # Return JSON to stdout
+            output_with_metadata = {
+                "data": output,
+                "summary": {
+                    "contracts_found": len(output),
+                    "total_functions": sum(len(v['functions_to_cover']) for v in output.values())
+                }
+            }
+            print(json.dumps(output_with_metadata, indent=2))
+        else:
+            # Ensure output directory exists
+            self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    def run(self) -> None:
-        """Main execution flow."""
-        print("=" * 60)
-        print("Touched Function Identifier")
-        print("=" * 60)
+            # Write the JSON file
+            with open(self.output_file, 'w') as f:
+                json.dump(output, f, indent=2)
+
+            print(f"\n✓ Successfully wrote output to {self.output_file}")
+            print(f"  Found {len(output)} contracts with {sum(len(v['functions_to_cover']) for v in output.values())} total functions")
+
+    def run(self, return_json: bool = False) -> None:
+        """Main execution flow.
+
+        Args:
+            return_json: If True, print JSON to stdout instead of writing to file
+        """
+        if not return_json:
+            print("=" * 60)
+            print("Touched Function Identifier")
+            print("=" * 60)
 
         self.load_target_functions()
         self.process_all_targets()
-        self.write_output()
+        self.write_output(return_json)
 
-        print("\n" + "=" * 60)
-        print("Done!")
-        print("=" * 60)
+        if not return_json:
+            print("\n" + "=" * 60)
+            print("Done!")
+            print("=" * 60)
 
 
 def main():
@@ -258,6 +284,12 @@ Example usage:
         help='Output file path (default: ./magic/functions-to-cover.json)'
     )
 
+    parser.add_argument(
+        '--return-json',
+        action='store_true',
+        help='Return JSON output to stdout instead of writing to file'
+    )
+
     args = parser.parse_args()
 
     # Validate inputs
@@ -277,12 +309,19 @@ Example usage:
     )
 
     try:
-        identifier.run()
+        identifier.run(args.return_json)
         return 0
     except Exception as e:
-        print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if args.return_json:
+            error_output = {
+                "error": str(e),
+                "success": False
+            }
+            print(json.dumps(error_output, indent=2))
+        else:
+            print(f"\n❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
         return 1
 
 
