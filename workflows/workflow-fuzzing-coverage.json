@@ -23,7 +23,7 @@
         "model": "inherit"
       },
       "shouldCreateSummary": false,
-      "shouldCommitChanges": false
+      "shouldCommitChanges": true
     },
     {
       "name": "Step 3: Extract Context with sol-expand",
@@ -35,7 +35,7 @@
         "model": "inherit"
       },
       "shouldCreateSummary": false,
-      "shouldCommitChanges": false
+      "shouldCommitChanges": true
     },
     {
       "name": "Step 4: Identifying Touched Functions",
@@ -134,7 +134,7 @@
         }
       ],
       "shouldCreateSummary": true,
-      "shouldCommitChanges": true
+      "shouldCommitChanges": false
     },
     {
       "name": "Step 11: Improving Coverage",
@@ -175,7 +175,7 @@
     {
       "name": "Step 14: Coverage Improvement Decision Check",
       "type": "decision",
-      "description": "Force loop back to Step 11 to continue improving coverage",
+      "description": "Check if coverage needs to be improved",
       "mode": "FILE_EXISTS",
       "modeInfo": {
         "fileName": "functions-missing-covg-*.json"
@@ -196,7 +196,7 @@
         }
       ],
       "shouldCreateSummary": true,
-      "shouldCommitChanges": true
+      "shouldCommitChanges": false
     },
     {
       "name": "Step 15: Workflow Complete",
@@ -207,7 +207,7 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
-      "shouldCreateSummary": true,
+      "shouldCreateSummary": false,
       "shouldCommitChanges": true
     }
   ]

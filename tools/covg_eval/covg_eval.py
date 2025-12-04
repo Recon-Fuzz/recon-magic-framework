@@ -220,6 +220,71 @@ def group_consecutive_lines(lines: list[int]) -> list[str]:
     return ranges
 
 
+def extract_code_snippets(
+    source_path: str,
+    uncovered_lines: list[int],
+) -> list[dict[str, str | list[str]]]:
+    """Extract code snippets for uncovered lines, grouped by consecutive ranges.
+
+    Args:
+        source_path: Path to the Solidity source file.
+        uncovered_lines: Sorted list of uncovered line numbers.
+
+    Returns:
+        List of dicts, each containing:
+            - "line_range": string like "10-15" or "20"
+            - "code": list of strings formatted as "lineNum: code content"
+                     (skips empty/whitespace-only lines)
+    """
+    if not uncovered_lines:
+        return []
+
+    try:
+        with open(source_path) as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return []
+
+    # Group consecutive line numbers
+    groups: list[list[int]] = []
+    current_group = [uncovered_lines[0]]
+
+    for line_num in uncovered_lines[1:]:
+        if line_num == current_group[-1] + 1:
+            current_group.append(line_num)
+        else:
+            groups.append(current_group)
+            current_group = [line_num]
+    groups.append(current_group)
+
+    # Extract code for each group
+    result = []
+    for group in groups:
+        # Create line range string
+        if len(group) == 1:
+            line_range = str(group[0])
+        else:
+            line_range = f"{group[0]}-{group[-1]}"
+
+        # Extract code, skipping empty/whitespace-only lines
+        code_lines = []
+        for line_num in group:
+            if line_num <= len(lines):
+                code = lines[line_num - 1].rstrip()  # Remove trailing whitespace
+                # Only include non-empty lines
+                if code.strip():
+                    code_lines.append(f"{line_num}: {code}")
+
+        # Only add this group if it has code (not all whitespace)
+        if code_lines:
+            result.append({
+                "line_range": line_range,
+                "code": code_lines,
+            })
+
+    return result
+
+
 def load_functions_to_cover(magic_dir: Path) -> dict[str, list[str]]:
     """Load the functions-to-cover.json file.
 
@@ -398,10 +463,17 @@ This will:
                 print(f"  {func_name} (lines {start_line}-{end_line}): {percentage:.2f}% coverage")
 
             if percentage < 100.0:
-                line_ranges = group_consecutive_lines(uncovered_lines)
+                # Extract code snippets for uncovered lines
+                code_snippets = extract_code_snippets(source_path, uncovered_lines)
+
                 missing_coverage[func_name] = {
                     "contract": contract_name,
-                    "lines_missing_covg": line_ranges,
+                    "source_file": source_path,
+                    "function_range": {
+                        "start": start_line,
+                        "end": end_line,
+                    },
+                    "uncovered_code": code_snippets,
                 }
 
     # Write output file
