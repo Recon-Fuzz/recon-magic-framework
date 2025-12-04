@@ -187,15 +187,37 @@ def generate_output(contract_functions: Dict[str, Set[str]], output_file: Path, 
         print(f"Total unique functions: {sum(len(item['target_functions']) for item in output_data)}")
 
 
+def find_recon_directory() -> Path:
+    """
+    Find the recon/ directory in the current working directory.
+
+    Returns:
+        Path to the recon directory
+
+    Raises:
+        FileNotFoundError if recon directory is not found
+    """
+    current_dir = Path.cwd()
+    recon_dir = current_dir / "recon"
+
+    if not recon_dir.exists():
+        raise FileNotFoundError(
+            f"Error: 'recon/' directory not found in current working directory: {current_dir}\n"
+            f"Please run this tool from a directory containing a 'recon/' folder."
+        )
+
+    if not recon_dir.is_dir():
+        raise NotADirectoryError(
+            f"Error: 'recon/' exists but is not a directory: {recon_dir}"
+        )
+
+    return recon_dir
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract target functions from fuzzing suite contracts"
-    )
-    parser.add_argument(
-        "--targets",
-        type=Path,
-        required=True,
-        help="Path to directory containing target function files and Setup.sol"
+        description="Extract target functions from fuzzing suite contracts. "
+                    "This tool automatically searches for the 'recon/' directory in the current working directory."
     )
     parser.add_argument(
         "--output",
@@ -211,16 +233,23 @@ def main():
 
     args = parser.parse_args()
 
+    # Automatically find the recon directory
+    try:
+        targets_dir = find_recon_directory()
+    except (FileNotFoundError, NotADirectoryError) as e:
+        print(str(e))
+        return 1
+
     # Set default output to current working directory if not specified
     if args.output is None:
         args.output = Path.cwd() / "magic" / "target-functions.json"
 
     # Derive setup file path from targets directory
-    setup_file = args.targets / "Setup.sol"
+    setup_file = targets_dir / "Setup.sol"
 
     # Validate inputs
-    if not args.targets.exists():
-        print(f"Error: Targets directory not found: {args.targets}")
+    if not targets_dir.exists():
+        print(f"Error: Targets directory not found: {targets_dir}")
         return 1
 
     if not setup_file.exists():
@@ -231,7 +260,7 @@ def main():
         print("=" * 60)
         print("Target Function Extraction Script")
         print("=" * 60)
-        print(f"Targets directory: {args.targets}")
+        print(f"Targets directory: {targets_dir}")
         print(f"Setup file: {setup_file}")
         print(f"Output file: {args.output}")
         print("=" * 60)
@@ -247,7 +276,7 @@ def main():
     # Step 2: Process target files
     if not args.return_json:
         print("\nStep 2: Processing target function files...")
-    contract_functions = process_target_files(args.targets, state_var_mapping)
+    contract_functions = process_target_files(targets_dir, state_var_mapping)
 
     # Step 3: Generate output
     if not args.return_json:

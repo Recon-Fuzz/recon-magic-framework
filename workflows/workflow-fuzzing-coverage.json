@@ -5,7 +5,7 @@
       "name": "Step 1: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "prompt": "extract-target-functions --targets test/recon --return-json",
+      "prompt": "extract-target-functions --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
