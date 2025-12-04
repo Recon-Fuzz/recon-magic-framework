@@ -146,8 +146,14 @@ def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str]) -
     return contract_functions
 
 
-def generate_output(contract_functions: Dict[str, Set[str]], output_file: Path):
-    """Generate the JSON output file."""
+def generate_output(contract_functions: Dict[str, Set[str]], output_file: Path, return_json: bool = False):
+    """Generate the JSON output file or return JSON to stdout.
+
+    Args:
+        contract_functions: Dictionary mapping contract names to sets of functions
+        output_file: Path to write the output file
+        return_json: If True, print JSON to stdout instead of writing to file
+    """
     # Convert to the required format
     output_data = []
 
@@ -158,27 +164,60 @@ def generate_output(contract_functions: Dict[str, Set[str]], output_file: Path):
             "target_functions": functions
         })
 
-    # Create output directory if it doesn't exist
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    if return_json:
+        # Return JSON to stdout with metadata
+        output_with_metadata = {
+            "data": output_data,
+            "summary": {
+                "total_contracts": len(output_data),
+                "total_unique_functions": sum(len(item['target_functions']) for item in output_data)
+            }
+        }
+        print(json.dumps(output_with_metadata, indent=2))
+    else:
+        # Create output directory if it doesn't exist
+        output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON file with pretty formatting
-    with open(output_file, 'w') as f:
-        json.dump(output_data, f, indent=2)
+        # Write JSON file with pretty formatting
+        with open(output_file, 'w') as f:
+            json.dump(output_data, f, indent=2)
 
-    print(f"\nOutput written to: {output_file}")
-    print(f"Total contracts: {len(output_data)}")
-    print(f"Total unique functions: {sum(len(item['target_functions']) for item in output_data)}")
+        print(f"\nOutput written to: {output_file}")
+        print(f"Total contracts: {len(output_data)}")
+        print(f"Total unique functions: {sum(len(item['target_functions']) for item in output_data)}")
+
+
+def find_recon_directory() -> Path:
+    """
+    Find the recon/ directory in the current working directory.
+
+    Returns:
+        Path to the recon directory
+
+    Raises:
+        FileNotFoundError if recon directory is not found
+    """
+    current_dir = Path.cwd()
+    recon_dir = current_dir / "recon"
+
+    if not recon_dir.exists():
+        raise FileNotFoundError(
+            f"Error: 'recon/' directory not found in current working directory: {current_dir}\n"
+            f"Please run this tool from a directory containing a 'recon/' folder."
+        )
+
+    if not recon_dir.is_dir():
+        raise NotADirectoryError(
+            f"Error: 'recon/' exists but is not a directory: {recon_dir}"
+        )
+
+    return recon_dir
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract target functions from fuzzing suite contracts"
-    )
-    parser.add_argument(
-        "--targets",
-        type=Path,
-        required=True,
-        help="Path to directory containing target function files and Setup.sol"
+        description="Extract target functions from fuzzing suite contracts. "
+                    "This tool automatically searches for the 'recon/' directory in the current working directory."
     )
     parser.add_argument(
         "--output",
@@ -186,48 +225,66 @@ def main():
         default=None,
         help="Output file path (default: magic/target-functions.json in current directory)"
     )
+    parser.add_argument(
+        "--return-json",
+        action="store_true",
+        help="Return JSON output to stdout instead of writing to file"
+    )
 
     args = parser.parse_args()
+
+    # Automatically find the recon directory
+    try:
+        targets_dir = find_recon_directory()
+    except (FileNotFoundError, NotADirectoryError) as e:
+        print(str(e))
+        return 1
 
     # Set default output to current working directory if not specified
     if args.output is None:
         args.output = Path.cwd() / "magic" / "target-functions.json"
 
     # Derive setup file path from targets directory
-    setup_file = args.targets / "Setup.sol"
+    setup_file = targets_dir / "Setup.sol"
 
     # Validate inputs
-    if not args.targets.exists():
-        print(f"Error: Targets directory not found: {args.targets}")
+    if not targets_dir.exists():
+        print(f"Error: Targets directory not found: {targets_dir}")
         return 1
 
     if not setup_file.exists():
         print(f"Error: Setup file not found: {setup_file}")
         return 1
 
-    print("=" * 60)
-    print("Target Function Extraction Script")
-    print("=" * 60)
-    print(f"Targets directory: {args.targets}")
-    print(f"Setup file: {setup_file}")
-    print(f"Output file: {args.output}")
-    print("=" * 60)
-    print()
+    if not args.return_json:
+        print("=" * 60)
+        print("Target Function Extraction Script")
+        print("=" * 60)
+        print(f"Targets directory: {targets_dir}")
+        print(f"Setup file: {setup_file}")
+        print(f"Output file: {args.output}")
+        print("=" * 60)
+        print()
 
     # Step 1: Parse Setup contract
-    print("Step 1: Parsing Setup contract...")
+    if not args.return_json:
+        print("Step 1: Parsing Setup contract...")
     state_var_mapping = parse_setup_contract(setup_file)
-    print(f"Found {len(state_var_mapping)} state variables")
+    if not args.return_json:
+        print(f"Found {len(state_var_mapping)} state variables")
 
     # Step 2: Process target files
-    print("\nStep 2: Processing target function files...")
-    contract_functions = process_target_files(args.targets, state_var_mapping)
+    if not args.return_json:
+        print("\nStep 2: Processing target function files...")
+    contract_functions = process_target_files(targets_dir, state_var_mapping)
 
     # Step 3: Generate output
-    print("\nStep 3: Generating output...")
-    generate_output(contract_functions, args.output)
+    if not args.return_json:
+        print("\nStep 3: Generating output...")
+    generate_output(contract_functions, args.output, args.return_json)
 
-    print("\nDone!")
+    if not args.return_json:
+        print("\nDone!")
     return 0
 
 
