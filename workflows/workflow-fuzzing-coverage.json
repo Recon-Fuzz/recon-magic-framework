@@ -110,10 +110,37 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 5: Improving Coverage",
+      "name": "Initial Check of Coverage",
+      "type": "decision",
+      "description": "Determine if coverage needs to be improved",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "functions-missing-covg-*.json"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 6: Improving Coverage",
+          "NOTE": "Branch to improve coverage by identifying source of blockages"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Workflow Complete",
+          "NOTE": "No missing coverage file found, skip to workflow completion"
+        }
+      ],
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 6: Improving Coverage",
       "type": "task",
       "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to improve coverage of the system",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to improve coverage of the system",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -122,7 +149,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 6: Run Echidna Programmatically",
+      "name": "Phase 7: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -134,7 +161,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 6b: Evaluate Coverage",
+      "name": "Phase 8: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/",
@@ -148,7 +175,7 @@
     {
       "name": "Coverage Improvement Iteration Check",
       "type": "decision",
-      "description": "Force loop back to Phase 5 to continue improving coverage",
+      "description": "Force loop back to Phase 6 to continue improving coverage",
       "mode": "FILE_EXISTS",
       "modeInfo": {
         "fileName": "functions-missing-covg-*.json"
@@ -158,18 +185,29 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 5: Improving Coverage",
-          "NOTE": "Loop back to Phase 5"
+          "destinationStep": "Phase 6: Improving Coverage",
+          "NOTE": "Loop back to Phase 6 to continue with coverage improvement"
         },
         {
           "operator": "eq",
           "value": 0,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 5: Improving Coverage",
-          "NOTE": "Loop back to Phase 5"
+          "action": "CONTINUE",
+          "NOTE": "No missing coverage file found, proceed to workflow completion"
         }
       ],
-      "shouldCreateSummary": false,
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Workflow Complete",
+      "type": "task",
+      "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
+      "prompt": "echo 'Fuzzing coverage workflow completed successfully'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
       "shouldCommitChanges": true
     }
   ]
