@@ -107,10 +107,14 @@
       "name": "Phase 2: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "prompt": "extract-target-functions --targets test/recon",
+      "prompt": "extract-target-functions --targets test/recon --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/target-functions.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
@@ -119,10 +123,14 @@
       "name": "Phase 3: Order Prerequisite Functions",
       "type": "task",
       "description": "Sort functions in testing-priority.json based on prerequisite count",
-      "prompt": "order-prerequisite-func ./magic/testing-priority.json",
+      "prompt": "order-prerequisite-func ./magic/testing-priority.json --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/testing-priority.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
