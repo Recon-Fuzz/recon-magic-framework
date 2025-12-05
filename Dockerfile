@@ -47,7 +47,7 @@ WORKDIR /app
 COPY . .
 
 # Install dependencies and build project
-RUN uv pip install --system --break-system-packages -e .
+RUN pip install --break-system-packages -e .
 
 # Create non-root user for running commands
 RUN useradd -m -s /bin/bash reconuser && \
