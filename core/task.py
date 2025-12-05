@@ -200,10 +200,10 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
     # Create logs directory - use custom logs dir if provided, otherwise framework logs/
     logs_dir_override = os.environ.get('RECON_LOGS_DIR')
     if logs_dir_override:
-        logs_dir = Path(logs_dir_override)
+        logs_dir = Path(logs_dir_override).resolve()
     else:
-        logs_dir = Path(framework_root) / "logs"
-    logs_dir.mkdir(exist_ok=True)
+        logs_dir = (Path(framework_root) / "logs").resolve()
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     # Build the command with extended timeouts and streaming output
     env = os.environ.copy()
