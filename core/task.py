@@ -257,7 +257,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         cmd = f"""{cd_prefix}claude {skip_permissions} \
 -p {shlex.quote(prompt)} \
--m {resolved_model} \
+--model {resolved_model} \
 --max-turns 9999999999 \
 --output-format stream-json \
 --verbose 2>&1 | tee {log_file} | python3 -u {parser_script_file}"""
@@ -306,7 +306,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         cmd = f"""{cd_prefix}opencode run  \
 {shlex.quote(prompt)} \
--m {resolved_model} \
+--model {resolved_model} \
 --format json 2>&1 | tee {shlex.quote(str(log_file))} | python3 -u {shlex.quote(str(parser_script_file))}"""
 
         print(f"📝 Logging to: {log_file}\n")

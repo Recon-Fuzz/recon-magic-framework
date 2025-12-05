@@ -203,6 +203,11 @@ def start_job_listener(
                     print(f"Direct Prompt Mode - Model: {model_type}")
                     print(f"Prompt: {prompt[:100]}..." if len(prompt) > 100 else f"Prompt: {prompt}")
 
+                    # Clone claude config if URL provided (needed for agent definitions)
+                    if claude_url:
+                        if not clone_claude_config(claude_url, claude_ref):
+                            print("Warning: Failed to clone Claude config, continuing without it")
+
                     workflow_file = create_dynamic_workflow(prompt, model_type, str(job_id))
 
                 elif job_type == "workflowName":
