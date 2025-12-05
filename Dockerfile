@@ -4,8 +4,11 @@
 # docker run -it -v .:/source:ro recon-magic-framework bash -c "cp -r /source /workspace && /bin/bash"
 FROM python:3.12-slim
 
+# Create non-root user early
+RUN useradd -m -s /bin/bash reconuser
+
 # Install Node.js and Go
-RUN apt-get update && apt-get install -y curl git wget ripgrep && \
+RUN apt-get update && apt-get install -y curl git wget ripgrep sudo && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz && \
@@ -14,7 +17,7 @@ RUN apt-get update && apt-get install -y curl git wget ripgrep && \
     rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/root/go"
+ENV GOPATH="/opt/go"
 ENV PATH="${GOPATH}/bin:${PATH}"
 
 # Install Homebrew
@@ -32,13 +35,19 @@ RUN pip install uv
 # Install Node.js packages globally
 RUN npm install -g @anthropic-ai/claude-code opencode-ai
 
-# Install Medusa fuzzer
-RUN go install github.com/crytic/medusa@latest
+# Install Medusa fuzzer (to shared location)
+RUN mkdir -p /opt/go && \
+    GOPATH=/opt/go go install github.com/crytic/medusa@latest && \
+    chmod -R 755 /opt/go
 
-# Install Foundry
-RUN curl -L https://foundry.paradigm.xyz | bash
-ENV PATH="/root/.foundry/bin:${PATH}"
-RUN foundryup
+# Install Foundry (to shared location)
+ENV FOUNDRY_DIR="/opt/foundry"
+RUN curl -L https://foundry.paradigm.xyz | bash && \
+    . /root/.bashrc && foundryup && \
+    mkdir -p /opt/foundry/bin && \
+    find /root/.foundry -name "forge" -o -name "cast" -o -name "anvil" -o -name "chisel" | xargs -I {} cp {} /opt/foundry/bin/ && \
+    chmod -R 755 /opt/foundry
+ENV PATH="/opt/foundry/bin:${PATH}"
 
 # Set working directory
 WORKDIR /app
@@ -49,13 +58,17 @@ COPY . .
 # Install dependencies and build project
 RUN pip install --break-system-packages -e .
 
-# Create non-root user for running commands
-RUN useradd -m -s /bin/bash reconuser && \
-    mkdir -p /tmp && \
-    chown -R reconuser:reconuser /tmp /app
+# Setup reconuser permissions
+RUN mkdir -p /tmp && \
+    chown -R reconuser:reconuser /tmp /app && \
+    echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Switch to non-root user
 USER reconuser
+
+# Configure git for reconuser
+RUN git config --global user.email "recon@worker.local" && \
+    git config --global user.name "Recon Worker"
 
 # Set working directory to /tmp for user operations
 WORKDIR /tmp
@@ -63,7 +76,3 @@ WORKDIR /tmp
 # Environment variables (override at runtime with -e flag)
 ENV ANTHROPIC_API_KEY=""
 ENV OPENROUTER_API_KEY=""
-
-## Run a command to clone a project
-## Clone some prompts
-## Run some tests.

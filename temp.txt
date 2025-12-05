@@ -1,0 +1,1 @@
+docker run -d --name recon-worker -e PYTHONUNBUFFERED=1 -e GITHUB_TOKEN="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" -e ANTHROPIC_API_KEY="YOUR_KEY" -e OPENROUTER_API_KEY="YOUR_KEY" recon-magic-framework python /app/worker.py 'https://staging-backend-recon-3273b8123c21.herokuapp.com/claude/jobs/worker' 'c)f5Q0U"Y:41Wbf5yxZ=?|]C' true
