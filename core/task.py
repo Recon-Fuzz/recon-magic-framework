@@ -234,9 +234,8 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         import re
         agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
         if agent_file_match:
-            # Handle both 'agent' and 'agents' directory names
-            agent_dir = 'agents' if agent_file_match.group(1) == '.claude' else 'agent'
-            agent_file_path = Path(framework_root) / agent_file_match.group(1) / agent_dir / f"{agent_file_match.group(2)}.md"
+            # Always use 'agents' directory (matches ai-agent-primers repo structure)
+            agent_file_path = Path(framework_root) / agent_file_match.group(1) / 'agents' / f"{agent_file_match.group(2)}.md"
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
@@ -283,9 +282,10 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
         import re
-        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agent/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
         if agent_file_match:
-            agent_file_path = Path(framework_root) / agent_file_match.group(1) / 'agent' / f"{agent_file_match.group(2)}.md"
+            # Always use 'agents' directory (matches ai-agent-primers repo structure)
+            agent_file_path = Path(framework_root) / agent_file_match.group(1) / 'agents' / f"{agent_file_match.group(2)}.md"
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
