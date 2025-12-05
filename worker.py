@@ -242,13 +242,17 @@ def start_job_listener(
 
                 print(f"Executing workflow: {workflow_file}")
 
+                # For directPrompt, run from /tmp so both ./repo and ./.claude are accessible
+                # For other job types, run from inside ./repo
+                effective_repo_path = None if job_type == "directPrompt" else "./repo"
+
                 # Run the workflow with worker-specific hooks
                 workflow_result = run_workflow(
                     workflow_file=workflow_file,
                     dangerous=permissions_flag,
                     loop_hardcap=5,  # TODO: Make configurable via API
                     logs_dir="./logs",
-                    repo_path="./repo",
+                    repo_path=effective_repo_path,
                     before_hook=worker_before_step_hook,
                     after_hook=worker_after_step_hook
                 )
