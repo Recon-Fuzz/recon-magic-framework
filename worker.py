@@ -18,9 +18,47 @@ from server.setup import clone_claude_config, clone_repository, setup_workspace
 from server.utils import parse_repo_info
 
 
+def update_job_data(api_url: str, bearer_token: str, job_id: str, data: dict) -> bool:
+    """
+    Send generic data to the backend API (not step data).
+
+    Args:
+        api_url: Base API URL
+        bearer_token: Authentication token
+        job_id: Job ID
+        data: Data to merge into resultData
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {bearer_token}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "jobId": job_id,
+            "resultData": data
+        }
+
+        response = requests.put(
+            f"{api_url}/data",
+            headers=headers,
+            json=payload
+        )
+
+        response.raise_for_status()
+        print(f"  ✓ Job data sent to backend")
+        return True
+    except Exception as e:
+        print(f"  ⚠ Failed to send job data to backend: {e}")
+        return False
+
+
 def update_job_step_data(api_url: str, bearer_token: str, job_id: str, step_data: dict) -> bool:
     """
-    Send step data to the backend API.
+    Send step data to the backend API (appends to steps array).
 
     Args:
         api_url: Base API URL
@@ -37,11 +75,10 @@ def update_job_step_data(api_url: str, bearer_token: str, job_id: str, step_data
             "Content-Type": "application/json"
         }
 
-        # Get current job data to append to steps array
         payload = {
             "jobId": job_id,
             "resultData": {
-                "steps": [step_data]  # Backend should merge this into existing steps array
+                "steps": [step_data]  # Backend merges into existing steps array
             }
         }
 
@@ -367,9 +404,9 @@ def start_job_listener(
                 # Setup git remote in repo directory for per-step pushes
                 setup_repo_remote("repo", github_token, new_repo_url)
 
-                # Send repo URL to backend immediately
+                # Send repo URL to backend immediately (not as a step)
                 org_name, _ = parse_repo_info(new_repo_url)
-                update_job_step_data(api_url, bearer_token, job_id, {
+                update_job_data(api_url, bearer_token, job_id, {
                     "repoUrl": new_repo_url,
                     "orgName": org_name,
                     "repoName": new_repo_name
