@@ -30,10 +30,22 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 3: Extract Context with sol-expand",
+      "name": "Step 3a: Filter Build Artifacts",
       "type": "task",
-      "description": "Run sol-expand tool to extract context from build artifacts",
-      "prompt": "sol-expand --extract-context $(find out/build-info -name '*.json' | head -1)",
+      "description": "Filter build-info to remove sources without AST data (foundry-pp files)",
+      "prompt": "filter-build-info $(find out/build-info -name '*.json' -not -name '*.filtered.json' | head -1)",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 3b: Extract Context with sol-expand",
+      "type": "task",
+      "description": "Run sol-expand tool to extract context from filtered build artifacts",
+      "prompt": "sol-expand --extract-context $(find out/build-info -name '*.filtered.json' | head -1)",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
