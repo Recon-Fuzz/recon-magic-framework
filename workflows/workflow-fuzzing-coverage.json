@@ -30,10 +30,22 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 3: Extract Context with sol-expand",
+      "name": "Step 3a: Filter Build Artifacts",
       "type": "task",
-      "description": "Run sol-expand tool to extract context from build artifacts",
-      "prompt": "sol-expand --extract-context $(find out/build-info -name '*.json' | head -1)",
+      "description": "Filter build-info to remove sources without AST data (foundry-pp files)",
+      "prompt": "filter-build-info $(find out/build-info -name '*.json' -not -name '*.filtered.json' | head -1)",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 3b: Extract Context with sol-expand",
+      "type": "task",
+      "description": "Run sol-expand tool to extract context from filtered build artifacts",
+      "prompt": "sol-expand --extract-context $(find out/build-info -name '*.filtered.json' | head -1)",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -102,6 +114,7 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
@@ -152,7 +165,7 @@
       "name": "Step 11: Improving Coverage",
       "type": "task",
       "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to improve coverage of the system",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to improve coverage of the system",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -169,6 +182,7 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },

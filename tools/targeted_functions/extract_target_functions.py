@@ -78,13 +78,21 @@ def extract_function_calls(content: str) -> List[Tuple[str, str]]:
     return function_calls
 
 
-def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str]) -> Dict[str, Set[str]]:
+def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str], quiet: bool = False) -> Dict[str, Set[str]]:
     """
     Process all target function files and extract functions grouped by contract.
+
+    Args:
+        targets_dir: Path to the directory containing target function files
+        state_var_mapping: Mapping of state variables to contract types
+        quiet: If True, output to stderr instead of stdout
 
     Returns:
         Dict mapping contract names to sets of target function names
     """
+    import sys
+    output = sys.stderr if quiet else sys.stdout
+
     # Contracts to ignore
     IGNORED_CONTRACTS = {"DoomsdayTargets", "ManagersTargets"}
 
@@ -113,11 +121,11 @@ def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str]) -
         # Check if this file should be ignored based on filename
         file_stem = sol_file.stem  # Gets filename without extension
         if file_stem in IGNORED_CONTRACTS:
-            print(f"Skipping: {sol_file.name} (ignored contract)")
+            print(f"Skipping: {sol_file.name} (ignored contract)", file=output)
             ignored_files.append(sol_file.name)
             continue
 
-        print(f"Processing: {sol_file.name}")
+        print(f"Processing: {sol_file.name}", file=output)
 
         with open(sol_file, 'r') as f:
             content = f.read()
@@ -135,13 +143,13 @@ def process_target_files(targets_dir: Path, state_var_mapping: Dict[str, str]) -
 
     # Report ignored files
     if ignored_files:
-        print(f"\nIgnored {len(ignored_files)} contract(s): {', '.join(ignored_files)}")
+        print(f"\nIgnored {len(ignored_files)} contract(s): {', '.join(ignored_files)}", file=output)
 
     # Report unmapped variables as warnings
     if unmapped_vars:
-        print(f"\nWarning: The following state variables were not found in Setup contract:")
+        print(f"\nWarning: The following state variables were not found in Setup contract:", file=output)
         for var in sorted(unmapped_vars):
-            print(f"  - {var}")
+            print(f"  - {var}", file=output)
 
     return contract_functions
 
@@ -187,9 +195,16 @@ def generate_output(contract_functions: Dict[str, Set[str]], output_file: Path, 
         print(f"Total unique functions: {sum(len(item['target_functions']) for item in output_data)}")
 
 
-def find_recon_directory() -> Path:
+def find_recon_directory(quiet: bool = False) -> Path:
     """
-    Find the recon/ directory in the current working directory.
+    Find the recon/ directory by searching in common locations.
+    Searches in the following order:
+    1. ./recon (root level)
+    2. */recon (one level deep)
+    3. **/recon (recursively, up to 3 levels deep)
+
+    Args:
+        quiet: If True, suppress informational output
 
     Returns:
         Path to the recon directory
@@ -197,21 +212,38 @@ def find_recon_directory() -> Path:
     Raises:
         FileNotFoundError if recon directory is not found
     """
+    import sys
     current_dir = Path.cwd()
-    recon_dir = current_dir / "recon"
 
-    if not recon_dir.exists():
-        raise FileNotFoundError(
-            f"Error: 'recon/' directory not found in current working directory: {current_dir}\n"
-            f"Please run this tool from a directory containing a 'recon/' folder."
-        )
+    # Search patterns in priority order
+    search_patterns = [
+        "recon",           # Root level: ./recon
+        "*/recon",         # One level deep: ./test/recon, ./src/recon, etc.
+        "**/recon",        # Recursive search (up to reasonable depth)
+    ]
 
-    if not recon_dir.is_dir():
-        raise NotADirectoryError(
-            f"Error: 'recon/' exists but is not a directory: {recon_dir}"
-        )
+    for pattern in search_patterns:
+        matches = list(current_dir.glob(pattern))
 
-    return recon_dir
+        # Filter to only directories and limit recursive search depth
+        valid_matches = [
+            m for m in matches
+            if m.is_dir() and len(m.relative_to(current_dir).parts) <= 3
+        ]
+
+        if valid_matches:
+            # If multiple matches, prefer shallower paths
+            recon_dir = min(valid_matches, key=lambda p: len(p.relative_to(current_dir).parts))
+            if not quiet:
+                print(f"  📁 Found recon directory at: {recon_dir.relative_to(current_dir)}", file=sys.stderr)
+            return recon_dir
+
+    # No recon directory found
+    raise FileNotFoundError(
+        f"Error: 'recon/' directory not found in current working directory: {current_dir}\n"
+        f"Searched patterns: {', '.join(search_patterns)}\n"
+        f"Please ensure a 'recon/' folder exists in your project."
+    )
 
 
 def main():
@@ -233,11 +265,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Automatically find the recon directory
+    import sys
+
+    # Automatically find the recon directory (quiet mode when returning JSON)
     try:
-        targets_dir = find_recon_directory()
+        targets_dir = find_recon_directory(quiet=args.return_json)
     except (FileNotFoundError, NotADirectoryError) as e:
-        print(str(e))
+        print(str(e), file=sys.stderr)
         return 1
 
     # Set default output to current working directory if not specified
@@ -249,11 +283,11 @@ def main():
 
     # Validate inputs
     if not targets_dir.exists():
-        print(f"Error: Targets directory not found: {targets_dir}")
+        print(f"Error: Targets directory not found: {targets_dir}", file=sys.stderr)
         return 1
 
     if not setup_file.exists():
-        print(f"Error: Setup file not found: {setup_file}")
+        print(f"Error: Setup file not found: {setup_file}", file=sys.stderr)
         return 1
 
     if not args.return_json:
@@ -276,7 +310,7 @@ def main():
     # Step 2: Process target files
     if not args.return_json:
         print("\nStep 2: Processing target function files...")
-    contract_functions = process_target_files(targets_dir, state_var_mapping)
+    contract_functions = process_target_files(targets_dir, state_var_mapping, quiet=args.return_json)
 
     # Step 3: Generate output
     if not args.return_json:

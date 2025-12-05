@@ -34,12 +34,13 @@ class TouchedFunctionIdentifier:
         'OwnableRoles', 'ReentrancyGuardTransient'
     }
 
-    def __init__(self, sol_expand_dir: Path, target_functions_file: Path, output_file: Path):
+    def __init__(self, sol_expand_dir: Path, target_functions_file: Path, output_file: Path, quiet: bool = False):
         """Initialize the identifier with paths."""
         self.sol_expand_dir = sol_expand_dir
         self.target_functions_file = target_functions_file
         self.output_file = output_file
         self.project_root = sol_expand_dir.parent
+        self.quiet = quiet
 
         # Data structures
         self.target_functions: List[Dict] = []
@@ -48,9 +49,11 @@ class TouchedFunctionIdentifier:
 
     def load_target_functions(self) -> None:
         """Load the target-functions.json file."""
+        import sys
         with open(self.target_functions_file, 'r') as f:
             self.target_functions = json.load(f)
-        print(f"✓ Loaded {len(self.target_functions)} contract(s) from target-functions.json")
+        output = sys.stderr if self.quiet else sys.stdout
+        print(f"✓ Loaded {len(self.target_functions)} contract(s) from target-functions.json", file=output)
 
     def find_function_file(self, contract_name: str, function_name: str) -> Optional[Path]:
         """Find the markdown file for a specific function in sol-expand output."""
@@ -137,7 +140,9 @@ class TouchedFunctionIdentifier:
             self.contract_type_cache[contract_name] = contract_type
             return contract_type
         except Exception as e:
-            print(f"⚠ Warning: Could not read {contract_file}: {e}")
+            import sys
+            output = sys.stderr if self.quiet else sys.stdout
+            print(f"⚠ Warning: Could not read {contract_file}: {e}", file=output)
             self.contract_type_cache[contract_name] = 'contract'
             return 'contract'
 
@@ -156,13 +161,16 @@ class TouchedFunctionIdentifier:
 
     def process_target_function(self, contract_name: str, function_name: str) -> None:
         """Process a single target function and collect all touched functions."""
+        import sys
+        output = sys.stderr if self.quiet else sys.stdout
+
         # Find the function file
         function_file = self.find_function_file(contract_name, function_name)
         if not function_file:
-            print(f"⚠ Warning: Could not find function file for {contract_name}.{function_name}")
+            print(f"⚠ Warning: Could not find function file for {contract_name}.{function_name}", file=output)
             return
 
-        print(f"  Processing {contract_name}.{function_name}")
+        print(f"  Processing {contract_name}.{function_name}", file=output)
 
         # Parse the call tree
         touched_functions = self.parse_call_tree(function_file)
@@ -174,12 +182,15 @@ class TouchedFunctionIdentifier:
 
     def process_all_targets(self) -> None:
         """Process all target functions from target-functions.json."""
+        import sys
+        output = sys.stderr if self.quiet else sys.stdout
+
         for contract_info in self.target_functions:
             contract_name = contract_info['contract']
             target_funcs = contract_info['target_functions']
 
-            print(f"\nProcessing contract: {contract_name}")
-            print(f"Target functions: {len(target_funcs)}")
+            print(f"\nProcessing contract: {contract_name}", file=output)
+            print(f"Target functions: {len(target_funcs)}", file=output)
 
             for func_name in target_funcs:
                 self.process_target_function(contract_name, func_name)
@@ -292,20 +303,23 @@ Example usage:
 
     args = parser.parse_args()
 
+    import sys
+
     # Validate inputs
     if not args.sol_expand_dir.exists():
-        print(f"Error: Sol-expand directory does not exist: {args.sol_expand_dir}")
+        print(f"Error: Sol-expand directory does not exist: {args.sol_expand_dir}", file=sys.stderr)
         return 1
 
     if not args.target_functions.exists():
-        print(f"Error: Target functions file does not exist: {args.target_functions}")
+        print(f"Error: Target functions file does not exist: {args.target_functions}", file=sys.stderr)
         return 1
 
     # Run the identifier
     identifier = TouchedFunctionIdentifier(
         args.sol_expand_dir,
         args.target_functions,
-        args.output
+        args.output,
+        quiet=args.return_json
     )
 
     try:
