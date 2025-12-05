@@ -215,16 +215,19 @@ def commit_changes(step: Step, step_num: int) -> dict | None:
     """
     print(f"\n💾 Committing changes for step {step_num}: {step.name}")
 
+    # Get repo path from environment (set by run_workflow)
+    repo_path = os.environ.get('RECON_REPO_PATH', '.')
+
     # Check if git repo exists, initialize if not
-    if not is_git_repo():
+    if not is_git_repo(repo_path):
         print("  Initializing git repository...")
-        if not init_git_repo(verbose=False):
+        if not init_git_repo(repo_path, verbose=False):
             print("  ❌ Failed to initialize git repository")
             return None
         print("  ✓ Git repository initialized successfully")
 
     # Check if there are any changes to commit
-    success, stdout, _ = run_command("git status --porcelain")
+    success, stdout, _ = run_command("git status --porcelain", cwd=repo_path)
     if not success:
         print("  ❌ Failed to check git status")
         return None
@@ -238,7 +241,7 @@ def commit_changes(step: Step, step_num: int) -> dict | None:
 
     # Add all changes
     print("  Adding changes...")
-    success, _, stderr = run_command("git add .")
+    success, _, stderr = run_command("git add .", cwd=repo_path)
     if not success:
         print(f"  ❌ Failed to add changes: {stderr}")
         return None
@@ -252,12 +255,12 @@ def commit_changes(step: Step, step_num: int) -> dict | None:
 
     # Escape single quotes in the message
     escaped_message = commit_message.replace("'", "'\\''")
-    success, stdout, stderr = run_command(f"git commit -m '{escaped_message}'")
+    success, stdout, stderr = run_command(f"git commit -m '{escaped_message}'", cwd=repo_path)
 
     if success:
         print("  ✓ Changes committed successfully!")
         # Get the commit hash
-        success, commit_hash, _ = run_command("git rev-parse HEAD")
+        success, commit_hash, _ = run_command("git rev-parse HEAD", cwd=repo_path)
         if success:
             return {
                 "commit_hash": commit_hash.strip()[:8],
@@ -286,13 +289,16 @@ def push_changes(step_num: int) -> bool:
     """
     print(f"  📤 Pushing changes for step {step_num}...")
 
+    # Get repo path from environment (set by run_workflow)
+    repo_path = os.environ.get('RECON_REPO_PATH', '.')
+
     # Check if remote 'recon' exists
-    success, stdout, _ = run_command("git remote")
+    success, stdout, _ = run_command("git remote", cwd=repo_path)
     if not success or "recon" not in stdout:
         print("  ⚠ No 'recon' remote configured, skipping push")
         return False
 
-    success, _, stderr = run_command("git push recon main")
+    success, _, stderr = run_command("git push recon main", cwd=repo_path)
     if success:
         print("  ✓ Changes pushed successfully!")
         return True
