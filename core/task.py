@@ -164,6 +164,17 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
             text=True if capture_output else False
         )
 
+        # Check if the command failed
+        if result.returncode != 0:
+            error_msg = f"  ❌ Command failed with exit code {result.returncode}"
+            print(error_msg)
+            if capture_output:
+                if result.stdout:
+                    print(f"  📤 stdout:\n{result.stdout}")
+                if result.stderr:
+                    print(f"  📤 stderr:\n{result.stderr}")
+            return (FAILURE, "CONTINUE", None)
+
         # Handle output if configured
         if capture_output and step.output and step.output.save_to:
             try:
@@ -187,9 +198,13 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
                 print(f"  💾 Output saved to: {save_path}")
 
             except json.JSONDecodeError as e:
-                print(f"  ⚠️  Warning: Failed to parse JSON output: {e}")
+                print(f"  ❌ Error: Failed to parse JSON output: {e}")
+                if result.stdout:
+                    print(f"  📤 stdout received:\n{result.stdout}")
+                return (FAILURE, "CONTINUE", None)
             except Exception as e:
-                print(f"  ⚠️  Warning: Failed to save output: {e}")
+                print(f"  ❌ Error: Failed to save output: {e}")
+                return (FAILURE, "CONTINUE", None)
 
         return (SUCCESS, "CONTINUE", None)
 
@@ -272,7 +287,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
             text=True
         )
 
-        return (result.returncode, "CONTINUE", None)
+        if result.returncode != 0:
+            print(f"  ❌ Claude Code execution failed with exit code {result.returncode}")
+            return (FAILURE, "CONTINUE", None)
+
+        return (SUCCESS, "CONTINUE", None)
 
     if step.model.type == ModelType.OPENCODE:
         # Resolve the model string (handle "inherit")
@@ -318,7 +337,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
             text=True
         )
 
-        return (result.returncode, "CONTINUE", None)
+        if result.returncode != 0:
+            print(f"  ❌ OpenCode execution failed with exit code {result.returncode}")
+            return (FAILURE, "CONTINUE", None)
+
+        return (SUCCESS, "CONTINUE", None)
 
     else:
         print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")

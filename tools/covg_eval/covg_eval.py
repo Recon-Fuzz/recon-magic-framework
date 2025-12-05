@@ -403,8 +403,11 @@ This will:
         print(f"Error: Invalid JSON in functions-to-cover.json: {e}", file=sys.stderr)
         return 1
 
+    # Determine output stream for verbose messages
+    verbose_out = sys.stderr if args.return_json else sys.stdout
+
     if verbose:
-        print(f"Loaded {sum(len(v) for v in functions_to_cover.values())} functions to analyze")
+        print(f"Loaded {sum(len(v) for v in functions_to_cover.values())} functions to analyze", file=verbose_out)
 
     # Find the most recent LCOV file
     try:
@@ -414,13 +417,13 @@ This will:
         return 1
 
     if verbose:
-        print(f"Using LCOV file: {lcov_path}")
+        print(f"Using LCOV file: {lcov_path}", file=verbose_out)
 
     # Parse the LCOV file
     lcov_sources = parse_lcov_file(lcov_path)
 
     if verbose:
-        print(f"Found {len(lcov_sources)} source files in LCOV file")
+        print(f"Found {len(lcov_sources)} source files in LCOV file", file=verbose_out)
 
     # Analyze coverage for each function
     missing_coverage: dict = {}
@@ -437,7 +440,7 @@ This will:
             continue
 
         if verbose:
-            print(f"Analyzing {contract_name} from {source_path}")
+            print(f"Analyzing {contract_name} from {source_path}", file=verbose_out)
 
         # Get line coverage data for this source
         line_coverage = lcov_sources[source_path]["line_coverage"]
@@ -446,7 +449,7 @@ This will:
         functions = find_functions_in_source(source_path)
 
         if verbose:
-            print(f"  Found {len(functions)} functions in source file")
+            print(f"  Found {len(functions)} functions in source file", file=verbose_out)
 
         for func_name in function_names:
             if func_name not in functions:
@@ -465,7 +468,7 @@ This will:
             )
 
             if verbose:
-                print(f"  {func_name} (lines {start_line}-{end_line}): {percentage:.2f}% coverage")
+                print(f"  {func_name} (lines {start_line}-{end_line}): {percentage:.2f}% coverage", file=verbose_out)
 
             if percentage < 100.0:
                 # Extract lines within function range that have coverage data
