@@ -48,6 +48,7 @@ class TaskStep(BaseModel):
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
     output: OutputConfig | None = None
+    allowFailure: bool = Field(default=False, alias="allowFailure")
 
 
 def resolve_model_string(model_type: str, model_string: str) -> str:
@@ -173,6 +174,12 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
                     print(f"  📤 stdout:\n{result.stdout}")
                 if result.stderr:
                     print(f"  📤 stderr:\n{result.stderr}")
+
+            # If allowFailure is set, continue despite the failure
+            if hasattr(step, 'allowFailure') and step.allowFailure:
+                print(f"  ⚠️  Continuing despite failure (allowFailure is enabled)")
+                return (SUCCESS, "CONTINUE", None)
+
             return (FAILURE, "CONTINUE", None)
 
         # Handle output if configured

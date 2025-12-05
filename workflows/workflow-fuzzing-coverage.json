@@ -102,6 +102,7 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
@@ -152,7 +153,7 @@
       "name": "Step 11: Improving Coverage",
       "type": "task",
       "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to improve coverage of the system",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to improve coverage of the system",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -169,6 +170,7 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
