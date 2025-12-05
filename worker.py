@@ -302,7 +302,8 @@ def start_job_listener(
                 claude_ref = job_info.get("claudeRef", "main")
 
                 # Get job type (directPrompt, workflowName, relativeWorkflow)
-                job_type = job_info.get("jobType", "directPrompt")
+                additional_data = job_info.get("additionalData", {})
+                job_type = additional_data.get("jobType", "directPrompt")
 
                 print(f"Job Type: {job_type}")
                 print(f"Repo URL: {repo_url}")
