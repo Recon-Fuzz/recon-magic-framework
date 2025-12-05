@@ -106,7 +106,6 @@ def execute_step(
     execution_count: int,
     loop_hardcap: int = DEFAULT_LOOP_HARDCAP,
     before_hook: Callable[[Step, int], None] | None = None,
-    after_hook: Callable[[Step, int, int, str], None] | None = None
 ) -> tuple[int, str, str | None]:
     """
     Execute a workflow step based on its step type.
@@ -117,14 +116,12 @@ def execute_step(
         execution_count: Number of times this step has been executed
         loop_hardcap: Maximum number of times a decision step can loop
         before_hook: Optional callback to run before step execution
-        after_hook: Optional callback to run after step execution
 
     Returns:
         tuple[int, str, str | None]: (Return code, Action, Destination step name)
     """
     # Use provided hooks or default ones
     _before_hook = before_hook or default_before_step_execution
-    _after_hook = after_hook or default_after_step_execution
 
     _before_hook(step, step_num)
 
@@ -144,23 +141,47 @@ def execute_step(
             print(f"❌ Unknown step type: {type(step)}")
             return_code, action, destination = (FAILURE, "CONTINUE", None)
 
-    _after_hook(step, step_num, return_code, action)
-
     return (return_code, action, destination)
 
 
 ## TODO: Separate File
-def create_summary(step: Step, step_num: int) -> None:
+def create_summary(step: Step, step_num: int) -> str | None:
     """
-    Create a summary for the completed step.
+    Create a summary for the completed step using Claude.
 
     Args:
         step: The step that was executed
         step_num: The step number for logging
+
+    Returns:
+        str | None: The generated summary or None if failed
     """
     print(f"📝 Creating summary for step {step_num}: {step.name}")
-    # TODO: Implement summary creation logic
-    print("⚠ Summary creation not yet implemented")
+
+    try:
+        import subprocess
+        prompt = f"Summarize the changes made in step '{step.name}' in 2-3 sentences. Focus on what was accomplished, not implementation details. Return only the summary text."
+
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--model", "haiku"],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            summary = result.stdout.strip()
+            print(f"  ✓ Summary: {summary[:100]}...")
+            return summary
+        else:
+            print(f"  ⚠ Failed to generate summary: {result.stderr}")
+            return None
+    except subprocess.TimeoutExpired:
+        print("  ⚠ Summary generation timed out")
+        return None
+    except Exception as e:
+        print(f"  ⚠ Exception generating summary: {e}")
+        return None
 
 
 ## TODO: Separate File
@@ -181,13 +202,16 @@ def find_step_index_by_name(workflow: Workflow, step_name: str) -> int | None:
     return None
 
 
-def commit_changes(step: Step, step_num: int) -> None:
+def commit_changes(step: Step, step_num: int) -> dict | None:
     """
     Commit changes made during the step execution.
 
     Args:
         step: The step that was executed
         step_num: The step number for logging
+
+    Returns:
+        dict | None: Commit info with hash, message, files_changed or None if no commit
     """
     print(f"\n💾 Committing changes for step {step_num}: {step.name}")
 
@@ -196,27 +220,30 @@ def commit_changes(step: Step, step_num: int) -> None:
         print("  Initializing git repository...")
         if not init_git_repo(verbose=False):
             print("  ❌ Failed to initialize git repository")
-            return
+            return None
         print("  ✓ Git repository initialized successfully")
 
     # Check if there are any changes to commit
     success, stdout, _ = run_command("git status --porcelain")
     if not success:
         print("  ❌ Failed to check git status")
-        return
+        return None
 
     if not stdout:
         print("  ℹ️  No changes to commit")
-        return
+        return None
+
+    # Get list of changed files before committing
+    files_changed = [line.split()[-1] for line in stdout.strip().split('\n') if line]
 
     # Add all changes
     print("  Adding changes...")
     success, _, stderr = run_command("git add .")
     if not success:
         print(f"  ❌ Failed to add changes: {stderr}")
-        return
+        return None
 
-    # Commit changes with a descriptive message | ## TODO: Consider using a LLM to generate the commit message
+    # Commit changes with a descriptive message
     commit_message = f"Step {step_num}: {step.name}"
     if step.description:
         commit_message += f"\n\n{step.description}"
@@ -229,12 +256,49 @@ def commit_changes(step: Step, step_num: int) -> None:
 
     if success:
         print("  ✓ Changes committed successfully!")
+        # Get the commit hash
+        success, commit_hash, _ = run_command("git rev-parse HEAD")
+        if success:
+            return {
+                "commit_hash": commit_hash.strip()[:8],
+                "commit_message": commit_message.split('\n')[0],
+                "files_changed": files_changed
+            }
+        return {"commit_message": commit_message.split('\n')[0], "files_changed": files_changed}
     else:
         # Check if the error is due to no changes staged (can happen with .gitignore)
         if "nothing to commit" in stderr or "nothing to commit" in stdout:
             print("  ℹ️  No changes to commit (all changes may be ignored by .gitignore)")
         else:
             print(f"  ❌ Failed to commit changes: {stderr}")
+        return None
+
+
+def push_changes(step_num: int) -> bool:
+    """
+    Push committed changes to remote.
+
+    Args:
+        step_num: The step number for logging
+
+    Returns:
+        bool: True if push succeeded, False otherwise
+    """
+    print(f"  📤 Pushing changes for step {step_num}...")
+
+    # Check if remote 'recon' exists
+    success, stdout, _ = run_command("git remote")
+    if not success or "recon" not in stdout:
+        print("  ⚠ No 'recon' remote configured, skipping push")
+        return False
+
+    success, _, stderr = run_command("git push recon main")
+    if success:
+        print("  ✓ Changes pushed successfully!")
+        return True
+    else:
+        print(f"  ⚠ Failed to push changes: {stderr}")
+        return False
 
 
 def run_workflow(
@@ -244,7 +308,7 @@ def run_workflow(
     logs_dir: str | None = None,
     repo_path: str | None = None,
     before_hook: Callable[[Step, int], None] | None = None,
-    after_hook: Callable[[Step, int, int, str], None] | None = None
+    after_hook: Callable[[Step, int, int, str, dict | None], None] | None = None
 ) -> int:
     """
     Execute a workflow with explicit parameters.
@@ -257,6 +321,8 @@ def run_workflow(
         repo_path: Path to cd to for PROGRAM execution (None = run in current dir)
         before_hook: Optional callback to run before each step execution
         after_hook: Optional callback to run after each step execution
+            - Receives: (step, step_num, return_code, action, step_result)
+            - step_result contains: {summary, commit_info, pushed}
 
     Returns:
         Exit code (0 = success, 1 = failure)
@@ -299,7 +365,7 @@ def run_workflow(
 
         # Execute the step
         return_code, action, destination_step_name = execute_step(
-            step, i, step_execution_count[i], loop_hardcap, before_hook, after_hook
+            step, i, step_execution_count[i], loop_hardcap, before_hook
         )
 
         if return_code != SUCCESS:
@@ -309,13 +375,28 @@ def run_workflow(
 
         print(f"\n✓ Step {i} completed successfully")
 
+        # Collect step results
+        step_result: dict = {"step_name": step.name, "step_num": i}
+
         # Check if we should create a summary
         if step.shouldCreateSummary:
-            create_summary(step, i)
+            summary = create_summary(step, i)
+            step_result["summary"] = summary
 
         # Check if we should commit changes
+        commit_info = None
         if step.shouldCommitChanges:
-            commit_changes(step, i)
+            commit_info = commit_changes(step, i)
+            step_result["commit_info"] = commit_info
+
+            # Push changes if commit was successful
+            if commit_info:
+                pushed = push_changes(i)
+                step_result["pushed"] = pushed
+
+        # Call after_hook with step results
+        if after_hook:
+            after_hook(step, i, return_code, action, step_result)
 
         # Handle decision actions
         if action == "STOP":

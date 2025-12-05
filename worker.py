@@ -9,17 +9,104 @@ import subprocess
 import sys
 import time
 
-from server.github import create_github_repo, invite_collaborator, push_to_github
+import requests
+
+from server.github import create_github_repo, invite_collaborator, push_to_github, setup_repo_remote
 from server.jobs import fetch_job_details, fetch_pending_jobs
 from server.postprocess import generate_summary_with_claude, mark_job_complete
 from server.setup import clone_claude_config, clone_repository, setup_workspace
 from server.utils import parse_repo_info
 
 
+def update_job_step_data(api_url: str, bearer_token: str, job_id: str, step_data: dict) -> bool:
+    """
+    Send step data to the backend API.
+
+    Args:
+        api_url: Base API URL
+        bearer_token: Authentication token
+        job_id: Job ID
+        step_data: Step result data to send
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {bearer_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Get current job data to append to steps array
+        payload = {
+            "jobId": job_id,
+            "resultData": {
+                "steps": [step_data]  # Backend should merge this into existing steps array
+            }
+        }
+
+        response = requests.put(
+            f"{api_url}/data",
+            headers=headers,
+            json=payload
+        )
+
+        response.raise_for_status()
+        print(f"  ✓ Step data sent to backend")
+        return True
+    except Exception as e:
+        print(f"  ⚠ Failed to send step data to backend: {e}")
+        return False
+
+
+def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num: int, step_name: str) -> bool:
+    """
+    Update the current phase in the backend.
+
+    Args:
+        api_url: Base API URL
+        bearer_token: Authentication token
+        job_id: Job ID
+        step_num: Current step number
+        step_name: Current step name
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {bearer_token}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "jobId": job_id,
+            "resultData": {
+                "currentPhase": {
+                    "step_num": step_num,
+                    "step_name": step_name
+                }
+            }
+        }
+
+        response = requests.put(
+            f"{api_url}/data",
+            headers=headers,
+            json=payload
+        )
+
+        response.raise_for_status()
+        print(f"  ✓ Current phase updated: Step {step_num} - {step_name}")
+        return True
+    except Exception as e:
+        print(f"  ⚠ Failed to update current phase: {e}")
+        return False
+
+
 def worker_before_step_hook(step, step_num: int) -> None:
     """
     Worker-specific hook that runs before step execution.
-    This is where you can add API calls to update job status.
+    Updates the backend with the current phase.
 
     Args:
         step: The workflow step being executed
@@ -31,46 +118,59 @@ def worker_before_step_hook(step, step_num: int) -> None:
         print(f"Model: {step.model.type}")
     print(f"Description: {step.description or 'N/A'}")
 
-    ## TODO: Add API call to update job step status
+    # Update current phase in backend
+    api_url = os.environ.get('WORKER_API_URL')
+    bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+    job_id = os.environ.get('WORKER_JOB_ID')
 
-    # Example:
-    # api_url = os.environ.get('WORKER_API_URL')
-    # bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
-    # job_id = os.environ.get('WORKER_JOB_ID')
-    # if api_url and bearer_token and job_id:
-    #     update_job_step_status(api_url, bearer_token, job_id, step.name, "in_progress")
-
-    ## Set Status for the step.
-    ## Maybe set Repo on the first loop if that is not already done somewhere else.
+    if all([api_url, bearer_token, job_id]):
+        update_current_phase(api_url, bearer_token, job_id, step_num, step.name)
 
 
-def worker_after_step_hook(step, step_num: int, return_code: int, action: str) -> None:
+def worker_after_step_hook(step, step_num: int, return_code: int, action: str, step_result: dict | None = None) -> None:
     """
     Worker-specific hook that runs after step execution.
-    This is where you can add API calls to save step summaries or results.
+    Sends step results to the backend API.
 
     Args:
         step: The workflow step that was executed
         step_num: The step number (1-indexed)
         return_code: The exit code from step execution (0 = success)
         action: The action taken (CONTINUE, STOP, JUMP_TO_STEP, etc.)
+        step_result: Dictionary containing summary, commit_info, pushed status
     """
     print(f"[Worker] After step {step_num}: {step.name}")
     print(f"Return code: {return_code}, Action: {action}")
 
-    ## Commit and summary | Just do Local Commit for now.
+    # Get API credentials from environment
+    api_url = os.environ.get('WORKER_API_URL')
+    bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+    job_id = os.environ.get('WORKER_JOB_ID')
 
-    ## TODO: Add API call to save step summary/results
-    # Example:
-    # api_url = os.environ.get('WORKER_API_URL')
-    # bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
-    # job_id = os.environ.get('WORKER_JOB_ID')
-    # if api_url and bearer_token and job_id:
-    #     save_step_summary(api_url, bearer_token, job_id, step_num, {
-    #         "name": step.name,
-    #         "return_code": return_code,
-    #         "action": action
-    #     })
+    if not all([api_url, bearer_token, job_id]):
+        print("  ⚠ Missing API credentials, skipping backend update")
+        return
+
+    # Build step data for backend
+    step_data = {
+        "step_num": step_num,
+        "step_name": step.name,
+        "return_code": return_code,
+        "action": action,
+    }
+
+    # Add step_result data if available
+    if step_result:
+        if step_result.get("summary"):
+            step_data["summary"] = step_result["summary"]
+        if step_result.get("commit_info"):
+            step_data["commit_hash"] = step_result["commit_info"].get("commit_hash")
+            step_data["files_changed"] = step_result["commit_info"].get("files_changed", [])
+        if step_result.get("pushed"):
+            step_data["pushed"] = step_result["pushed"]
+
+    # Send to backend
+    update_job_step_data(api_url, bearer_token, job_id, step_data)
 
 
 def create_dynamic_workflow(prompt: str, model_type: str = "CLAUDE_CODE", job_id: str = "dynamic") -> str:
@@ -242,6 +342,39 @@ def start_job_listener(
 
                 print(f"Executing workflow: {workflow_file}")
 
+                # Create GitHub repo BEFORE workflow runs so we can push per-step
+                timestamp = int(time.time())
+                repo_basename = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+                new_repo_name = f"{repo_basename}-processed-{timestamp}"
+
+                github_token = os.environ.get("GITHUB_TOKEN", "")
+
+                success, new_repo_url, owner = create_github_repo(new_repo_name, github_token)
+                if not success:
+                    print("Failed to create GitHub repository")
+                    continue
+
+                # Get user handles from job data and invite them early
+                additional_data = job_info.get("additionalData", {})
+                user_handles = additional_data.get("userHandles", [])
+                for handle in user_handles:
+                    try:
+                        invite_collaborator(owner, new_repo_name, github_token, handle)
+                        print(f"  ✓ Invited {handle} to repository")
+                    except Exception as e:
+                        print(f"  ⚠ Failed to invite {handle}: {e}")
+
+                # Setup git remote in repo directory for per-step pushes
+                setup_repo_remote("repo", github_token, new_repo_url)
+
+                # Send repo URL to backend immediately
+                org_name, _ = parse_repo_info(new_repo_url)
+                update_job_step_data(api_url, bearer_token, job_id, {
+                    "repoUrl": new_repo_url,
+                    "orgName": org_name,
+                    "repoName": new_repo_name
+                })
+
                 # For directPrompt, run from /tmp so both ./repo and ./.claude are accessible
                 # For other job types, run from inside ./repo
                 effective_repo_path = None if job_type == "directPrompt" else "./repo"
@@ -259,30 +392,7 @@ def start_job_listener(
 
                 if workflow_result != 0:
                     print(f"Workflow execution failed with code {workflow_result}")
-                    continue
-
-                # Create GitHub repo for results
-                timestamp = int(time.time())
-                repo_basename = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-                new_repo_name = f"{repo_basename}-processed-{timestamp}"
-
-                # Get GitHub token from environment or config
-                github_token = os.environ.get("GITHUB_TOKEN", "")
-                github_handle = os.environ.get("GITHUB_HANDLE", "")
-
-                success, new_repo_url, owner = create_github_repo(new_repo_name, github_token)
-                if not success:
-                    print("Failed to create GitHub repository")
-                    continue
-
-                # Invite collaborator if handle provided
-                if github_handle:
-                    invite_collaborator(owner, new_repo_name, github_token, github_handle)
-
-                # Push results to new repo
-                if not push_to_github("repo", github_token, new_repo_url):
-                    print("Failed to push to GitHub")
-                    continue
+                    # Still continue to mark job complete with error
 
                 # Get branch name
                 try:
