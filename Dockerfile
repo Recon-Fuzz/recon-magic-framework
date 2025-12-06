@@ -58,10 +58,9 @@ COPY . .
 # Install dependencies and build project
 RUN pip install --break-system-packages -e .
 
-# Setup reconuser permissions and OpenCode config
-RUN mkdir -p /tmp /home/reconuser/.config/opencode && \
-    cp /app/opencode.json /home/reconuser/.config/opencode/config.json && \
-    chown -R reconuser:reconuser /tmp /app /home/reconuser/.config && \
+# Setup reconuser permissions
+RUN mkdir -p /tmp && \
+    chown -R reconuser:reconuser /tmp /app && \
     echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Fix echidna permissions for reconuser

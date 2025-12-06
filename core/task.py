@@ -312,7 +312,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         repo_path = os.environ.get('RECON_REPO_PATH')
         cd_prefix = f"cd {repo_path} && " if repo_path else ""
 
-        cmd = f"""{cd_prefix}opencode run  \
+        # Pass OPENROUTER_API_KEY inline to work around auth bug
+        openrouter_key = os.environ.get('OPENROUTER_API_KEY', '')
+        key_prefix = f"OPENROUTER_API_KEY={openrouter_key} " if openrouter_key else ""
+
+        cmd = f"""{cd_prefix}{key_prefix}opencode run  \
 {shlex.quote(prompt)} \
 --model {resolved_model} \
 --format json 2>&1 | tee {shlex.quote(str(log_file))} | python3 -u {shlex.quote(str(parser_script_file))}"""
