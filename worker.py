@@ -327,6 +327,15 @@ def start_job_listener(
                     capture_output=True
                 )
 
+                # Capture initial commit hash before workflow runs
+                initial_commit_result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd="/app/repo",
+                    capture_output=True,
+                    text=True
+                )
+                initial_commit_hash = initial_commit_result.stdout.strip() if initial_commit_result.returncode == 0 else None
+
                 # Execute workflow using main.py
                 from pathlib import Path
                 from main import run_workflow
@@ -467,7 +476,7 @@ def start_job_listener(
                     branch_name = "main"
 
                 # Generate summary
-                summary = generate_summary_with_claude()
+                summary = generate_summary_with_claude(initial_commit_hash)
                 print(f"Summary: {summary}")
 
                 # Parse org name from new repo URL

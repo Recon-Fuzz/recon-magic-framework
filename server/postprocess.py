@@ -7,23 +7,36 @@ import subprocess
 import requests
 
 
-def generate_summary_with_claude() -> str:
+def generate_summary_with_claude(since_commit: str | None = None) -> str:
     """
     Generate a summary of changes using Claude Code.
+
+    Args:
+        since_commit: If provided, summarize all changes since this commit hash.
+                      If None, summarize only the last commit.
     """
     try:
-        prompt = (
-            "Summarize the changes done in the last commit "
-            "in 2-3 sentences in markdown format, return exclusively the summary, "
-            "no other text. Ignore the deletions of the Github Workflows. "
-            "Do not mention the last commit but instead talk as if you performed the task."
-        )
+        if since_commit:
+            prompt = (
+                f"Summarize all changes made since commit {since_commit} "
+                "in 2-3 sentences in markdown format, return exclusively the summary, "
+                "no other text. Ignore the deletions of the Github Workflows. "
+                "Talk as if you performed the tasks."
+            )
+        else:
+            prompt = (
+                "Summarize the changes done in the last commit "
+                "in 2-3 sentences in markdown format, return exclusively the summary, "
+                "no other text. Ignore the deletions of the Github Workflows. "
+                "Do not mention the last commit but instead talk as if you performed the task."
+            )
 
         result = subprocess.run(
             ["claude", "-p", prompt],
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=300,  # 5 minute timeout
+            cwd="/app/repo"
         )
 
         if result.returncode == 0:
