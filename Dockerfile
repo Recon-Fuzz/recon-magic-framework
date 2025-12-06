@@ -58,10 +58,14 @@ COPY . .
 # Install dependencies and build project
 RUN pip install --break-system-packages -e .
 
-# Setup reconuser permissions
-RUN mkdir -p /tmp && \
-    chown -R reconuser:reconuser /tmp /app && \
+# Setup reconuser permissions and OpenCode config
+RUN mkdir -p /tmp /home/reconuser/.config/opencode && \
+    cp /app/opencode.json /home/reconuser/.config/opencode/config.json && \
+    chown -R reconuser:reconuser /tmp /app /home/reconuser/.config && \
     echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Fix echidna permissions for reconuser
+RUN chmod -R 755 /home/linuxbrew/.linuxbrew/bin
 
 # Switch to non-root user
 USER reconuser
