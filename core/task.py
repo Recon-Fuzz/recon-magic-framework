@@ -234,8 +234,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         import re
         agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
         if agent_file_match:
-            # Always use 'agents' directory (matches ai-agent-primers repo structure)
-            agent_file_path = Path(framework_root) / agent_file_match.group(1) / 'agents' / f"{agent_file_match.group(2)}.md"
+            # Try /app first (worker/Docker), fall back to framework_root (local dev)
+            agent_rel_path = Path(agent_file_match.group(1)) / 'agents' / f"{agent_file_match.group(2)}.md"
+            agent_file_path = Path("/app") / agent_rel_path
+            if not agent_file_path.exists():
+                agent_file_path = Path(framework_root) / agent_rel_path
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
@@ -284,8 +287,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         import re
         agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
         if agent_file_match:
-            # Always use 'agents' directory (matches ai-agent-primers repo structure)
-            agent_file_path = Path(framework_root) / agent_file_match.group(1) / 'agents' / f"{agent_file_match.group(2)}.md"
+            # Try /app first (worker/Docker), fall back to framework_root (local dev)
+            agent_rel_path = Path(agent_file_match.group(1)) / 'agents' / f"{agent_file_match.group(2)}.md"
+            agent_file_path = Path("/app") / agent_rel_path
+            if not agent_file_path.exists():
+                agent_file_path = Path(framework_root) / agent_rel_path
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
