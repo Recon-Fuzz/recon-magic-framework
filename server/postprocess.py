@@ -7,15 +7,13 @@ import subprocess
 import requests
 
 
-def generate_summary_with_claude(repo_path: str = "/app/repo") -> str:
+def generate_summary_with_claude() -> str:
     """
     Generate a summary of changes using Claude Code.
-    - Run: claude -p "Check <repo_path> and summarize the changes done in the last commit in 2-3 sentences..."
-    - Capture and return the summary text
     """
     try:
         prompt = (
-            f"Check {repo_path} and summarize the changes done in the last commit "
+            "Summarize the changes done in the last commit "
             "in 2-3 sentences in markdown format, return exclusively the summary, "
             "no other text. Ignore the deletions of the Github Workflows. "
             "Do not mention the last commit but instead talk as if you performed the task."
