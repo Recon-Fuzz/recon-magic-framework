@@ -319,6 +319,14 @@ def start_job_listener(
                     print("Failed to clone repository")
                     continue
 
+                # Rename current branch to 'main' for consistent push behavior
+                # This ensures we always push to 'main' regardless of source repo's default branch
+                subprocess.run(
+                    ["git", "branch", "-M", "main"],
+                    cwd="/app/repo",
+                    capture_output=True
+                )
+
                 # Execute workflow using main.py
                 from pathlib import Path
                 from main import run_workflow
