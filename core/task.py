@@ -232,10 +232,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
         import re
-        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./(\.opencode|\.claude)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Try /app first (worker/Docker), fall back to framework_root (local dev)
-            agent_rel_path = Path(agent_file_match.group(1)) / 'agents' / f"{agent_file_match.group(2)}.md"
+            # Preserve the actual directory name (agent or agents) from the match
+            agent_rel_path = Path(agent_file_match.group(1)) / agent_file_match.group(2) / f"{agent_file_match.group(3)}.md"
             agent_file_path = Path("/app") / agent_rel_path
             if not agent_file_path.exists():
                 agent_file_path = Path(framework_root) / agent_rel_path
@@ -285,10 +286,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
         import re
-        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./(\.opencode|\.claude)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Try /app first (worker/Docker), fall back to framework_root (local dev)
-            agent_rel_path = Path(agent_file_match.group(1)) / 'agents' / f"{agent_file_match.group(2)}.md"
+            # Preserve the actual directory name (agent or agents) from the match
+            agent_rel_path = Path(agent_file_match.group(1)) / agent_file_match.group(2) / f"{agent_file_match.group(3)}.md"
             agent_file_path = Path("/app") / agent_rel_path
             if not agent_file_path.exists():
                 agent_file_path = Path(framework_root) / agent_rel_path
