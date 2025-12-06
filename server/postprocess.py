@@ -32,14 +32,8 @@ def generate_summary_with_claude(since_commit: str | None = None) -> str:
                 "Do not mention the last commit but instead talk as if you performed the task."
             )
 
-        # Build command with permissions flag if in production
-        cmd = ["claude"]
-        if os.environ.get('RUNNER_ENV', '').lower() == 'production':
-            cmd.append("--dangerously-skip-permissions")
-        cmd.extend(["-p", prompt])
-
         result = subprocess.run(
-            cmd,
+            ["claude", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=300,  # 5 minute timeout
