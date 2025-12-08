@@ -42,10 +42,10 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 3b: Extract Context with sol-expand",
+      "name": "Step 3b: Extract Context with sol-context",
       "type": "task",
-      "description": "Run sol-expand tool to extract context from filtered build artifacts",
-      "prompt": "sol-expand --extract-context $(find out/build-info -name '*.filtered.json' | head -1)",
+      "description": "Run sol-context tool to extract context from filtered build artifacts",
+      "prompt": "npx -y sol-context@latest",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
