@@ -2,10 +2,48 @@
   "name": "Fuzzing Setup Workflow",
   "steps": [
     {
-      "name": "Phase 0: Setup.sol Configuration",
+      "name": "Phase 0a: Analyze Setup Decisions",
       "type": "task",
-      "description": "Modify Setup.sol to deploy and configure all target contracts for fuzzing",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-0.md. Run exclusively the setup-phase-0 agent using the Task tool. This phase will modify the Setup.sol contract to properly deploy and configure target contracts, validate compilation and test execution, and generate documentation in magic/setup-notes.md.",
+      "description": "Analyze contracts and target functions to determine setup decisions",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-0a.md. Run exclusively the setup-phase-0a agent using the Task tool. This phase will analyze the codebase and output decisions to magic/setup-decisions.json.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Decisions File",
+      "type": "decision",
+      "description": "Check if setup-decisions.json was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/setup-decisions.json"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Decisions file created, continue to implementation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 0a: Analyze Setup Decisions",
+          "NOTE": "Decisions file not found, retry analysis"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 0b: Implement Setup.sol",
+      "type": "task",
+      "description": "Implement Setup.sol based on the decisions in magic/setup-decisions.json",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-0b.md. Run exclusively the setup-phase-0b agent using the Task tool. This phase will implement Setup.sol based on the decisions file and validate compilation.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
