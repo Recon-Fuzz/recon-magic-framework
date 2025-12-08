@@ -172,7 +172,7 @@ Workflows can be run from any directory.
         dangerous=args.dangerous,
         loop_hardcap=args.cap,
         logs_dir=args.logs,
-        repo_path=repo_root if args.repo else None
+        repo_path=repo_root
     )
     sys.exit(exit_code)
 

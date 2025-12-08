@@ -22,6 +22,7 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
@@ -29,11 +30,12 @@
       "name": "Phase 1.5: Save Echidna Logs",
       "type": "task",
       "description": "Save Echidna output logs to magic/ directory for later analysis",
-      "prompt": "save-echidna-logs",
+      "prompt": "mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true) && echo 'Echidna logs saved (if any exist)'",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
@@ -107,7 +109,7 @@
       "name": "Phase 2: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "prompt": "extract-target-functions --targets test/recon --return-json",
+      "prompt": "extract-target-functions --return-json",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"

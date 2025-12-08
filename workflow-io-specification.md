@@ -46,25 +46,58 @@ forge clean && forge build --build-info
 
 ---
 
-## Step 3: Extract Context with sol-expand
+## Step 3a: Filter Build Artifacts
 
 **Type:** Task (PROGRAM)
 
-**Description:** Run sol-expand tool to extract context from build artifacts
+**Description:** Filter build-info to remove sources without AST data (foundry-pp files)
 
 **Inputs:**
-- File: First JSON file in `out/build-info` directory
+- File: First non-filtered JSON file in `out/build-info` directory
 - Format: Forge build artifact JSON file
 
 **Command:**
 ```bash
-sol-expand --extract-context $(find out/build-info -name '*.json' | head -1)
+filter-build-info $(find out/build-info -name '*.json' -not -name '*.filtered.json' | head -1)
+```
+
+**Tool:** `filter-build-info` (CLI tool from `tools/filter_build_info`)
+
+**Purpose:**
+Foundry generates internal preprocessor files (in `foundry-pp/` directory) that lack AST data. These files cause `sol-expand` to fail with "Unable to detect reader configuration" errors. This step filters the build-info JSON to remove such sources before passing to `sol-expand`.
+
+**What Gets Filtered:**
+- `foundry-pp/DeployHelper*.sol` files (Foundry's internal preprocessing artifacts)
+- Any other source files without valid AST data
+
+**Outputs:**
+- File: `out/build-info/*.filtered.json` (filtered build artifact)
+- Format: Forge build artifact JSON file with sources lacking AST data removed
+- Captured: No
+
+---
+
+## Step 3b: Extract Context with sol-expand
+
+**Type:** Task (PROGRAM)
+
+**Description:** Run sol-expand tool to extract context from filtered build artifacts
+
+**Inputs:**
+- File: Filtered JSON file in `out/build-info` directory (output from Step 3a)
+- Format: Filtered Forge build artifact JSON file
+
+**Command:**
+```bash
+sol-expand --extract-context $(find out/build-info -name '*.filtered.json' | head -1)
 ```
 
 **Outputs:**
 - Directory: `context_output/`
 - Format: Extracted contract context and metadata from sol-expand tool
 - Captured: No
+
+**Note:** This step now uses the filtered build-info from Step 3a to avoid AST parsing errors.
 
 ---
 
@@ -360,7 +393,9 @@ Step 1 (Extract Target Functions)
   ↓ [magic/target-functions.json]
 Step 2 (Build Artifacts)
   ↓ [out/build-info/*.json]
-Step 3 (Extract Context)
+Step 3a (Filter Build Artifacts)
+  ↓ [out/build-info/*.filtered.json]
+Step 3b (Extract Context)
   ↓ [context_output/]
 Step 4 (Identify Touched Functions)
   ↓ [magic/functions-to-cover.json]
@@ -440,3 +475,35 @@ Step 15 (Workflow Complete)
 - The workflow includes a coverage improvement loop (Steps 11-14) that continues until full coverage is achieved
 - Timestamps in filenames are generated dynamically at runtime
 - Agent-based steps (OPENCODE type) have flexible outputs defined by their agent definitions
+
+## Tools
+
+### filter-build-info
+
+**Location:** `tools/filter_build_info/`
+
+**Installation:**
+```bash
+uv tool install --editable ./tools/filter_build_info
+```
+
+**Purpose:** Filters Forge build-info JSON files to remove sources without valid AST data, preventing sol-expand from failing on Foundry's internal preprocessor files.
+
+**Usage:**
+```bash
+# Basic usage
+filter-build-info out/build-info/abc123.json
+
+# Specify output
+filter-build-info input.json --output filtered.json
+
+# Verbose mode
+filter-build-info input.json --verbose
+```
+
+**Common Issues Addressed:**
+- Fixes: `Error: Unable to detect reader configuration for entry "foundry-pp/DeployHelper*.sol"`
+- Removes: 10+ foundry-pp preprocessor files that lack AST data
+- Ensures: sol-expand can process the build artifacts without errors
+
+**Output:** Creates a `.filtered.json` file with problematic sources removed, outputting the path to stdout for easy use in pipelines.
