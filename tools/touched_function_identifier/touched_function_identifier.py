@@ -55,15 +55,112 @@ class TouchedFunctionIdentifier:
         output = sys.stderr if self.quiet else sys.stdout
         print(f"✓ Loaded {len(self.target_functions)} contract(s) from target-functions.json", file=output)
 
+    def contract_dir_exists(self, contract_name: str) -> bool:
+        """
+        Check if a contract directory exists in the sol-expand output AND contains function files.
+
+        This ensures we don't match interface directories that only have interface_*.md files.
+        """
+        search_pattern = f"**/{contract_name}.sol"
+        matches = [m for m in self.sol_expand_dir.glob(search_pattern) if m.is_dir()]
+
+        # Check if any match has function files (not just interface files)
+        for match in matches:
+            # Look for function_*.md files in the directory
+            function_files = list(match.glob("function_*.md"))
+            if function_files:
+                return True
+
+        return False
+
+    def find_implementation_for_interface(self, interface_name: str) -> Optional[str]:
+        """
+        Find the implementation contract for a given interface by parsing contract markdown files.
+
+        Args:
+            interface_name: Name of the interface (e.g., "IBorrowerOperations")
+
+        Returns:
+            Name of the implementation contract, or None if not found
+        """
+        import sys
+        output = sys.stderr if self.quiet else sys.stdout
+
+        # Search all contract markdown files
+        search_pattern = "**/contract_*.md"
+        contract_files = self.sol_expand_dir.glob(search_pattern)
+
+        for contract_file in contract_files:
+            try:
+                with open(contract_file, 'r') as f:
+                    content = f.read()
+
+                # Look for "## Implements Interfaces" section
+                # Pattern: - **InterfaceName** [path]
+                if f"- **{interface_name}**" in content:
+                    # Extract contract name from file path
+                    # e.g., context_output/src/BorrowerOperations.sol/contract_BorrowerOperations.md
+                    # -> BorrowerOperations
+                    match = re.search(r'/([^/]+)\.sol/contract_\1\.md$', str(contract_file))
+                    if match:
+                        impl_name = match.group(1)
+                        print(f"✓ Mapped interface {interface_name} -> {impl_name}", file=output)
+                        return impl_name
+            except Exception as e:
+                # Silently skip files that can't be read
+                continue
+
+        return None
+
+    def resolve_contract_name(self, contract_name: str) -> str:
+        """
+        Resolve contract name, trying interface-to-implementation mapping.
+
+        This implements a smart fallback strategy:
+        1. Try the contract name as-is
+        2. If not found and starts with "I", try removing "I" prefix
+        3. If still not found, search for implementation in contract markdown files
+
+        Args:
+            contract_name: Original contract name (possibly an interface)
+
+        Returns:
+            Resolved contract name (implementation if interface)
+        """
+        import sys
+        output = sys.stderr if self.quiet else sys.stdout
+
+        # Try 1: Direct match
+        if self.contract_dir_exists(contract_name):
+            return contract_name
+
+        # Try 2: Remove "I" prefix heuristic (common naming convention)
+        if contract_name.startswith("I") and len(contract_name) > 1:
+            impl_name = contract_name[1:]  # Remove "I"
+            if self.contract_dir_exists(impl_name):
+                print(f"✓ Mapped interface {contract_name} -> {impl_name} (heuristic)", file=output)
+                return impl_name
+
+        # Try 3: Search for implementation in markdown files
+        impl_name = self.find_implementation_for_interface(contract_name)
+        if impl_name:
+            return impl_name
+
+        # Fallback: return original name (will likely fail later, but that's expected)
+        return contract_name
+
     def find_function_file(self, contract_name: str, function_name: str) -> Optional[Path]:
         """Find the markdown file for a specific function in sol-expand output."""
+        # Resolve interface to implementation if needed
+        resolved_name = self.resolve_contract_name(contract_name)
+
         # Search pattern: context_output/*/ContractName.sol/function_functionName*.md
-        search_pattern = f"**/{contract_name}.sol/function_{function_name}_*.md"
+        search_pattern = f"**/{resolved_name}.sol/function_{function_name}_*.md"
 
         matches = list(self.sol_expand_dir.glob(search_pattern))
         if not matches:
             # Try without parameters (for functions with no args)
-            search_pattern = f"**/{contract_name}.sol/function_{function_name}.md"
+            search_pattern = f"**/{resolved_name}.sol/function_{function_name}.md"
             matches = list(self.sol_expand_dir.glob(search_pattern))
 
         if matches:
