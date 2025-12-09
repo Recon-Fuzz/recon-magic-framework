@@ -63,6 +63,9 @@ RUN mkdir -p /tmp && \
     chown -R reconuser:reconuser /tmp /app && \
     echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
+# Fix echidna permissions for reconuser
+RUN chmod -R 755 /home/linuxbrew/.linuxbrew/bin
+
 # Switch to non-root user
 USER reconuser
 

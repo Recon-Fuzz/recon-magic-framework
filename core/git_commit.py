@@ -8,20 +8,17 @@ import sys
 from pathlib import Path
 
 
-def run_command(cmd, cwd=None, check=True):
+def run_command(cmd, cwd=None, check=False):
     """Run a shell command and return the result."""
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=cwd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            check=check
-        )
-        return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
-    except subprocess.CalledProcessError as e:
-        return False, e.stdout.strip() if e.stdout else "", e.stderr.strip() if e.stderr else ""
+    result = subprocess.run(
+        cmd,
+        cwd=cwd,
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False  # Never raise, always return output
+    )
+    return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
 
 
 def is_git_repo(path="."):

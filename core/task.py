@@ -254,11 +254,14 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
         import re
-        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agents?/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./(\.opencode|\.claude)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
-            # Handle both 'agent' and 'agents' directory names
-            agent_dir = 'agents' if agent_file_match.group(1) == '.claude' else 'agent'
-            agent_file_path = Path(framework_root) / agent_file_match.group(1) / agent_dir / f"{agent_file_match.group(2)}.md"
+            # Try /app first (worker/Docker), fall back to framework_root (local dev)
+            # Preserve the actual directory name (agent or agents) from the match
+            agent_rel_path = Path(agent_file_match.group(1)) / agent_file_match.group(2) / f"{agent_file_match.group(3)}.md"
+            agent_file_path = Path("/app") / agent_rel_path
+            if not agent_file_path.exists():
+                agent_file_path = Path(framework_root) / agent_rel_path
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
@@ -309,9 +312,14 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
         import re
-        agent_file_match = re.search(r'\./(\.opencode|\.claude)/agent/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./(\.opencode|\.claude)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
-            agent_file_path = Path(framework_root) / agent_file_match.group(1) / 'agent' / f"{agent_file_match.group(2)}.md"
+            # Try /app first (worker/Docker), fall back to framework_root (local dev)
+            # Preserve the actual directory name (agent or agents) from the match
+            agent_rel_path = Path(agent_file_match.group(1)) / agent_file_match.group(2) / f"{agent_file_match.group(3)}.md"
+            agent_file_path = Path("/app") / agent_rel_path
+            if not agent_file_path.exists():
+                agent_file_path = Path(framework_root) / agent_rel_path
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
@@ -330,7 +338,11 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         repo_path = os.environ.get('RECON_REPO_PATH')
         cd_prefix = f"cd {repo_path} && " if repo_path else ""
 
-        cmd = f"""{cd_prefix}opencode run  \
+        # Pass OPENROUTER_API_KEY inline to work around auth bug
+        openrouter_key = os.environ.get('OPENROUTER_API_KEY', '')
+        key_prefix = f"OPENROUTER_API_KEY={openrouter_key} " if openrouter_key else ""
+
+        cmd = f"""{cd_prefix}{key_prefix}opencode run  \
 {shlex.quote(prompt)} \
 --model {resolved_model} \
 --format json 2>&1 | tee {shlex.quote(str(log_file))} | python3 -u {shlex.quote(str(parser_script_file))}"""
