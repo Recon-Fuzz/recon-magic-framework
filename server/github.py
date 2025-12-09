@@ -86,6 +86,57 @@ def invite_collaborator(owner: str, repo_name: str, github_token: str, github_ha
         return False
 
 
+def setup_repo_remote(repo_path: str, github_token: str, repo_url: str) -> bool:
+    """
+    Setup the 'recon' remote in a repository for pushing.
+    Call this BEFORE workflow runs so per-step pushes work.
+
+    Args:
+        repo_path: Path to the repository
+        github_token: GitHub personal access token
+        repo_url: GitHub repository URL
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        if not repo_url.startswith("https://github.com/"):
+            print(f"Invalid GitHub repository URL format: {repo_url}")
+            return False
+
+        # Extract owner/repo from URL
+        parts = repo_url.replace("https://github.com/", "").rstrip("/").rstrip(".git")
+        token_url = f"https://{github_token}@github.com/{parts}.git"
+
+        original_dir = os.getcwd()
+        os.chdir(repo_path)
+
+        try:
+            # Initialize git if not already
+            if not os.path.exists(".git"):
+                subprocess.run(["git", "init"], check=True, capture_output=True)
+                subprocess.run(["git", "branch", "-M", "main"], check=True, capture_output=True)
+
+            # Delete the .github folder (workflows etc)
+            github_dir = ".github"
+            if os.path.exists(github_dir):
+                shutil.rmtree(github_dir)
+
+            # Add or update recon remote
+            result = subprocess.run(["git", "remote", "add", "recon", token_url], capture_output=True, text=True)
+            if result.returncode != 0:
+                subprocess.run(["git", "remote", "set-url", "recon", token_url], check=True, capture_output=True)
+
+            print(f"  ✓ Git remote 'recon' configured for {repo_url}")
+            return True
+        finally:
+            os.chdir(original_dir)
+
+    except Exception as e:
+        print(f"  ⚠ Failed to setup git remote: {e}")
+        return False
+
+
 def push_to_github(repo_path: str, github_token: str, repo_url: str, branch: str = "main") -> bool:
     """
     Push repository to GitHub.
