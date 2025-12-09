@@ -51,8 +51,9 @@ def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
         print(f"  ✓ Auto-detected foundryRoot: {rel_path}")
         return foundry_paths[0]
     elif len(foundry_paths) > 1:
-        # Multiple found - use the shortest path (closest to root)
-        foundry_paths.sort(key=lambda p: len(p))
+        # Multiple found - use the shallowest path (closest to root)
+        # Sort by directory depth (count of path separators), not string length
+        foundry_paths.sort(key=lambda p: p.count(os.sep))
         rel_path = os.path.relpath(foundry_paths[0], repo_path)
         print(f"  ⚠ Multiple foundry.toml found, using: {rel_path}")
         return foundry_paths[0]
