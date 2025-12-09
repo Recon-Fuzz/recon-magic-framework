@@ -95,9 +95,35 @@ def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
 
 from server.github import create_github_repo, invite_collaborator, push_to_github, setup_repo_remote
 from server.jobs import fetch_job_details, fetch_pending_jobs
-from server.postprocess import generate_summary_with_claude, mark_job_complete
+from server.postprocess import generate_failure_summary_with_claude, generate_summary_with_claude, mark_job_complete
 from server.setup import clone_claude_config, clone_opencode_config, clone_repository, setup_workspace
 from server.utils import parse_repo_info
+
+
+# Global tracker for workflow failure info
+# This gets populated by worker_after_step_hook when a step fails
+_workflow_failure_info: dict | None = None
+
+
+def reset_workflow_failure_info():
+    """Reset the failure tracker before each job."""
+    global _workflow_failure_info
+    _workflow_failure_info = None
+
+
+def set_workflow_failure_info(step_name: str, step_num: int, reason: str = "step_failure"):
+    """Set failure info when workflow fails."""
+    global _workflow_failure_info
+    _workflow_failure_info = {
+        "step_name": step_name,
+        "step_num": step_num,
+        "reason": reason  # "step_failure", "stop_action", "exception"
+    }
+
+
+def get_workflow_failure_info() -> dict | None:
+    """Get the current failure info."""
+    return _workflow_failure_info
 
 
 def update_job_data(api_url: str, bearer_token: str, job_id: str, data: dict) -> bool:
@@ -250,16 +276,23 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
     """
     Worker-specific hook that runs after step execution.
     Sends step results to the backend API.
+    Tracks failure info for error handling.
 
     Args:
         step: The workflow step that was executed
         step_num: The step number (1-indexed)
         return_code: The exit code from step execution (0 = success)
-        action: The action taken (CONTINUE, STOP, JUMP_TO_STEP, etc.)
+        action: The action taken (CONTINUE, STOP, JUMP_TO_STEP, FAILED, etc.)
         step_result: Dictionary containing summary, commit_info, pushed status
     """
     print(f"[Worker] After step {step_num}: {step.name}")
     print(f"Return code: {return_code}, Action: {action}")
+
+    # Track failure info for later use in error handling
+    if action == "FAILED" or return_code != 0:
+        set_workflow_failure_info(step.name, step_num, "step_failure")
+    elif action == "STOP":
+        set_workflow_failure_info(step.name, step_num, "stop_action")
 
     # Get API credentials from environment
     api_url = os.environ.get('WORKER_API_URL')
@@ -287,6 +320,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
             step_data["files_changed"] = step_result["commit_info"].get("files_changed", [])
         if step_result.get("pushed"):
             step_data["pushed"] = step_result["pushed"]
+        if step_result.get("failed"):
+            step_data["failed"] = step_result["failed"]
 
     # Send to backend
     update_job_step_data(api_url, bearer_token, job_id, step_data)
@@ -554,6 +589,9 @@ def start_job_listener(
                 os.environ['RECON_FOUNDRY_ROOT'] = foundry_root
                 print(f"  ✓ Foundry root set to: {foundry_root}")
 
+                # Reset failure tracker before running workflow
+                reset_workflow_failure_info()
+
                 # Run the workflow with worker-specific hooks
                 workflow_result = run_workflow(
                     workflow_file=workflow_file,
@@ -565,9 +603,14 @@ def start_job_listener(
                     after_hook=worker_after_step_hook
                 )
 
-                if workflow_result != 0:
+                # Check if workflow failed
+                workflow_failed = workflow_result != 0
+                failure_info = get_workflow_failure_info()
+
+                if workflow_failed:
                     print(f"Workflow execution failed with code {workflow_result}")
-                    # Still continue to mark job complete with error
+                    if failure_info:
+                        print(f"  Failed at step {failure_info['step_num']}: {failure_info['step_name']} ({failure_info['reason']})")
 
                 # Get branch name
                 try:
@@ -581,14 +624,26 @@ def start_job_listener(
                 except Exception:
                     branch_name = "main"
 
-                # Generate summary
-                summary = generate_summary_with_claude(initial_commit_hash)
+                # Generate appropriate summary based on success/failure
+                if workflow_failed and failure_info:
+                    # Generate failure-aware summary
+                    summary = generate_failure_summary_with_claude(
+                        failed_step_name=failure_info['step_name'],
+                        failed_step_num=failure_info['step_num'],
+                        since_commit=initial_commit_hash
+                    )
+                    job_status = "ERROR"
+                else:
+                    # Generate success summary
+                    summary = generate_summary_with_claude(initial_commit_hash)
+                    job_status = "DONE"
+
                 print(f"Summary: {summary}")
 
                 # Parse org name from new repo URL
                 org_name, _ = parse_repo_info(new_repo_url)
 
-                # Mark job as complete
+                # Mark job with appropriate status
                 mark_job_complete(
                     api_url,
                     bearer_token,
@@ -596,11 +651,37 @@ def start_job_listener(
                     summary,
                     new_repo_name,
                     org_name,
-                    branch_name
+                    branch_name,
+                    status=job_status
                 )
 
             except Exception as e:
                 print(f"Error processing job {job_id}: {e}")
+                import traceback
+                traceback.print_exc()
+
+                # Try to mark job as ERROR if we have the necessary info
+                try:
+                    error_summary = f"Job failed due to unexpected error: {str(e)}"
+                    # Use variables if they were set, otherwise use defaults
+                    local_vars = locals()
+                    final_repo_name = local_vars.get('new_repo_name', "unknown")
+                    final_org_name = local_vars.get('org_name', "unknown")
+                    final_branch = local_vars.get('branch_name', "main")
+
+                    mark_job_complete(
+                        api_url,
+                        bearer_token,
+                        job_id,
+                        error_summary,
+                        final_repo_name,
+                        final_org_name,
+                        final_branch,
+                        status="ERROR"
+                    )
+                except Exception as mark_error:
+                    print(f"Failed to mark job as error: {mark_error}")
+
                 continue
 
         print(f"\nWaiting {check_interval} seconds until next check...")

@@ -384,6 +384,12 @@ def run_workflow(
         if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")
             print("Stopping workflow execution.")
+
+            # Call after_hook on failure so worker can track failed step
+            if after_hook:
+                step_result = {"step_name": step.name, "step_num": i, "failed": True}
+                after_hook(step, i, return_code, "FAILED", step_result)
+
             return return_code
 
         print(f"\n✓ Step {i} completed successfully")
