@@ -162,8 +162,15 @@ def create_summary(step: Step, step_num: int) -> str | None:
         import subprocess
         prompt = f"Summarize the changes made in step '{step.name}' in 2-3 sentences. Focus on what was accomplished, not implementation details. Return only the summary text."
 
+        # Check if we should skip permissions (production environment)
+        runner_env = os.environ.get('RUNNER_ENV', '').lower()
+        cmd = ["claude"]
+        if runner_env == 'production':
+            cmd.append("--dangerously-skip-permissions")
+        cmd.extend(["-p", prompt, "--model", "haiku"])
+
         result = subprocess.run(
-            ["claude", "-p", prompt, "--model", "haiku"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=120

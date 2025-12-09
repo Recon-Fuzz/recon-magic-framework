@@ -5,11 +5,93 @@ Main job listener loop that orchestrates the workflow.
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
 
 import requests
+
+
+def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
+    """
+    Find the Foundry root directory (where foundry.toml lives).
+
+    Priority:
+    1. Explicit override from job.additionalData.foundryRoot
+    2. Auto-detect by searching for foundry.toml
+    3. Fall back to AI detection (Claude)
+
+    Args:
+        repo_path: The repository root path
+        explicit_root: Optional explicit path from job config
+
+    Returns:
+        Absolute path to the Foundry root directory
+    """
+    # Priority 1: Explicit override
+    if explicit_root and explicit_root != ".":
+        candidate = os.path.join(repo_path, explicit_root)
+        if os.path.isfile(os.path.join(candidate, "foundry.toml")):
+            print(f"  ✓ Using explicit foundryRoot: {explicit_root}")
+            return candidate
+        else:
+            print(f"  ⚠ Explicit foundryRoot '{explicit_root}' doesn't contain foundry.toml, auto-detecting...")
+
+    # Priority 2: Auto-detect by searching for foundry.toml
+    foundry_paths = []
+    for root, dirs, files in os.walk(repo_path):
+        # Skip common non-project directories
+        dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast']]
+        if 'foundry.toml' in files:
+            foundry_paths.append(root)
+
+    if len(foundry_paths) == 1:
+        rel_path = os.path.relpath(foundry_paths[0], repo_path)
+        print(f"  ✓ Auto-detected foundryRoot: {rel_path}")
+        return foundry_paths[0]
+    elif len(foundry_paths) > 1:
+        # Multiple found - use the shortest path (closest to root)
+        foundry_paths.sort(key=lambda p: len(p))
+        rel_path = os.path.relpath(foundry_paths[0], repo_path)
+        print(f"  ⚠ Multiple foundry.toml found, using: {rel_path}")
+        return foundry_paths[0]
+
+    # Priority 3: Fall back to AI detection
+    print("  ⚠ No foundry.toml found, falling back to AI detection...")
+    try:
+        # Check if we should skip permissions (production environment)
+        runner_env = os.environ.get('RUNNER_ENV', '').lower()
+        cmd = ["claude"]
+        if runner_env == 'production':
+            cmd.append("--dangerously-skip-permissions")
+        cmd.extend([
+            "-p",
+            "Find foundry.toml in this repo. Print ONLY the relative path to its parent directory (e.g., 'contracts' or '.'). No explanation.",
+            "--max-turns", "1",
+            "--output-format", "text"
+        ])
+        result = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            ai_path = result.stdout.strip().strip('"').strip("'")
+            # Validate AI response
+            if ai_path and not ai_path.startswith('/'):
+                candidate = os.path.join(repo_path, ai_path)
+                if os.path.isfile(os.path.join(candidate, "foundry.toml")):
+                    print(f"  ✓ AI-detected foundryRoot: {ai_path}")
+                    return candidate
+    except Exception as e:
+        print(f"  ⚠ AI detection failed: {e}")
+
+    # Final fallback: assume repo root
+    print(f"  ⚠ Could not detect foundryRoot, using repo root")
+    return repo_path
 
 from server.github import create_github_repo, invite_collaborator, push_to_github, setup_repo_remote
 from server.jobs import fetch_job_details, fetch_pending_jobs
@@ -465,6 +547,12 @@ def start_job_listener(
 
                 # All job types now run from /app/repo since configs are also in /app
                 effective_repo_path = "/app/repo"
+
+                # Detect Foundry root (for monorepo support)
+                explicit_foundry_root = additional_data.get("foundryRoot")
+                foundry_root = find_foundry_root(effective_repo_path, explicit_foundry_root)
+                os.environ['RECON_FOUNDRY_ROOT'] = foundry_root
+                print(f"  ✓ Foundry root set to: {foundry_root}")
 
                 # Run the workflow with worker-specific hooks
                 workflow_result = run_workflow(
