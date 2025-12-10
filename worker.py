@@ -437,6 +437,24 @@ def start_job_listener(
                 # Setup git remote in repo directory for per-step pushes
                 setup_repo_remote("/app/repo", github_token, new_repo_url)
 
+                # Push initial code to the repository
+                try:
+                    subprocess.run(
+                        ["git", "-C", "/app/repo", "add", "."],
+                        check=True, capture_output=True
+                    )
+                    subprocess.run(
+                        ["git", "-C", "/app/repo", "commit", "-m", "Initial commit"],
+                        capture_output=True  # May fail if no changes, that's ok
+                    )
+                    subprocess.run(
+                        ["git", "-C", "/app/repo", "push", "-u", "recon", "main"],
+                        check=True, capture_output=True
+                    )
+                    print("  ✓ Pushed initial code to repository")
+                except subprocess.CalledProcessError as e:
+                    print(f"  ⚠ Failed to push initial code: {e}")
+
                 # Send repo URL to backend immediately (not as a step)
                 org_name, _ = parse_repo_info(new_repo_url)
                 update_job_data(api_url, bearer_token, job_id, {
