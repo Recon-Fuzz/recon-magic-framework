@@ -29,6 +29,9 @@ ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
 RUN brew install echidna
 USER root
 
+# Make linuxbrew home directory traversable for other users (needed for echidna access)
+RUN chmod 755 /home/linuxbrew
+
 # Install UV
 RUN pip install uv
 
@@ -63,7 +66,7 @@ RUN mkdir -p /tmp && \
     chown -R reconuser:reconuser /tmp /app && \
     echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-# Fix echidna permissions for reconuser
+# Ensure echidna binaries are executable by reconuser (defense-in-depth)
 RUN chmod -R 755 /home/linuxbrew/.linuxbrew/bin
 
 # Switch to non-root user
