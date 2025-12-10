@@ -13,35 +13,48 @@ import time
 import requests
 
 
+def _ask_ai_for_foundry_root(repo_path: str) -> str | None:
+    """Ask AI to find the main foundry.toml. Returns absolute path or None."""
+    try:
+        runner_env = os.environ.get('RUNNER_ENV', '').lower()
+        cmd = ["claude"]
+        if runner_env == 'production':
+            cmd.append("--dangerously-skip-permissions")
+        cmd.extend([
+            "-p", "Find the MAIN foundry.toml (not in lib/ or dependencies). "
+                  "Print ONLY the relative path to its directory (e.g., 'contracts' or '.'). No explanation.",
+            "--max-turns", "1", "--output-format", "text"
+        ])
+
+        result = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0 and result.stdout.strip():
+            ai_path = result.stdout.strip().strip('"').strip("'")
+            if ai_path and not ai_path.startswith('/'):
+                candidate = os.path.join(repo_path, ai_path)
+                if os.path.isfile(os.path.join(candidate, "foundry.toml")):
+                    print(f"  ✓ AI detected foundryRoot: {ai_path}")
+                    return candidate
+    except Exception as e:
+        print(f"  ⚠ AI detection failed: {e}")
+    return None
+
+
 def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
     """
-    Find the Foundry root directory (where foundry.toml lives).
-
-    Priority:
-    1. Explicit override from job.additionalData.foundryRoot
-    2. Auto-detect by searching for foundry.toml
-    3. Fall back to AI detection (Claude)
-
-    Args:
-        repo_path: The repository root path
-        explicit_root: Optional explicit path from job config
-
-    Returns:
-        Absolute path to the Foundry root directory
+    Find the Foundry root directory.
+    Priority: 1) Explicit config  2) Auto-detect (if exactly 1)  3) AI  4) Repo root
     """
-    # Priority 1: Explicit override
+    # 1. Explicit override
     if explicit_root and explicit_root != ".":
         candidate = os.path.join(repo_path, explicit_root)
         if os.path.isfile(os.path.join(candidate, "foundry.toml")):
             print(f"  ✓ Using explicit foundryRoot: {explicit_root}")
             return candidate
-        else:
-            print(f"  ⚠ Explicit foundryRoot '{explicit_root}' doesn't contain foundry.toml, auto-detecting...")
+        print(f"  ⚠ Explicit foundryRoot '{explicit_root}' invalid, auto-detecting...")
 
-    # Priority 2: Auto-detect by searching for foundry.toml
+    # 2. Auto-detect (only if exactly one foundry.toml found)
     foundry_paths = []
     for root, dirs, files in os.walk(repo_path):
-        # Skip common non-project directories
         dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast']]
         if 'foundry.toml' in files:
             foundry_paths.append(root)
@@ -50,48 +63,15 @@ def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
         rel_path = os.path.relpath(foundry_paths[0], repo_path)
         print(f"  ✓ Auto-detected foundryRoot: {rel_path}")
         return foundry_paths[0]
-    elif len(foundry_paths) > 1:
-        # Multiple found - use the shallowest path (closest to root)
-        # Sort by directory depth (count of path separators), not string length
-        foundry_paths.sort(key=lambda p: p.count(os.sep))
-        rel_path = os.path.relpath(foundry_paths[0], repo_path)
-        print(f"  ⚠ Multiple foundry.toml found, using: {rel_path}")
-        return foundry_paths[0]
 
-    # Priority 3: Fall back to AI detection
-    print("  ⚠ No foundry.toml found, falling back to AI detection...")
-    try:
-        # Check if we should skip permissions (production environment)
-        runner_env = os.environ.get('RUNNER_ENV', '').lower()
-        cmd = ["claude"]
-        if runner_env == 'production':
-            cmd.append("--dangerously-skip-permissions")
-        cmd.extend([
-            "-p",
-            "Find foundry.toml in this repo. Print ONLY the relative path to its parent directory (e.g., 'contracts' or '.'). No explanation.",
-            "--max-turns", "1",
-            "--output-format", "text"
-        ])
-        result = subprocess.run(
-            cmd,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            ai_path = result.stdout.strip().strip('"').strip("'")
-            # Validate AI response
-            if ai_path and not ai_path.startswith('/'):
-                candidate = os.path.join(repo_path, ai_path)
-                if os.path.isfile(os.path.join(candidate, "foundry.toml")):
-                    print(f"  ✓ AI-detected foundryRoot: {ai_path}")
-                    return candidate
-    except Exception as e:
-        print(f"  ⚠ AI detection failed: {e}")
+    # 3. AI detection (0 or multiple foundry.toml)
+    print(f"  🤖 Using AI to detect foundryRoot...")
+    ai_choice = _ask_ai_for_foundry_root(repo_path)
+    if ai_choice:
+        return ai_choice
 
-    # Final fallback: assume repo root
-    print(f"  ⚠ Could not detect foundryRoot, using repo root")
+    # 4. Default to repo root
+    print(f"  ⚠ Defaulting to repo root")
     return repo_path
 
 from server.github import create_github_repo, invite_collaborator, push_to_github, setup_repo_remote

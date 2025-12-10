@@ -193,11 +193,12 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
                 # Resolve the save path using tool output data for placeholders
                 save_path = resolve_path_template(step.output.save_to, step_num, output_data)
 
-                # Make save_path absolute relative to RECON_REPO_PATH (not Python's cwd)
-                # This ensures files are saved in the repo, not in /tmp or wherever Python runs from
-                repo_path = os.environ.get('RECON_REPO_PATH')
-                if repo_path and not save_path.is_absolute():
-                    save_path = Path(repo_path) / save_path
+                # Make save_path absolute relative to RECON_FOUNDRY_ROOT (not Python's cwd)
+                # This ensures files are saved in the foundry project root (handles monorepos)
+                # Falls back to RECON_REPO_PATH for non-monorepo cases
+                foundry_root = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH')
+                if foundry_root and not save_path.is_absolute():
+                    save_path = Path(foundry_root) / save_path
 
                 # Ensure directory exists
                 save_path.parent.mkdir(parents=True, exist_ok=True)
