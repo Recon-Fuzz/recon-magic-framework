@@ -323,14 +323,13 @@ def find_source_for_contract(
     Returns:
         The full source path if found, None otherwise.
     """
-    target = f"{contract_name}.sol"
-    for source_path in lcov_sources:
-        if source_path.endswith(target):
-            # Prefer src/ paths over interfaces/
-            if "/interfaces/" not in source_path:
-                return source_path
+    # Look for exact filename match: /{ContractName}.sol
+    # The leading slash ensures we match the exact filename, not a substring.
+    # This automatically excludes:
+    #   - Interface files (e.g., IStabilityPool.sol won't match /StabilityPool.sol)
+    #   - Test helpers (e.g., StabilityPoolTargets.sol won't match /StabilityPool.sol)
+    target = f"/{contract_name}.sol"
 
-    # Fallback: return any match
     for source_path in lcov_sources:
         if source_path.endswith(target):
             return source_path
