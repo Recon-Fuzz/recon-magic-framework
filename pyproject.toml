@@ -12,6 +12,7 @@ dependencies = [
 [project.scripts]
 recon = "cli:main"
 extract-target-functions = "tools.targeted_functions.extract_target_functions:main"
+filter-build-info = "tools.filter_build_info.filter_build_info:main"
 order-prerequisite-func = "tools.order_prerequisite_func.order_prerequisite_func:main"
 touched-function-identifier = "tools.touched_function_identifier.touched_function_identifier:main"
 covg-eval = "tools.covg_eval.covg_eval:main"
