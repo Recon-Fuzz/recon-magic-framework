@@ -160,7 +160,46 @@ def create_summary(step: Step, step_num: int) -> str | None:
 
     try:
         import subprocess
-        prompt = f"Summarize the changes made in step '{step.name}' in 2-3 sentences. Focus on what was accomplished, not implementation details. Return only the summary text."
+
+        # Get repo path from environment
+        repo_path = os.environ.get('RECON_REPO_PATH', '.')
+
+        # Gather context: git diff of uncommitted changes
+        git_diff = ""
+        success, diff_output, _ = run_command("git diff HEAD", cwd=repo_path)
+        if success and diff_output:
+            git_diff = diff_output
+        else:
+            # Try getting staged changes if no diff against HEAD
+            success, diff_output, _ = run_command("git diff --cached", cwd=repo_path)
+            if success and diff_output:
+                git_diff = diff_output
+
+        # Get list of changed/new files
+        changed_files = ""
+        success, status_output, _ = run_command("git status --porcelain", cwd=repo_path)
+        if success and status_output:
+            changed_files = status_output
+
+        # Build context string
+        context_parts = []
+        context_parts.append(f"Step name: {step.name}")
+        if step.description:
+            context_parts.append(f"Step description: {step.description}")
+        if changed_files:
+            context_parts.append(f"Changed files:\n{changed_files}")
+        if git_diff:
+            # Limit diff size to avoid overwhelming the model
+            max_diff_chars = 8000
+            if len(git_diff) > max_diff_chars:
+                git_diff = git_diff[:max_diff_chars] + "\n... (diff truncated)"
+            context_parts.append(f"Git diff:\n{git_diff}")
+
+        context = "\n\n".join(context_parts)
+
+        prompt = f"""Based on the following context, summarize the changes made in step '{step.name}' in 2-3 sentences. Focus on what was accomplished, not implementation details. Return only the summary text.
+
+{context}"""
 
         # Check if we should skip permissions (production environment)
         runner_env = os.environ.get('RUNNER_ENV', '').lower()
