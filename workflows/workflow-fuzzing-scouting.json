@@ -47,6 +47,44 @@
       },
       "shouldCreateSummary": true,
       "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Contracts to Scaffold File",
+      "type": "decision",
+      "description": "Check if magic/contracts-to-scaffold.json was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/contracts-to-scaffold.json"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Contracts to scaffold file created, continue to setting up fuzzing"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 1: Contract Analysis & Scaffolding Preparation",
+          "NOTE": "Contracts to scaffold file not found, retry analysis"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Generate Recon Scaffolding",
+      "type": "task",
+      "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",
+      "prompt": "npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' magic/contracts-to-scaffold.json)\"",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
     }
   ]
 }
