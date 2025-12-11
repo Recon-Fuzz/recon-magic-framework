@@ -9,7 +9,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import model_decision
 from .model_decision import perform_decision_with_model
 
 

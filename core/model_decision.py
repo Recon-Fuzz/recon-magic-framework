@@ -6,7 +6,7 @@ using LangChain's structured output capabilities and Pydantic schemas.
 """
 
 from typing import Any, Type
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field
 
 
 def create_decision_schema(valid_values: list[float]) -> Type[BaseModel]:
