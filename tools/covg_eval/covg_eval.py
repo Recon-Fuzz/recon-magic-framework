@@ -310,11 +310,45 @@ def load_functions_to_cover(magic_dir: Path) -> dict[str, list[str]]:
     return result
 
 
+def is_interface_file(source_path: str) -> bool:
+    """Check if a source path is an interface file.
+
+    Interface files are identified by:
+    1. Being in a directory named 'interfaces' or 'Interfaces' (case-insensitive)
+    2. Having a filename starting with 'I' followed by an uppercase letter (e.g., IStabilityPool.sol)
+
+    Args:
+        source_path: Path to the source file.
+
+    Returns:
+        True if the file is an interface, False otherwise.
+    """
+    # Normalize path separators and convert to lowercase for case-insensitive checks
+    path_lower = source_path.lower()
+
+    # Check if path contains 'interfaces' directory
+    if "/interfaces/" in path_lower or "\\interfaces\\" in path_lower:
+        return True
+
+    # Check if filename starts with 'I' followed by uppercase (common interface naming convention)
+    # e.g., IStabilityPool.sol, IBorrowerOperations.sol
+    filename = source_path.split("/")[-1].split("\\")[-1]  # Get filename from path
+    if filename.startswith("I") and len(filename) > 1 and filename[1].isupper():
+        return True
+
+    return False
+
+
 def find_source_for_contract(
     contract_name: str,
     lcov_sources: dict[str, dict],
 ) -> str | None:
     """Find the source file path for a given contract name.
+
+    This function looks for implementation files only, ignoring interface files.
+    It searches for files ending with the contract name, excluding:
+    - Files in 'interfaces' or 'Interfaces' directories
+    - Files with names starting with 'I' followed by uppercase (e.g., IContractName.sol)
 
     Args:
         contract_name: Name of the contract (without .sol extension).
