@@ -2,6 +2,7 @@
 Decision execution module for workflow steps.
 """
 
+import os
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -126,8 +127,12 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
     print(f"Decision mode: {decision_mode}")
 
     if decision_mode == DecisionMode.FILE_EXISTS:
-        # Find the file
-        matches = list(Path('.').rglob(step.modeInfo["fileName"]))
+        # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
+        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
+        base_path = Path(repo_path)
+
+        # Find the file using glob (supports wildcards like *.txt)
+        matches = list(base_path.glob(step.modeInfo["fileName"]))
         exists = 1.0 if matches else 0.0
 
         print(f"matches: {matches}")
@@ -137,8 +142,12 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
         return (SUCCESS, action, destination)
 
     if decision_mode == DecisionMode.READ_FILE:
+        # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
+        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
+        base_path = Path(repo_path)
+
         # Read the file
-        matches = list(Path('.').rglob(step.modeInfo["fileName"]))
+        matches = list(base_path.glob(step.modeInfo["fileName"]))
 
         if not matches:
             print("⚠ File doesnt exist, defaulting to CONTINUE")
@@ -194,8 +203,12 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
             print("⚠ prompt not specified in modeInfo for READ_FILE_WITH_MODEL_DIGEST, defaulting to CONTINUE")
             return (SUCCESS, "CONTINUE", None)
 
+        # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
+        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
+        base_path = Path(repo_path)
+
         # Try to find the file
-        matches = list(Path('.').rglob(file_name))
+        matches = list(base_path.glob(file_name))
 
         if not matches:
             print(f"⚠ File not found: {file_name}, defaulting to CONTINUE")
