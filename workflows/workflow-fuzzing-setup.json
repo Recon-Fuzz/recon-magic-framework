@@ -107,13 +107,13 @@
     {
       "name": "Fix Echidna Failure",
       "type": "task",
-      "description": "Resolve issues preventing Echidna from running successfully",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-echidna-failures.md. Exclusively run the fix-echidna-failures agent using the Task tool. This agent will analyze the saved Echidna logs and implement fixes to resolve the issues.",
+      "description": "Auto linking libraries to fix Echidna failure issues",
+      "prompt": "npx -y recon-generate@latest link",
       "model": {
-        "type": "OPENCODE",
+        "type": "PROGRAM",
         "model": "inherit"
       },
-      "shouldCreateSummary": true,
+      "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
