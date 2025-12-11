@@ -152,10 +152,18 @@ def perform_decision_with_model(
             The contents of the file as a string
         """
         try:
+            # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
+            repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
+            base_path = Path(repo_path)
+
             path = Path(file_path)
+            if not path.is_absolute():
+                # Make relative paths relative to the repo
+                path = base_path / file_path
+
             if not path.exists():
-                # Try to find the file using glob pattern
-                matches = list(Path('.').rglob(file_path))
+                # Try to find the file using glob pattern within the repo
+                matches = list(base_path.glob(f"**/{file_path}"))
                 if not matches:
                     return f"Error: File not found: {file_path}"
                 path = matches[0]
