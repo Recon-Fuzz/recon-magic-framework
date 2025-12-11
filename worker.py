@@ -75,7 +75,7 @@ def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
     return repo_path
 
 from server.github import create_github_repo, invite_collaborator, push_to_github, setup_repo_remote
-from server.jobs import fetch_job_details, fetch_pending_jobs
+from server.jobs import check_stop_requested, fetch_job_details, fetch_pending_jobs
 from server.postprocess import generate_failure_summary_with_claude, generate_summary_with_claude, mark_job_complete
 from server.setup import clone_claude_config, clone_opencode_config, clone_repository, setup_workspace
 from server.utils import parse_repo_info
@@ -105,6 +105,27 @@ def set_workflow_failure_info(step_name: str, step_num: int, reason: str = "step
 def get_workflow_failure_info() -> dict | None:
     """Get the current failure info."""
     return _workflow_failure_info
+
+
+def create_stop_checker() -> callable:
+    """
+    Create a stop checker function that checks with the backend API.
+    Uses environment variables for API credentials.
+
+    Returns:
+        Callable that returns True if stop was requested, False otherwise
+    """
+    def check_stop() -> bool:
+        api_url = os.environ.get('WORKER_API_URL')
+        bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+        job_id = os.environ.get('WORKER_JOB_ID')
+
+        if not all([api_url, bearer_token, job_id]):
+            return False
+
+        return check_stop_requested(api_url, bearer_token, job_id)
+
+    return check_stop
 
 
 def update_job_data(api_url: str, bearer_token: str, job_id: str, data: dict) -> bool:
@@ -269,11 +290,13 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
     print(f"[Worker] After step {step_num}: {step.name}")
     print(f"Return code: {return_code}, Action: {action}")
 
-    # Track failure info for later use in error handling
-    if action == "FAILED" or return_code != 0:
+    # Track failure/stop info for later use in error handling
+    if action == "FAILED" or return_code == 1:
         set_workflow_failure_info(step.name, step_num, "step_failure")
     elif action == "STOP":
         set_workflow_failure_info(step.name, step_num, "stop_action")
+    elif action == "GRACEFUL_STOP" or return_code == 2:
+        set_workflow_failure_info(step.name, step_num, "graceful_stop")
 
     # Get API credentials from environment
     api_url = os.environ.get('WORKER_API_URL')
@@ -303,6 +326,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
             step_data["pushed"] = step_result["pushed"]
         if step_result.get("failed"):
             step_data["failed"] = step_result["failed"]
+        if step_result.get("stopped"):
+            step_data["stopped"] = step_result["stopped"]
 
     # Send to backend
     update_job_step_data(api_url, bearer_token, job_id, step_data)
@@ -573,7 +598,7 @@ def start_job_listener(
                 # Reset failure tracker before running workflow
                 reset_workflow_failure_info()
 
-                # Run the workflow with worker-specific hooks
+                # Run the workflow with worker-specific hooks and stop checker
                 workflow_result = run_workflow(
                     workflow_file=workflow_file,
                     dangerous=permissions_flag,
@@ -581,17 +606,23 @@ def start_job_listener(
                     logs_dir="/app/logs",
                     repo_path=effective_repo_path,
                     before_hook=worker_before_step_hook,
-                    after_hook=worker_after_step_hook
+                    after_hook=worker_after_step_hook,
+                    stop_checker=create_stop_checker()
                 )
 
-                # Check if workflow failed
-                workflow_failed = workflow_result != 0
+                # Check workflow result: 0 = success, 1 = failure, 2 = stopped
+                workflow_failed = workflow_result == 1
+                workflow_stopped = workflow_result == 2
                 failure_info = get_workflow_failure_info()
 
                 if workflow_failed:
                     print(f"Workflow execution failed with code {workflow_result}")
                     if failure_info:
                         print(f"  Failed at step {failure_info['step_num']}: {failure_info['step_name']} ({failure_info['reason']})")
+                elif workflow_stopped:
+                    print(f"Workflow was gracefully stopped")
+                    if failure_info:
+                        print(f"  Stopped before step {failure_info['step_num']}: {failure_info['step_name']}")
 
                 # Get branch name
                 try:
@@ -605,7 +636,7 @@ def start_job_listener(
                 except Exception:
                     branch_name = "main"
 
-                # Generate appropriate summary based on success/failure
+                # Generate appropriate summary based on success/failure/stopped
                 if workflow_failed and failure_info:
                     # Generate failure-aware summary
                     summary = generate_failure_summary_with_claude(
@@ -614,6 +645,14 @@ def start_job_listener(
                         since_commit=initial_commit_hash
                     )
                     job_status = "ERROR"
+                elif workflow_stopped:
+                    # Generate summary for gracefully stopped job
+                    summary = generate_summary_with_claude(initial_commit_hash)
+                    if failure_info:
+                        summary = f"Job was gracefully stopped before step {failure_info['step_num']}: {failure_info['step_name']}. " + (summary or "")
+                    else:
+                        summary = "Job was gracefully stopped by user request. " + (summary or "")
+                    job_status = "STOPPED"
                 else:
                     # Generate success summary
                     summary = generate_summary_with_claude(initial_commit_hash)

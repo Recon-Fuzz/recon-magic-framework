@@ -8,7 +8,7 @@ FROM python:3.12-slim
 RUN useradd -m -s /bin/bash reconuser
 
 # Install Node.js and Go
-RUN apt-get update && apt-get install -y curl git wget ripgrep sudo && \
+RUN apt-get update && apt-get install -y curl git wget ripgrep sudo jq && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz && \

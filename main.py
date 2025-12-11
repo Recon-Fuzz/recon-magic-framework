@@ -22,6 +22,7 @@ load_dotenv()
 # Exit codes
 SUCCESS = 0
 FAILURE = 1
+STOPPED = 2  # Graceful stop requested
 
 # Default loop hardcap to prevent infinite loops
 DEFAULT_LOOP_HARDCAP = 5
@@ -360,7 +361,8 @@ def run_workflow(
     logs_dir: str | None = None,
     repo_path: str | None = None,
     before_hook: Callable[[Step, int], None] | None = None,
-    after_hook: Callable[[Step, int, int, str, dict | None], None] | None = None
+    after_hook: Callable[[Step, int, int, str, dict | None], None] | None = None,
+    stop_checker: Callable[[], bool] | None = None
 ) -> int:
     """
     Execute a workflow with explicit parameters.
@@ -375,9 +377,12 @@ def run_workflow(
         after_hook: Optional callback to run after each step execution
             - Receives: (step, step_num, return_code, action, step_result)
             - step_result contains: {summary, commit_info, pushed}
+        stop_checker: Optional callback to check if graceful stop was requested
+            - Called before each step
+            - Returns True if stop was requested, False otherwise
 
     Returns:
-        Exit code (0 = success, 1 = failure)
+        Exit code (0 = success, 1 = failure, 2 = stopped)
     """
     # Set environment variables for use by task/decision executors
     if dangerous:
@@ -404,6 +409,18 @@ def run_workflow(
     i = 1
     while i <= len(workflow.steps):
         step = workflow.steps[i - 1]
+
+        # Check for graceful stop request before executing each step
+        if stop_checker and stop_checker():
+            print(f"\n⏹️  Graceful stop requested before step {i}: {step.name}")
+            print("Stopping workflow execution gracefully.")
+
+            # Call after_hook to notify about the stop
+            if after_hook:
+                step_result = {"step_name": step.name, "step_num": i, "stopped": True}
+                after_hook(step, i, STOPPED, "GRACEFUL_STOP", step_result)
+
+            return STOPPED
 
         # Track execution count for this step
         if i not in step_execution_count:

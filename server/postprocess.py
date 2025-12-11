@@ -130,7 +130,7 @@ def mark_job_complete(
     status: str = "DONE"
 ) -> bool:
     """
-    Mark a job as completed or failed via API.
+    Mark a job as completed, failed, or stopped via API.
 
     Args:
         api_url: Base API URL
@@ -140,7 +140,7 @@ def mark_job_complete(
         repo_name: Repository name
         org_name: Organization name
         branch: Branch name
-        status: Job status - "DONE" for success, "ERROR" for failure
+        status: Job status - "DONE" for success, "ERROR" for failure, "STOPPED" for graceful stop
 
     Returns:
         bool: True if successful
@@ -175,7 +175,12 @@ def mark_job_complete(
         )
 
         response.raise_for_status()
-        status_msg = "complete" if status == "DONE" else "failed (ERROR)"
+        status_messages = {
+            "DONE": "complete",
+            "ERROR": "failed (ERROR)",
+            "STOPPED": "stopped (graceful)"
+        }
+        status_msg = status_messages.get(status, status)
         print(f"Job {job_id} marked as {status_msg}")
         return True
     except Exception as e:
