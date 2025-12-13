@@ -177,6 +177,7 @@ Your task:
 3. For any new untracked files (shown with ?? in git status), read them to understand what was created
 4. Write a 2-3 sentence summary focusing on WHAT was accomplished, not implementation details
 
+Write in first person as if you performed the work (e.g., "I created...", "I updated...").
 Return ONLY the summary text, nothing else."""
 
         # Build command - skip permissions only in production
