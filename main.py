@@ -150,6 +150,9 @@ def create_summary(step: Step, step_num: int) -> str | None:
     """
     Create a summary for the completed step using Claude.
 
+    Gives Claude full permissions to check git status, git diff, and read
+    any new files to generate an accurate summary.
+
     Args:
         step: The step that was executed
         step_num: The step number for logging
@@ -162,49 +165,23 @@ def create_summary(step: Step, step_num: int) -> str | None:
     try:
         import subprocess
 
-        # Get repo path from environment
-        repo_path = os.environ.get('RECON_REPO_PATH', '.')
+        # Build the prompt - let Claude explore the changes itself
+        prompt = f"""You are summarizing changes made during a workflow step.
 
-        # Gather context: git diff of uncommitted changes
-        git_diff = ""
-        success, diff_output, _ = run_command("git diff HEAD", cwd=repo_path)
-        if success and diff_output:
-            git_diff = diff_output
-        else:
-            # Try getting staged changes if no diff against HEAD
-            success, diff_output, _ = run_command("git diff --cached", cwd=repo_path)
-            if success and diff_output:
-                git_diff = diff_output
+Step name: {step.name}
+Step description: {step.description or 'N/A'}
 
-        # Get list of changed/new files
-        changed_files = ""
-        success, status_output, _ = run_command("git status --porcelain", cwd=repo_path)
-        if success and status_output:
-            changed_files = status_output
+Your task:
+1. Run `git status` to see what files changed
+2. Run `git diff HEAD` to see modifications to tracked files
+3. For any new untracked files (shown with ?? in git status), read them to understand what was created
+4. Write a 2-3 sentence summary focusing on WHAT was accomplished, not implementation details
 
-        # Build context string
-        context_parts = []
-        context_parts.append(f"Step name: {step.name}")
-        if step.description:
-            context_parts.append(f"Step description: {step.description}")
-        if changed_files:
-            context_parts.append(f"Changed files:\n{changed_files}")
-        if git_diff:
-            # Limit diff size to avoid overwhelming the model
-            max_diff_chars = 8000
-            if len(git_diff) > max_diff_chars:
-                git_diff = git_diff[:max_diff_chars] + "\n... (diff truncated)"
-            context_parts.append(f"Git diff:\n{git_diff}")
+Return ONLY the summary text, nothing else."""
 
-        context = "\n\n".join(context_parts)
-
-        prompt = f"""Based on the following context, summarize the changes made in step '{step.name}' in 2-3 sentences. Focus on what was accomplished, not implementation details. Return only the summary text.
-
-{context}"""
-
-        # Check if we should skip permissions (production environment)
-        runner_env = os.environ.get('RUNNER_ENV', '').lower()
+        # Build command - skip permissions only in production
         cmd = ["claude"]
+        runner_env = os.environ.get('RUNNER_ENV', '').lower()
         if runner_env == 'production':
             cmd.append("--dangerously-skip-permissions")
         cmd.extend(["-p", prompt, "--model", "haiku"])
