@@ -52,6 +52,30 @@
       "shouldCommitChanges": true
     },
     {
+      "name": "Step 0c: Build with Forge",
+      "type": "task",
+      "description": "Review the code and fix any compilation issues",
+      "prompt": "Run 'forge build' to verify the code compiles successfully. If there are compilation errors, fix them and run 'forge build' again until the code compiles without errors.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 0d: Auto-Link Libraries",
+      "type": "task",
+      "description": "Auto linking libraries using recon-generate",
+      "prompt": "npx -y recon-generate@latest link",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
       "name": "Phase 1: Run Echidna",
       "type": "task",
       "description": "Run Echidna to test the fuzzing setup",
