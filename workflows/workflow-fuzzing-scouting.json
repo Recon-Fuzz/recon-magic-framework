@@ -78,7 +78,7 @@
       "name": "Generate Recon Scaffolding",
       "type": "task",
       "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",
-      "prompt": "npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' magic/contracts-to-scaffold.json)\"",
+      "prompt": "npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' magic/contracts-to-scaffold.json)\" --coverage",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
