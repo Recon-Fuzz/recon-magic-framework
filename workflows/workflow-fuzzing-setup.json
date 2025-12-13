@@ -52,6 +52,30 @@
       "shouldCommitChanges": true
     },
     {
+      "name": "Step 0c: Build with Forge",
+      "type": "task",
+      "description": "Review the code and fix any compilation issues",
+      "prompt": "Run 'forge build' to verify the code compiles successfully. If there are compilation errors, fix them and run 'forge build' again until the code compiles without errors.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 0d: Auto-Link Libraries",
+      "type": "task",
+      "description": "Auto linking libraries using recon-generate",
+      "prompt": "npx -y recon-generate@latest link",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
       "name": "Phase 1: Run Echidna",
       "type": "task",
       "description": "Run Echidna to test the fuzzing setup",
@@ -107,13 +131,13 @@
     {
       "name": "Fix Echidna Failure",
       "type": "task",
-      "description": "Auto linking libraries to fix Echidna failure issues",
-      "prompt": "npx -y recon-generate@latest link",
+      "description": "Resolve issues preventing Echidna from running successfully",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-echidna-failures.md. Exclusively run the fix-echidna-failures agent using the Task tool. This agent will analyze the saved Echidna logs and implement fixes to resolve the issues.",
       "model": {
-        "type": "PROGRAM",
+        "type": "OPENCODE",
         "model": "inherit"
       },
-      "shouldCreateSummary": false,
+      "shouldCreateSummary": true,
       "shouldCommitChanges": true
     },
     {
