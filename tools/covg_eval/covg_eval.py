@@ -223,18 +223,22 @@ def group_consecutive_lines(lines: list[int]) -> list[str]:
 def extract_code_snippets(
     source_path: str,
     uncovered_lines: list[int],
-) -> list[dict[str, str | list[str]]]:
+    line_coverage: dict[int, int],
+) -> list[dict[str, str | int | list[str]]]:
     """Extract code snippets for uncovered lines, grouped by consecutive ranges.
 
     Args:
         source_path: Path to the Solidity source file.
         uncovered_lines: Sorted list of uncovered line numbers.
+        line_coverage: Dict mapping line numbers to hit counts.
 
     Returns:
         List of dicts, each containing:
             - "line_range": string like "10-15" or "20"
+            - "last_covered_line": int or None, the last covered line before this group
             - "code": list of strings formatted as "lineNum: code content"
                      (skips empty/whitespace-only lines)
+                     Includes the last covered line with [LAST COVERED] prefix if found
     """
     if not uncovered_lines:
         return []
@@ -266,8 +270,26 @@ def extract_code_snippets(
         else:
             line_range = f"{group[0]}-{group[-1]}"
 
-        # Extract code, skipping empty/whitespace-only lines
+        # Find the last covered line before this group
+        first_uncovered = group[0]
+        last_covered_line = None
+
+        # Search backwards from the first uncovered line to find the last covered line
+        for line_num in range(first_uncovered - 1, 0, -1):
+            if line_num in line_coverage and line_coverage[line_num] > 0:
+                last_covered_line = line_num
+                break
+
+        # Extract code, including the last covered line if found
         code_lines = []
+
+        # Add the last covered line first, if found
+        if last_covered_line is not None and last_covered_line <= len(lines):
+            code = lines[last_covered_line - 1].rstrip()
+            if code.strip():
+                code_lines.append(f"{last_covered_line}: [LAST COVERED] {code}")
+
+        # Add the uncovered lines
         for line_num in group:
             if line_num <= len(lines):
                 code = lines[line_num - 1].rstrip()  # Remove trailing whitespace
@@ -279,6 +301,7 @@ def extract_code_snippets(
         if code_lines:
             result.append({
                 "line_range": line_range,
+                "last_covered_line": last_covered_line,
                 "code": code_lines,
             })
 
@@ -310,11 +333,45 @@ def load_functions_to_cover(magic_dir: Path) -> dict[str, list[str]]:
     return result
 
 
+def is_interface_file(source_path: str) -> bool:
+    """Check if a source path is an interface file.
+
+    Interface files are identified by:
+    1. Being in a directory named 'interfaces' or 'Interfaces' (case-insensitive)
+    2. Having a filename starting with 'I' followed by an uppercase letter (e.g., IStabilityPool.sol)
+
+    Args:
+        source_path: Path to the source file.
+
+    Returns:
+        True if the file is an interface, False otherwise.
+    """
+    # Normalize path separators and convert to lowercase for case-insensitive checks
+    path_lower = source_path.lower()
+
+    # Check if path contains 'interfaces' directory
+    if "/interfaces/" in path_lower or "\\interfaces\\" in path_lower:
+        return True
+
+    # Check if filename starts with 'I' followed by uppercase (common interface naming convention)
+    # e.g., IStabilityPool.sol, IBorrowerOperations.sol
+    filename = source_path.split("/")[-1].split("\\")[-1]  # Get filename from path
+    if filename.startswith("I") and len(filename) > 1 and filename[1].isupper():
+        return True
+
+    return False
+
+
 def find_source_for_contract(
     contract_name: str,
     lcov_sources: dict[str, dict],
 ) -> str | None:
     """Find the source file path for a given contract name.
+
+    This function looks for implementation files only, ignoring interface files.
+    It searches for files ending with the contract name, excluding:
+    - Files in 'interfaces' or 'Interfaces' directories
+    - Files with names starting with 'I' followed by uppercase (e.g., IContractName.sol)
 
     Args:
         contract_name: Name of the contract (without .sol extension).
@@ -323,14 +380,13 @@ def find_source_for_contract(
     Returns:
         The full source path if found, None otherwise.
     """
-    target = f"{contract_name}.sol"
-    for source_path in lcov_sources:
-        if source_path.endswith(target):
-            # Prefer src/ paths over interfaces/
-            if "/interfaces/" not in source_path:
-                return source_path
+    # Look for exact filename match: /{ContractName}.sol
+    # The leading slash ensures we match the exact filename, not a substring.
+    # This automatically excludes:
+    #   - Interface files (e.g., IStabilityPool.sol won't match /StabilityPool.sol)
+    #   - Test helpers (e.g., StabilityPoolTargets.sol won't match /StabilityPool.sol)
+    target = f"/{contract_name}.sol"
 
-    # Fallback: return any match
     for source_path in lcov_sources:
         if source_path.endswith(target):
             return source_path
@@ -426,7 +482,7 @@ This will:
         print(f"Found {len(lcov_sources)} source files in LCOV file", file=verbose_out)
 
     # Analyze coverage for each function
-    missing_coverage: dict = {}
+    missing_coverage: list = []
 
     for contract_name, function_names in functions_to_cover.items():
         # Find the source file for this contract
@@ -471,43 +527,34 @@ This will:
                 print(f"  {func_name} (lines {start_line}-{end_line}): {percentage:.2f}% coverage", file=verbose_out)
 
             if percentage < 100.0:
-                # Extract lines within function range that have coverage data
-                function_lines = {
-                    ln: hits
-                    for ln, hits in line_coverage.items()
-                    if start_line <= ln <= end_line
-                }
-                total_lines = len(function_lines)
-                covered_lines = sum(1 for hits in function_lines.values() if hits > 0)
-                uncovered_count = len(uncovered_lines)
-
                 # Extract code snippets for uncovered lines
-                code_snippets = extract_code_snippets(source_path, uncovered_lines)
+                code_snippets = extract_code_snippets(source_path, uncovered_lines, line_coverage)
 
-                missing_coverage[func_name] = {
-                    "contract": contract_name,
-                    "source_file": source_path,
-                    "function_range": {
-                        "start": start_line,
-                        "end": end_line,
-                    },
-                    "coverage_stats": {
-                        "total_lines": total_lines,
-                        "covered_lines": covered_lines,
-                        "uncovered_lines": uncovered_count,
-                        "percentage": round(percentage, 2),
-                    },
-                    "uncovered_code": code_snippets,
-                }
+                # Create a separate entry for each uncovered section
+                for snippet in code_snippets:
+                    missing_coverage.append({
+                        "function": func_name,
+                        "contract": contract_name,
+                        "source_file": source_path,
+                        "function_range": {
+                            "start": start_line,
+                            "end": end_line,
+                        },
+                        "uncovered_code": snippet,
+                    })
 
     # Prepare output data
+    # Count unique functions with missing coverage
+    unique_functions_with_issues = len(set(entry["function"] for entry in missing_coverage))
+
     output_data = {
         "timestamp": timestamp,
         "lcov_file": str(lcov_path),
         "missing_coverage": missing_coverage,
         "summary": {
             "functions_analyzed": sum(len(v) for v in functions_to_cover.values()),
-            "functions_with_missing_coverage": len(missing_coverage),
+            "functions_with_missing_coverage": unique_functions_with_issues,
+            "uncovered_sections": len(missing_coverage),
             "full_coverage": len(missing_coverage) == 0
         }
     }
@@ -525,7 +572,8 @@ This will:
         print(f"Results written to: {output_path}")
 
         if missing_coverage:
-            print(f"Found {len(missing_coverage)} functions with < 100% coverage")
+            unique_funcs = len(set(entry["function"] for entry in missing_coverage))
+            print(f"Found {unique_funcs} functions with < 100% coverage ({len(missing_coverage)} uncovered sections)")
         else:
             print("All functions have 100% coverage!")
 

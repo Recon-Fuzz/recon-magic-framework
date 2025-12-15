@@ -85,7 +85,7 @@
       "name": "Step 6: Identifying Meaningful Values",
       "type": "task",
       "description": "Identify values that are useful for clamping target function handlers with",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to identify values useful for clamping.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify values useful for clamping.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -97,7 +97,7 @@
       "name": "Step 7: Creating Clamped Handlers",
       "type": "task",
       "description": "Implement clamped function handlers to achieve full coverage on the system setup",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to implement clamped handlers",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to implement clamped handlers",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -109,7 +109,7 @@
       "name": "Step 8: Creating Shortcut Handlers",
       "type": "task",
       "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to implement shortcut functions",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to implement shortcut functions",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -184,14 +184,14 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 13: Improving Coverage",
-          "NOTE": "Branch to improve coverage by identifying source of blockages"
+          "destinationStep": "Step 13: Analyzing Coverage Gaps",
+          "NOTE": "Branch to improve coverage by analyzing and fixing coverage gaps"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 18: Workflow Complete",
+          "destinationStep": "Step 19: Workflow Complete",
           "NOTE": "No missing coverage file found, skip to workflow completion"
         }
       ],
@@ -199,10 +199,10 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 13: Improving Coverage",
+      "name": "Step 13: Analyzing Coverage Gaps",
       "type": "task",
-      "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to improve coverage of the system",
+      "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and document the root causes in the functions-missing-covg file",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -211,7 +211,19 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 14: Run Echidna Programmatically",
+      "name": "Step 14: Implementing Coverage Fixes",
+      "type": "task",
+      "description": "Implement clamped handlers and missing target functions based on the analysis from Step 13",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to implement fixes for coverage gaps based on the analysis field in the functions-missing-covg file",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 15: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -224,7 +236,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 15: Echidna Output Check",
+      "name": "Step 16: Echidna Output Check",
       "type": "decision",
       "description": "Verify Echidna produced output; exit if not.",
       "mode": "FILE_EXISTS",
@@ -249,7 +261,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 16: Evaluate Coverage",
+      "name": "Step 17: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -265,7 +277,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 17: Coverage Improvement Decision Check",
+      "name": "Step 18: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
       "mode": "FILE_EXISTS",
@@ -277,7 +289,7 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 13: Improving Coverage",
+          "destinationStep": "Step 13: Analyzing Coverage Gaps",
           "NOTE": "Loop back to Step 13 to continue with coverage improvement"
         },
         {
@@ -291,7 +303,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 18: Workflow Complete",
+      "name": "Step 19: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",
