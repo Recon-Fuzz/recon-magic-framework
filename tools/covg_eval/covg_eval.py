@@ -223,18 +223,22 @@ def group_consecutive_lines(lines: list[int]) -> list[str]:
 def extract_code_snippets(
     source_path: str,
     uncovered_lines: list[int],
-) -> list[dict[str, str | list[str]]]:
+    line_coverage: dict[int, int],
+) -> list[dict[str, str | int | list[str]]]:
     """Extract code snippets for uncovered lines, grouped by consecutive ranges.
 
     Args:
         source_path: Path to the Solidity source file.
         uncovered_lines: Sorted list of uncovered line numbers.
+        line_coverage: Dict mapping line numbers to hit counts.
 
     Returns:
         List of dicts, each containing:
             - "line_range": string like "10-15" or "20"
+            - "last_covered_line": int or None, the last covered line before this group
             - "code": list of strings formatted as "lineNum: code content"
                      (skips empty/whitespace-only lines)
+                     Includes the last covered line with [LAST COVERED] prefix if found
     """
     if not uncovered_lines:
         return []
@@ -266,8 +270,26 @@ def extract_code_snippets(
         else:
             line_range = f"{group[0]}-{group[-1]}"
 
-        # Extract code, skipping empty/whitespace-only lines
+        # Find the last covered line before this group
+        first_uncovered = group[0]
+        last_covered_line = None
+
+        # Search backwards from the first uncovered line to find the last covered line
+        for line_num in range(first_uncovered - 1, 0, -1):
+            if line_num in line_coverage and line_coverage[line_num] > 0:
+                last_covered_line = line_num
+                break
+
+        # Extract code, including the last covered line if found
         code_lines = []
+
+        # Add the last covered line first, if found
+        if last_covered_line is not None and last_covered_line <= len(lines):
+            code = lines[last_covered_line - 1].rstrip()
+            if code.strip():
+                code_lines.append(f"{last_covered_line}: [LAST COVERED] {code}")
+
+        # Add the uncovered lines
         for line_num in group:
             if line_num <= len(lines):
                 code = lines[line_num - 1].rstrip()  # Remove trailing whitespace
@@ -279,6 +301,7 @@ def extract_code_snippets(
         if code_lines:
             result.append({
                 "line_range": line_range,
+                "last_covered_line": last_covered_line,
                 "code": code_lines,
             })
 
@@ -515,7 +538,7 @@ This will:
                 uncovered_count = len(uncovered_lines)
 
                 # Extract code snippets for uncovered lines
-                code_snippets = extract_code_snippets(source_path, uncovered_lines)
+                code_snippets = extract_code_snippets(source_path, uncovered_lines, line_coverage)
 
                 missing_coverage[func_name] = {
                     "contract": contract_name,
