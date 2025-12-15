@@ -164,20 +164,58 @@ touched-function-identifier --sol-expand-dir context_output --target-functions m
 
 ---
 
-## Step 8: Creating Shortcut Handlers
+## Step 8: Identifying Function Call Sequences
+
+**Type:** Task (OPENCODE - Agent)
+
+**Inputs:**
+- Agent: `./.opencode/agent/setup-phase-1.md`
+- File: `magic/functions-to-cover.json`
+
+**Outputs:**
+- File: `magic/function-sequences.json`
+
+**Output JSON Structure:**
+```json
+{
+  "function_name": {
+    "prerequisite_functions": [
+      "prereq_function_1",
+      "prereq_function_2"
+    ]
+  },
+  "another_function": {
+    "prerequisite_functions": []
+  }
+}
+```
+
+**Description:**
+This step identifies the necessary call sequences for target functions. It analyzes the implementation contracts to determine which functions must be called before others to avoid reverts. For example, if a `borrow` function requires a user to have deposited collateral first, the `deposit` function would be listed as a prerequisite.
+
+**Important Notes:**
+- Does NOT include initialization functions
+- Does NOT include role management functions (e.g., `grantRole`, `revokeRole`)
+- Does NOT include basic admin configuration functions
+- DOES include prerequisite functions necessary for successful execution
+
+---
+
+## Step 9: Creating Shortcut Handlers
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-2.md`
 - File: `magic/functions-to-cover.json`
+- File: `magic/function-sequences.json`
 
 **Outputs:**
 - Modified or new shortcut handler functions in test contracts
 
 ---
 
-## Step 9: Run Echidna Programmatically
+## Step 10: Run Echidna Programmatically
 
 **Type:** Task (PROGRAM)
 
@@ -195,7 +233,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 10: Echidna Output Check
+## Step 11: Echidna Output Check
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -204,11 +242,11 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 11
+- If file exists (value = 1): Continue to Step 12
 
 ---
 
-## Step 11: Evaluate Coverage
+## Step 12: Evaluate Coverage
 
 **Type:** Task (PROGRAM)
 
@@ -289,7 +327,7 @@ covg-eval magic/ echidna/ --return-json
 
 ---
 
-## Step 12: Initial Check of Coverage
+## Step 13: Initial Check of Coverage
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -297,12 +335,12 @@ covg-eval magic/ echidna/ --return-json
 - Pattern: `functions-missing-covg-*.json` in magic directory
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 13 (Analyzing Coverage Gaps)
-- If file does not exist (value = 0): Jump to Step 19 (Workflow Complete)
+- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps)
+- If file does not exist (value = 0): Jump to Step 20 (Workflow Complete)
 
 ---
 
-## Step 13: Analyzing Coverage Gaps
+## Step 14: Analyzing Coverage Gaps
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -348,7 +386,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 14: Implementing Coverage Fixes
+## Step 15: Implementing Coverage Fixes
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -365,7 +403,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 15: Run Echidna Programmatically (Iteration)
+## Step 16: Run Echidna Programmatically (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -383,7 +421,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 16: Echidna Output Check (Iteration)
+## Step 17: Echidna Output Check (Iteration)
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -392,11 +430,11 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 17
+- If file exists (value = 1): Continue to Step 18
 
 ---
 
-## Step 17: Evaluate Coverage (Iteration)
+## Step 18: Evaluate Coverage (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -411,11 +449,11 @@ covg-eval magic/ echidna/ --return-json
 
 **Outputs:**
 - File: `magic/functions-missing-covg-{timestamp}.json`
-- Structure: Same as Step 11 output
+- Structure: Same as Step 12 output
 
 ---
 
-## Step 18: Coverage Improvement Decision Check
+## Step 19: Coverage Improvement Decision Check
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -423,12 +461,12 @@ covg-eval magic/ echidna/ --return-json
 - Pattern: `functions-missing-covg-*.json` in magic directory
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 13 (Analyzing Coverage Gaps - loop)
-- If file does not exist (value = 0): Continue to Step 19
+- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps - loop)
+- If file does not exist (value = 0): Continue to Step 20
 
 ---
 
-## Step 19: Workflow Complete
+## Step 20: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
