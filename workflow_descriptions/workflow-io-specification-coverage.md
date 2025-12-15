@@ -194,19 +194,40 @@ covg-eval magic/ echidna/ --return-json
 **Outputs:**
 - File: `magic/functions-missing-covg-{timestamp}.json`
 
-**Output JSON Structure:**
+**Output JSON Structure (when not using `--return-json`):**
 ```json
-{
-  "functionName1": {
+[
+  {
+    "function": "functionName1",
     "contract": "ContractName",
     "source_file": "src/ContractName.sol",
     "function_range": {"start": 45, "end": 78},
-    "coverage_stats": {"total_lines": 25, "covered_lines": 20, "uncovered_lines": 5, "percentage": 80.0},
-    "uncovered_code": [
-      {"line_range": "50-52", "code": ["50:         if (condition) {", "51:             revert CustomError();", "52:         }"]}
-    ]
+    "uncovered_code": {
+      "line_range": "50-52",
+      "last_covered_line": 48,
+      "code": [
+        "48: [LAST COVERED]     uint256 value = getValue();",
+        "50:         if (condition) {",
+        "51:             revert CustomError();",
+        "52:         }"
+      ]
+    }
+  },
+  {
+    "function": "functionName1",
+    "contract": "ContractName",
+    "source_file": "src/ContractName.sol",
+    "function_range": {"start": 45, "end": 78},
+    "uncovered_code": {
+      "line_range": "65",
+      "last_covered_line": 63,
+      "code": [
+        "63: [LAST COVERED]     balance = newBalance;",
+        "65:         emit BalanceUpdated(balance);"
+      ]
+    }
   }
-}
+]
 ```
 
 **When using `--return-json` flag:**
@@ -214,8 +235,25 @@ covg-eval magic/ echidna/ --return-json
 {
   "timestamp": "1733845200",
   "lcov_file": "echidna/covered.1733845200.lcov",
-  "missing_coverage": {...},
-  "summary": {"functions_analyzed": 15, "functions_with_missing_coverage": 2, "full_coverage": false}
+  "missing_coverage": [
+    {
+      "function": "functionName1",
+      "contract": "ContractName",
+      "source_file": "src/ContractName.sol",
+      "function_range": {"start": 45, "end": 78},
+      "uncovered_code": {
+        "line_range": "50-52",
+        "last_covered_line": 48,
+        "code": ["48: [LAST COVERED]     uint256 value = getValue();", "50:         if (condition) {", "51:             revert CustomError();", "52:         }"]
+      }
+    }
+  ],
+  "summary": {
+    "functions_analyzed": 15,
+    "functions_with_missing_coverage": 2,
+    "uncovered_sections": 3,
+    "full_coverage": false
+  }
 }
 ```
 

@@ -482,7 +482,7 @@ This will:
         print(f"Found {len(lcov_sources)} source files in LCOV file", file=verbose_out)
 
     # Analyze coverage for each function
-    missing_coverage: dict = {}
+    missing_coverage: list = []
 
     for contract_name, function_names in functions_to_cover.items():
         # Find the source file for this contract
@@ -527,43 +527,34 @@ This will:
                 print(f"  {func_name} (lines {start_line}-{end_line}): {percentage:.2f}% coverage", file=verbose_out)
 
             if percentage < 100.0:
-                # Extract lines within function range that have coverage data
-                function_lines = {
-                    ln: hits
-                    for ln, hits in line_coverage.items()
-                    if start_line <= ln <= end_line
-                }
-                total_lines = len(function_lines)
-                covered_lines = sum(1 for hits in function_lines.values() if hits > 0)
-                uncovered_count = len(uncovered_lines)
-
                 # Extract code snippets for uncovered lines
                 code_snippets = extract_code_snippets(source_path, uncovered_lines, line_coverage)
 
-                missing_coverage[func_name] = {
-                    "contract": contract_name,
-                    "source_file": source_path,
-                    "function_range": {
-                        "start": start_line,
-                        "end": end_line,
-                    },
-                    "coverage_stats": {
-                        "total_lines": total_lines,
-                        "covered_lines": covered_lines,
-                        "uncovered_lines": uncovered_count,
-                        "percentage": round(percentage, 2),
-                    },
-                    "uncovered_code": code_snippets,
-                }
+                # Create a separate entry for each uncovered section
+                for snippet in code_snippets:
+                    missing_coverage.append({
+                        "function": func_name,
+                        "contract": contract_name,
+                        "source_file": source_path,
+                        "function_range": {
+                            "start": start_line,
+                            "end": end_line,
+                        },
+                        "uncovered_code": snippet,
+                    })
 
     # Prepare output data
+    # Count unique functions with missing coverage
+    unique_functions_with_issues = len(set(entry["function"] for entry in missing_coverage))
+
     output_data = {
         "timestamp": timestamp,
         "lcov_file": str(lcov_path),
         "missing_coverage": missing_coverage,
         "summary": {
             "functions_analyzed": sum(len(v) for v in functions_to_cover.values()),
-            "functions_with_missing_coverage": len(missing_coverage),
+            "functions_with_missing_coverage": unique_functions_with_issues,
+            "uncovered_sections": len(missing_coverage),
             "full_coverage": len(missing_coverage) == 0
         }
     }
@@ -581,7 +572,8 @@ This will:
         print(f"Results written to: {output_path}")
 
         if missing_coverage:
-            print(f"Found {len(missing_coverage)} functions with < 100% coverage")
+            unique_funcs = len(set(entry["function"] for entry in missing_coverage))
+            print(f"Found {unique_funcs} functions with < 100% coverage ({len(missing_coverage)} uncovered sections)")
         else:
             print("All functions have 100% coverage!")
 
