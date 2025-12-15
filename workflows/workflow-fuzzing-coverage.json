@@ -106,7 +106,23 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 8: Creating Shortcut Handlers",
+      "name": "Step 8: Identifying Function Call Sequences",
+      "type": "task",
+      "description": "Identify necessary function call sequences and prerequisites for target functions",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-1.md. Exclusively run the setup-phase-1 agent to identify function call sequences",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": false,
+        "save_to": "magic/function-sequences.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 9: Creating Shortcut Handlers",
       "type": "task",
       "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to implement shortcut functions",
@@ -118,7 +134,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 9: Run Echidna Programmatically",
+      "name": "Step 10: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -131,7 +147,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 10: Echidna Output Check",
+      "name": "Step 11: Echidna Output Check",
       "type": "decision",
       "description": "Verify Echidna produced output; exit if not.",
       "mode": "FILE_EXISTS",
@@ -156,7 +172,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 11: Evaluate Coverage",
+      "name": "Step 12: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -172,7 +188,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 12: Initial Check of Coverage",
+      "name": "Step 13: Initial Check of Coverage",
       "type": "decision",
       "description": "Determine if coverage needs to be improved",
       "mode": "FILE_EXISTS",
@@ -184,14 +200,14 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 13: Analyzing Coverage Gaps",
+          "destinationStep": "Step 14: Analyzing Coverage Gaps",
           "NOTE": "Branch to improve coverage by analyzing and fixing coverage gaps"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 19: Workflow Complete",
+          "destinationStep": "Step 20: Workflow Complete",
           "NOTE": "No missing coverage file found, skip to workflow completion"
         }
       ],
@@ -199,7 +215,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 13: Analyzing Coverage Gaps",
+      "name": "Step 14: Analyzing Coverage Gaps",
       "type": "task",
       "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and document the root causes in the functions-missing-covg file",
@@ -211,9 +227,9 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 14: Implementing Coverage Fixes",
+      "name": "Step 15: Implementing Coverage Fixes",
       "type": "task",
-      "description": "Implement clamped handlers and missing target functions based on the analysis from Step 13",
+      "description": "Implement clamped handlers and missing target functions based on the analysis from Step 14",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to implement fixes for coverage gaps based on the analysis field in the functions-missing-covg file",
       "model": {
         "type": "OPENCODE",
@@ -223,7 +239,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 15: Run Echidna Programmatically",
+      "name": "Step 16: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -236,7 +252,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 16: Echidna Output Check",
+      "name": "Step 17: Echidna Output Check",
       "type": "decision",
       "description": "Verify Echidna produced output; exit if not.",
       "mode": "FILE_EXISTS",
@@ -261,7 +277,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 17: Evaluate Coverage",
+      "name": "Step 18: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -277,7 +293,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 18: Coverage Improvement Decision Check",
+      "name": "Step 19: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
       "mode": "FILE_EXISTS",
@@ -289,8 +305,8 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 13: Analyzing Coverage Gaps",
-          "NOTE": "Loop back to Step 13 to continue with coverage improvement"
+          "destinationStep": "Step 14: Analyzing Coverage Gaps",
+          "NOTE": "Loop back to Step 14 to continue with coverage improvement"
         },
         {
           "operator": "eq",
@@ -303,7 +319,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 19: Workflow Complete",
+      "name": "Step 20: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",
