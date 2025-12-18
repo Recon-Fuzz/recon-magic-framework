@@ -1,0 +1,17 @@
+{
+  "name": "Scout → Setup → Coverage Pipeline",
+  "steps": [
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-scouting.json"
+    },
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-setup.json"
+    },
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-coverage.json"
+    }
+  ]
+}
