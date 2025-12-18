@@ -339,11 +339,15 @@ Return ONLY the summary text, nothing else."""
             cmd.append("--dangerously-skip-permissions")
         cmd.extend(["-p", prompt, "--model", "haiku"])
 
+        # IMPORTANT: Must set cwd to repo path, otherwise Claude runs in wrong directory
+        repo_path = os.environ.get('RECON_REPO_PATH', '.')
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
+            cwd=repo_path
         )
 
         if result.returncode == 0 and result.stdout.strip():
