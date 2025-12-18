@@ -103,74 +103,36 @@ npx -y sol-context@latest
 
 ---
 
-## Step 5: Identifying Touched Functions
-
-**Type:** Task (PROGRAM)
-
-**Inputs:**
-- Directory: `context_output/`
-- File: `magic/target-functions.json`
-
-**Command:**
-```bash
-touched-function-identifier --sol-expand-dir context_output --target-functions magic/target-functions.json --return-json
-```
-
-**Outputs:**
-- File: `magic/functions-to-cover.json`
-
-**Output JSON Structure:**
-```json
-{
-  "ContractName": {
-    "functions_to_cover": ["functionName1", "functionName2"]
-  }
-}
-```
-
-**When using `--return-json` flag:**
-```json
-{
-  "data": {"ContractName": {"functions_to_cover": ["functionName1"]}},
-  "summary": {"contracts_found": 1, "total_functions": 1}
-}
-```
-
----
-
-## Step 6: Identifying Meaningful Values
+## Step 5: Identifying Meaningful Values
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-0.md`
-- File: `magic/functions-to-cover.json`
 
 **Outputs:**
 - Identified meaningful values for clamping handlers
 
 ---
 
-## Step 7: Creating Clamped Handlers
+## Step 6: Creating Clamped Handlers
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-1.md`
-- File: `magic/functions-to-cover.json`
 
 **Outputs:**
 - Modified or new handler functions in test contracts
 
 ---
 
-## Step 8: Identifying Function Call Sequences
+## Step 7: Identifying Function Call Sequences
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/setup-phase-1.md`
-- File: `magic/functions-to-cover.json`
 
 **Outputs:**
 - File: `magic/function-sequences.json`
@@ -201,13 +163,12 @@ This step identifies the necessary call sequences for target functions. It analy
 
 ---
 
-## Step 9: Creating Shortcut Handlers
+## Step 8: Creating Shortcut Handlers
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-2.md`
-- File: `magic/functions-to-cover.json`
 - File: `magic/function-sequences.json`
 
 **Outputs:**
@@ -215,7 +176,7 @@ This step identifies the necessary call sequences for target functions. It analy
 
 ---
 
-## Step 10: Run Echidna Programmatically
+## Step 9: Run Echidna Programmatically
 
 **Type:** Task (PROGRAM)
 
@@ -233,7 +194,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 11: Echidna Output Check
+## Step 10: Echidna Output Check
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -242,63 +203,27 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 12
+- If file exists (value = 1): Continue to Step 11
 
 ---
 
-## Step 12: Evaluate Coverage
+## Step 11: Evaluate Coverage
 
 **Type:** Task (PROGRAM)
 
 **Inputs:**
-- Directory: `magic/`
-- Directory: `echidna/`
+- Directory: `echidna/` (containing LCOV files)
+- Files: Source contracts and build artifacts
 
 **Command:**
 ```bash
-covg-eval magic/ echidna/ --return-json
+npx -y recon-generate@latest coverage
 ```
 
 **Outputs:**
-- File: `magic/functions-missing-covg-{timestamp}.json`
+- File: `recon-coverage.json` (automatically saved by the tool)
 
-**Output JSON Structure (when not using `--return-json`):**
-```json
-[
-  {
-    "function": "functionName1",
-    "contract": "ContractName",
-    "source_file": "src/ContractName.sol",
-    "function_range": {"start": 45, "end": 78},
-    "uncovered_code": {
-      "line_range": "50-52",
-      "last_covered_line": 48,
-      "code": [
-        "48: [LAST COVERED]     uint256 value = getValue();",
-        "50:         if (condition) {",
-        "51:             revert CustomError();",
-        "52:         }"
-      ]
-    }
-  },
-  {
-    "function": "functionName1",
-    "contract": "ContractName",
-    "source_file": "src/ContractName.sol",
-    "function_range": {"start": 45, "end": 78},
-    "uncovered_code": {
-      "line_range": "65",
-      "last_covered_line": 63,
-      "code": [
-        "63: [LAST COVERED]     balance = newBalance;",
-        "65:         emit BalanceUpdated(balance);"
-      ]
-    }
-  }
-]
-```
-
-**When using `--return-json` flag:**
+**Output JSON Structure:**
 ```json
 {
   "timestamp": "1733845200",
@@ -312,7 +237,12 @@ covg-eval magic/ echidna/ --return-json
       "uncovered_code": {
         "line_range": "50-52",
         "last_covered_line": 48,
-        "code": ["48: [LAST COVERED]     uint256 value = getValue();", "50:         if (condition) {", "51:             revert CustomError();", "52:         }"]
+        "code": [
+          "48: [LAST COVERED]     uint256 value = getValue();",
+          "50:         if (condition) {",
+          "51:             revert CustomError();",
+          "52:         }"
+        ]
       }
     }
   ],
@@ -325,31 +255,33 @@ covg-eval magic/ echidna/ --return-json
 }
 ```
 
+**Note:** The tool automatically saves output to `recon-coverage.json` and does not require explicit output capture configuration.
+
 ---
 
-## Step 13: Initial Check of Coverage
+## Step 12: Initial Check of Coverage
 
 **Type:** Decision (FILE_EXISTS)
 
 **Inputs:**
-- Pattern: `functions-missing-covg-*.json` in magic directory
+- Pattern: `recon-coverage.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps)
-- If file does not exist (value = 0): Jump to Step 20 (Workflow Complete)
+- If file exists (value = 1): Jump to Step 13 (Analyzing Coverage Gaps)
+- If file does not exist (value = 0): Jump to Step 19 (Workflow Complete)
 
 ---
 
-## Step 14: Analyzing Coverage Gaps
+## Step 13: Analyzing Coverage Gaps
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-3.md`
-- File: Latest `magic/functions-missing-covg-{timestamp}.json`
+- File: `recon-coverage.json`
 
 **Outputs:**
-- Modified: `magic/functions-missing-covg-{timestamp}.json` with added `"analysis"` field
+- Modified: `recon-coverage.json` with added `"analysis"` field
 
 **Output Structure:**
 Each entry in the `missing_coverage` array will have a new `"analysis"` field added:
@@ -386,13 +318,13 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 15: Implementing Coverage Fixes
+## Step 14: Implementing Coverage Fixes
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-4.md`
-- File: Latest `magic/functions-missing-covg-{timestamp}.json` (with analysis field)
+- File: `recon-coverage.json` (with analysis field)
 
 **Outputs:**
 - Modified or new handler functions in test contracts to address coverage gaps based on the analysis
@@ -403,7 +335,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 16: Run Echidna Programmatically (Iteration)
+## Step 15: Run Echidna Programmatically (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -421,7 +353,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 17: Echidna Output Check (Iteration)
+## Step 16: Echidna Output Check (Iteration)
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -430,43 +362,45 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 18
+- If file exists (value = 1): Continue to Step 17
 
 ---
 
-## Step 18: Evaluate Coverage (Iteration)
+## Step 17: Evaluate Coverage (Iteration)
 
 **Type:** Task (PROGRAM)
 
 **Inputs:**
-- Directory: `magic/`
-- Directory: `echidna/`
+- Directory: `echidna/` (containing LCOV files)
+- Files: Source contracts and build artifacts
 
 **Command:**
 ```bash
-covg-eval magic/ echidna/ --return-json
+npx -y recon-generate@latest coverage
 ```
 
 **Outputs:**
-- File: `magic/functions-missing-covg-{timestamp}.json`
-- Structure: Same as Step 12 output
+- File: `recon-coverage.json` (automatically saved by the tool)
+- Structure: Same as Step 11 output
+
+**Note:** The tool automatically saves output to `recon-coverage.json` and does not require explicit output capture configuration.
 
 ---
 
-## Step 19: Coverage Improvement Decision Check
+## Step 18: Coverage Improvement Decision Check
 
 **Type:** Decision (FILE_EXISTS)
 
 **Inputs:**
-- Pattern: `functions-missing-covg-*.json` in magic directory
+- Pattern: `recon-coverage.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps - loop)
-- If file does not exist (value = 0): Continue to Step 20
+- If file exists (value = 1): Jump to Step 13 (Analyzing Coverage Gaps - loop)
+- If file does not exist (value = 0): Continue to Step 19
 
 ---
 
-## Step 20: Workflow Complete
+## Step 19: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
