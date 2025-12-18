@@ -536,9 +536,11 @@ def start_job_listener(
                 print(f"Executing workflow: {workflow_file}")
 
                 # Create GitHub repo BEFORE workflow runs so we can push per-step
+                # Use first section of job UUID for traceability + timestamp for uniqueness
+                job_id_prefix = str(job_id).split("-")[0]  # e.g., "a2178a85"
                 timestamp = int(time.time())
                 repo_basename = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-                new_repo_name = f"{repo_basename}-processed-{timestamp}"
+                new_repo_name = f"{job_id_prefix}-{repo_basename}-{timestamp}"
 
                 github_token = os.environ.get("GITHUB_TOKEN", "")
 
