@@ -1,0 +1,29 @@
+{
+  "name": "Test Sub-Workflow",
+  "steps": [
+    {
+      "name": "Sub Step 1: Echo Hello",
+      "type": "task",
+      "description": "First step in sub-workflow",
+      "prompt": "echo 'Hello from sub-workflow step 1'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Sub Step 2: Echo World",
+      "type": "task",
+      "description": "Second step in sub-workflow",
+      "prompt": "echo 'Hello from sub-workflow step 2'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}

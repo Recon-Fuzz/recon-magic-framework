@@ -7,6 +7,7 @@ import json
 import os
 import sys
 from enum import Enum
+from pathlib import Path
 from typing import Annotated, Callable, Union
 
 from dotenv import load_dotenv
@@ -60,9 +61,128 @@ class Workflow(BaseModel):
     steps: list[StepType]
 
 
+# Internal storage for step metadata (IDs, source workflow)
+# Maps step index (1-based) to metadata
+_step_metadata: dict[int, dict] = {}
+
+
+def _get_workflow_key(filepath: str) -> str:
+    """Extract a short key from workflow filepath for ID generation."""
+    return Path(filepath).stem  # e.g., "workflow-fuzzing-coverage" from full path
+
+
+def _flatten_workflow_steps(
+    steps: list[dict],
+    workflows_dir: Path,
+    source_file: str,
+    visited: set[str] | None = None
+) -> list[dict]:
+    """
+    Recursively flatten workflow steps, inlining any 'workflow' type steps.
+
+    Args:
+        steps: List of step dictionaries from JSON
+        workflows_dir: Directory containing workflow files
+        source_file: Name of the source workflow file (for ID generation)
+        visited: Set of already-visited workflow files (for cycle detection)
+
+    Returns:
+        Flattened list of steps with internal IDs added
+    """
+    if visited is None:
+        visited = set()
+
+    # Detect cycles
+    if source_file in visited:
+        raise ValueError(f"Circular workflow reference detected: {source_file}")
+    visited.add(source_file)
+
+    workflow_key = _get_workflow_key(source_file)
+    flattened = []
+
+    for idx, step in enumerate(steps):
+        step_type = step.get("type")
+
+        if step_type == "workflow":
+            # This is a workflow reference - inline it
+            sub_workflow_file = step.get("workflow_file")
+            if not sub_workflow_file:
+                raise ValueError(f"Workflow step missing 'workflow_file' field: {step}")
+
+            # Resolve the sub-workflow path
+            sub_workflow_path = workflows_dir / sub_workflow_file
+            if not sub_workflow_path.exists():
+                raise FileNotFoundError(f"Sub-workflow not found: {sub_workflow_path}")
+
+            print(f"  📂 Inlining sub-workflow: {sub_workflow_file}")
+
+            # Load and flatten the sub-workflow
+            with open(sub_workflow_path, 'r') as f:
+                sub_data = json.load(f)
+
+            sub_steps = _flatten_workflow_steps(
+                sub_data.get("steps", []),
+                workflows_dir,
+                sub_workflow_file,
+                visited.copy()  # Copy to allow same workflow in different branches
+            )
+
+            flattened.extend(sub_steps)
+        else:
+            # Regular step - add internal ID metadata
+            step_copy = step.copy()
+            step_copy["_internal_id"] = f"{workflow_key}:{idx}"
+            step_copy["_source_workflow"] = source_file
+            flattened.append(step_copy)
+
+    return flattened
+
+
+def _build_step_metadata(steps: list[dict]) -> dict[int, dict]:
+    """
+    Build metadata mapping from flattened steps.
+
+    Args:
+        steps: Flattened list of step dictionaries
+
+    Returns:
+        Dict mapping 1-based step index to metadata
+    """
+    metadata = {}
+    for idx, step in enumerate(steps, start=1):
+        metadata[idx] = {
+            "internal_id": step.get("_internal_id", f"unknown:{idx}"),
+            "source_workflow": step.get("_source_workflow", "unknown"),
+            "name": step.get("name", ""),
+        }
+    return metadata
+
+
+def _build_name_to_index_map(steps: list[dict]) -> dict[str, list[int]]:
+    """
+    Build a map from step names to their indices (1-based).
+    Names can map to multiple indices if duplicated across sub-workflows.
+
+    Args:
+        steps: Flattened list of step dictionaries
+
+    Returns:
+        Dict mapping step name to list of 1-based indices
+    """
+    name_map: dict[str, list[int]] = {}
+    for idx, step in enumerate(steps, start=1):
+        name = step.get("name", "")
+        if name not in name_map:
+            name_map[name] = []
+        name_map[name].append(idx)
+    return name_map
+
+
 def load_workflow(filepath: str) -> Workflow:
     """
     Load and parse a workflow JSON file with type validation.
+    Supports workflow composition via 'workflow' type steps that reference
+    other workflow files.
 
     Args:
         filepath: Path to the workflow.json file
@@ -74,9 +194,41 @@ def load_workflow(filepath: str) -> Workflow:
         FileNotFoundError: If the workflow file doesn't exist
         json.JSONDecodeError: If the JSON is malformed
         pydantic.ValidationError: If the data doesn't match the schema
+        ValueError: If circular workflow references are detected
     """
+    global _step_metadata
+
+    filepath_path = Path(filepath)
+    workflows_dir = filepath_path.parent
+
     with open(filepath, 'r') as f:
         data = json.load(f)
+
+    # Flatten any embedded workflows
+    original_steps = data.get("steps", [])
+    has_workflow_steps = any(s.get("type") == "workflow" for s in original_steps)
+
+    if has_workflow_steps:
+        print(f"🔗 Flattening workflow composition...")
+        flattened_steps = _flatten_workflow_steps(
+            original_steps,
+            workflows_dir,
+            filepath_path.name
+        )
+
+        # Build metadata before stripping internal fields
+        _step_metadata = _build_step_metadata(flattened_steps)
+
+        # Strip internal fields before Pydantic validation
+        for step in flattened_steps:
+            step.pop("_internal_id", None)
+            step.pop("_source_workflow", None)
+
+        data["steps"] = flattened_steps
+        print(f"  ✓ Flattened to {len(flattened_steps)} total steps")
+    else:
+        # No composition - build simple metadata
+        _step_metadata = _build_step_metadata(original_steps)
 
     return Workflow(**data)
 
@@ -210,20 +362,44 @@ Return ONLY the summary text, nothing else."""
 
 
 ## TODO: Separate File
-def find_step_index_by_name(workflow: Workflow, step_name: str) -> int | None:
+def find_step_index_by_name(
+    workflow: Workflow,
+    step_name: str,
+    current_step_index: int | None = None
+) -> int | None:
     """
-    Find the step index (1-based) by step name.
+    Find the step index (1-based) by step name, with scoped resolution.
+
+    When workflows are composed, step names may be duplicated across sub-workflows.
+    This function first tries to find the step within the same source workflow as
+    the current step (scoped lookup), then falls back to global lookup.
 
     Args:
         workflow: The workflow containing the steps
         step_name: The name of the step to find
+        current_step_index: The current step's 1-based index (for scoped resolution)
 
     Returns:
         int | None: The 1-based index of the step, or None if not found
     """
+    global _step_metadata
+
+    # If we have metadata and a current step, try scoped lookup first
+    if _step_metadata and current_step_index is not None:
+        current_source = _step_metadata.get(current_step_index, {}).get("source_workflow")
+
+        if current_source:
+            # First pass: find within same source workflow
+            for idx, step in enumerate(workflow.steps, start=1):
+                meta = _step_metadata.get(idx, {})
+                if step.name == step_name and meta.get("source_workflow") == current_source:
+                    return idx
+
+    # Fallback: global lookup (first match)
     for idx, step in enumerate(workflow.steps, start=1):
         if step.name == step_name:
             return idx
+
     return None
 
 
@@ -462,7 +638,7 @@ def run_workflow(
                 print("Stopping workflow execution.")
                 return FAILURE
 
-            target_step_index = find_step_index_by_name(workflow, destination_step_name)
+            target_step_index = find_step_index_by_name(workflow, destination_step_name, i)
 
             if target_step_index is None:
                 print(f"\n❌ JUMP_TO_STEP failed: Step '{destination_step_name}' not found in workflow")
