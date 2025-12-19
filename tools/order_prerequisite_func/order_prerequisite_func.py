@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to sort functions in testing-priority.json based on prerequisite count.
+Script to sort functions in function-sequences.json based on prerequisite count.
 Sorts functions by number of prerequisites (ascending) and restructures the output.
 """
 
@@ -14,7 +14,7 @@ def sort_functions_by_prerequisites(input_path: str, return_json: bool = False) 
     Sorts functions in the input file based on prerequisite count.
 
     Args:
-        input_path: Path to the testing-priority.json file
+        input_path: Path to the function-sequences.json file
         return_json: If True, return sorted data as dict instead of writing to file
 
     Returns:
@@ -50,12 +50,18 @@ def sort_functions_by_prerequisites(input_path: str, return_json: bool = False) 
             sys.exit(1)
 
     # Convert to list of tuples (function_name, prerequisite_functions)
+    # Process function-sequences.json format
     functions = []
     for key, value in data.items():
-        if isinstance(value, dict):
-            function_name = value.get('function_name', key)
+        if isinstance(value, dict) and 'prerequisite_functions' in value:
+            function_name = key
+            # Extract prerequisite function names (should be an array)
             prerequisites = value.get('prerequisite_functions', [])
-            functions.append((function_name, prerequisites))
+            if isinstance(prerequisites, list):
+                functions.append((function_name, prerequisites))
+            else:
+                if not return_json:
+                    print(f"Warning: Skipping invalid entry '{key}' - prerequisite_functions must be a list", file=sys.stderr)
         else:
             if not return_json:
                 print(f"Warning: Skipping invalid entry: {key}", file=sys.stderr)
@@ -97,11 +103,11 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Sort functions in testing-priority.json by prerequisite count"
+        description="Sort functions in function-sequences.json by prerequisite count"
     )
     parser.add_argument(
         "input_path",
-        help="Path to the testing-priority.json file"
+        help="Path to the function-sequences.json file"
     )
     parser.add_argument(
         "--return-json",

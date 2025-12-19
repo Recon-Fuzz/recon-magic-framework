@@ -184,22 +184,6 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 3: Order Prerequisite Functions",
-      "type": "task",
-      "description": "Sort functions in testing-priority.json based on prerequisite count",
-      "prompt": "order-prerequisite-func ./magic/testing-priority.json --return-json",
-      "model": {
-        "type": "PROGRAM",
-        "model": "inherit"
-      },
-      "output": {
-        "capture": true,
-        "save_to": "magic/testing-priority.json"
-      },
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": true
-    },
-    {
       "name": "Phase 1 Agent: Setup Phase 1",
       "type": "task",
       "description": "Execute setup-phase-1 agent for additional setup tasks",
@@ -209,6 +193,22 @@
         "model": "inherit"
       },
       "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 3: Order Prerequisite Functions",
+      "type": "task",
+      "description": "Sort functions in function-sequences.json based on prerequisite count",
+      "prompt": "order-prerequisite-func ./magic/function-sequences.json --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/function-sequences-sorted.json"
+      },
+      "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
@@ -239,7 +239,7 @@
       "name": "Workflow Completion Summary",
       "type": "task",
       "description": "Generate final summary of fuzzing setup completion",
-      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all phases (Phase 0 through Phase 3)\n2. List the key artifacts created (Setup.sol, magic/setup-notes.md, testing-priority.json, echidna output)\n3. Confirm that forge build compiles successfully\n4. Confirm that forge test runs without reverts\n5. Provide next steps: user can now run fuzzing campaigns using Echidna or other fuzzing tools",
+      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all phases (Phase 0 through Phase 3)\n2. List the key artifacts created (Setup.sol, magic/setup-notes.md, function-sequences.json, function-sequences-sorted.json, echidna output)\n3. Confirm that forge build compiles successfully\n4. Confirm that forge test runs without reverts\n5. Provide next steps: user can now run fuzzing campaigns using Echidna or other fuzzing tools",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
