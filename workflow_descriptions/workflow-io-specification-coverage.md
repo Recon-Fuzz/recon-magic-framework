@@ -207,7 +207,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 11: Evaluate Coverage
+## Step 11: Generate Functions to Cover
 
 **Type:** Task (PROGRAM)
 
@@ -217,11 +217,40 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Command:**
 ```bash
-npx -y recon-generate@latest coverage
+npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/
 ```
 
 **Outputs:**
-- File: `recon-coverage.json` (automatically saved by the tool)
+- File: `magic/recon-coverage.json`
+
+**Output JSON Structure:**
+```json
+{
+  "src/hub/Hub.sol": ["66-130", "133-173", "176-185"],
+  "src/hub/libraries/AssetLogic.sol": ["26-31", "42-47"]
+}
+```
+
+**Description:**
+This tool generates a JSON file containing line ranges per source file that need coverage analysis. The line ranges represent code sections that should be analyzed for function coverage.
+
+---
+
+## Step 12: Evaluate Coverage
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- File: `magic/recon-coverage.json` (line ranges per source file)
+- Directory: `echidna/` (containing LCOV files)
+
+**Command:**
+```bash
+covg-eval magic/ echidna/ --return-json
+```
+
+**Outputs:**
+- File: `magic/functions-missing-covg-{timestamp}.json`
 
 **Output JSON Structure:**
 ```json
@@ -230,101 +259,120 @@ npx -y recon-generate@latest coverage
   "lcov_file": "echidna/covered.1733845200.lcov",
   "missing_coverage": [
     {
-      "function": "functionName1",
+      "function": "functionName",
       "contract": "ContractName",
       "source_file": "src/ContractName.sol",
-      "function_range": {"start": 45, "end": 78},
-      "uncovered_code": {
-        "line_range": "50-52",
-        "last_covered_line": 48,
-        "code": [
-          "48: [LAST COVERED]     uint256 value = getValue();",
-          "50:         if (condition) {",
-          "51:             revert CustomError();",
-          "52:         }"
-        ]
-      }
+      "function_range": {"start": 235, "end": 260},
+      "uncovered_code": [
+        {
+          "line_range": "244-247",
+          "code": [
+            "244: require(UtilsLib.exactlyOneZero(assets, shares))",
+            "245: require(receiver != address(0))",
+            "247: require(_isSenderAuthorized(onBehalf))"
+          ]
+        },
+        {
+          "line_range": "249",
+          "code": [
+            "249: _accrueInterest(marketParams, id)"
+          ]
+        }
+      ]
     }
   ],
   "summary": {
-    "functions_analyzed": 15,
-    "functions_with_missing_coverage": 2,
-    "uncovered_sections": 3,
-    "full_coverage": false
+    "total_functions": 15,
+    "functions_missing_coverage": 2,
+    "total_uncovered_chunks": 3
   }
 }
 ```
 
-**Note:** The tool automatically saves output to `recon-coverage.json` and does not require explicit output capture configuration.
+**Description:**
+This tool parses the `recon-coverage.json` line ranges, identifies which functions fall within those ranges by analyzing source files, then evaluates LCOV coverage data to determine which functions have missing coverage. Only functions with < 100% coverage are included in the output.
 
 ---
 
-## Step 12: Initial Check of Coverage
+## Step 13: Initial Check of Coverage
 
 **Type:** Decision (FILE_EXISTS)
 
 **Inputs:**
-- Pattern: `recon-coverage.json`
+- Pattern: `magic/functions-missing-covg-*.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 13 (Analyzing Coverage Gaps)
-- If file does not exist (value = 0): Jump to Step 19 (Workflow Complete)
+- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps)
+- If file does not exist (value = 0): Jump to Step 20 (Workflow Complete)
 
 ---
 
-## Step 13: Analyzing Coverage Gaps
+## Step 14: Analyzing Coverage Gaps
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-3.md`
-- File: `recon-coverage.json`
+- File: `magic/functions-missing-covg-{timestamp}.json`
 
 **Outputs:**
-- Modified: `recon-coverage.json` with added `"analysis"` field
+- Modified: `magic/functions-missing-covg-{timestamp}.json` with added `"analysis"` field
 
 **Output Structure:**
 Each entry in the `missing_coverage` array will have a new `"analysis"` field added:
 
 ```json
-[
-  {
-    "function": "borrow",
-    "contract": "Morpho",
-    "source_file": "src/Morpho.sol",
-    "function_range": {"start": 235, "end": 260},
-    "uncovered_code": {
-      "line_range": "244-249",
-      "last_covered_line": 243,
-      "code": [
-        "243: [LAST COVERED]     require(market[id].lastUpdate != 0, ErrorsLib.MARKET_NOT_CREATED)",
-        "244:         require(UtilsLib.exactlyOneZero(assets, shares))",
-        "245:         require(receiver != address(0))",
-        "247:         require(_isSenderAuthorized(onBehalf))",
-        "249:         _accrueInterest(marketParams, id)"
-      ]
-    },
-    "analysis": "The last_covered_line is 243, which contains `require(market[id].lastUpdate != 0, ErrorsLib.MARKET_NOT_CREATED)`. Since line 243 was covered (the require passed), execution continued to line 244. However, lines 244-249 are uncovered, indicating that one of the subsequent require statements is causing execution to revert.\n\nLooking at the uncovered lines, we see multiple require statements:\n- Line 244: `require(UtilsLib.exactlyOneZero(assets, shares))`\n- Line 245: `require(receiver != address(0))`\n- Line 247: `require(_isSenderAuthorized(onBehalf))`\n\nThe root cause is that the fuzzer is passing parameter values that fail these validation checks. Most likely, line 247's `require(_isSenderAuthorized(onBehalf))` is reverting because the `onBehalf` value isn't authorized. To fix this, we need to clamp the parameter space in our handlers so the fuzzer only passes authorized addresses for `onBehalf`, allowing execution to proceed past these require statements."
+{
+  "timestamp": "1733845200",
+  "lcov_file": "echidna/covered.1733845200.lcov",
+  "missing_coverage": [
+    {
+      "function": "borrow",
+      "contract": "Morpho",
+      "source_file": "src/Morpho.sol",
+      "function_range": {"start": 235, "end": 260},
+      "uncovered_code": [
+        {
+          "line_range": "244-247",
+          "code": [
+            "244: require(UtilsLib.exactlyOneZero(assets, shares))",
+            "245: require(receiver != address(0))",
+            "247: require(_isSenderAuthorized(onBehalf))"
+          ]
+        },
+        {
+          "line_range": "249",
+          "code": [
+            "249: _accrueInterest(marketParams, id)"
+          ]
+        }
+      ],
+      "analysis": "The uncovered code starts at line 244 with multiple require statements. The root cause is that the fuzzer is passing parameter values that fail these validation checks. Most likely, line 247's `require(_isSenderAuthorized(onBehalf))` is reverting because the `onBehalf` value isn't authorized. To fix this, we need to clamp the parameter space in our handlers so the fuzzer only passes authorized addresses for `onBehalf`, allowing execution to proceed past these require statements."
+    }
+  ],
+  "summary": {
+    "total_functions": 15,
+    "functions_missing_coverage": 2,
+    "total_uncovered_chunks": 3
   }
-]
+}
 ```
 
 **Analysis Field Structure:**
 The `"analysis"` field is a string containing:
-1. What the `last_covered_line` does and why it succeeded
-2. Why the subsequent lines are uncovered
-3. The root cause of the blockage (failed require, unsatisfied condition, unreachable state, etc.)
-4. The type of fix needed (clamped handler, new target function, state initialization, etc.)
+1. What the uncovered code does and why it's not being reached
+2. The root cause of the blockage (failed require, unsatisfied condition, unreachable state, etc.)
+3. The type of fix needed (clamped handler, new target function, state initialization, etc.)
 
 ---
 
-## Step 14: Implementing Coverage Fixes
+## Step 15: Implementing Coverage Fixes
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-4.md`
-- File: `recon-coverage.json` (with analysis field)
+- File: `magic/functions-missing-covg-{timestamp}.json` (with analysis field)
 
 **Outputs:**
 - Modified or new handler functions in test contracts to address coverage gaps based on the analysis
@@ -335,7 +383,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 15: Run Echidna Programmatically (Iteration)
+## Step 16: Run Echidna Programmatically (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -353,7 +401,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 16: Echidna Output Check (Iteration)
+## Step 17: Echidna Output Check (Iteration)
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -362,45 +410,43 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 17
+- If file exists (value = 1): Continue to Step 18
 
 ---
 
-## Step 17: Evaluate Coverage (Iteration)
+## Step 18: Evaluate Coverage (Iteration)
 
 **Type:** Task (PROGRAM)
 
 **Inputs:**
+- File: `magic/recon-coverage.json` (line ranges per source file)
 - Directory: `echidna/` (containing LCOV files)
-- Files: Source contracts and build artifacts
 
 **Command:**
 ```bash
-npx -y recon-generate@latest coverage
+covg-eval magic/ echidna/ --return-json
 ```
 
 **Outputs:**
-- File: `recon-coverage.json` (automatically saved by the tool)
-- Structure: Same as Step 11 output
-
-**Note:** The tool automatically saves output to `recon-coverage.json` and does not require explicit output capture configuration.
+- File: `magic/functions-missing-covg-{timestamp}.json`
+- Structure: Same as Step 12 output
 
 ---
 
-## Step 18: Coverage Improvement Decision Check
+## Step 19: Coverage Improvement Decision Check
 
 **Type:** Decision (FILE_EXISTS)
 
 **Inputs:**
-- Pattern: `recon-coverage.json`
+- Pattern: `magic/functions-missing-covg-*.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 13 (Analyzing Coverage Gaps - loop)
-- If file does not exist (value = 0): Continue to Step 19
+- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps - loop)
+- If file does not exist (value = 0): Continue to Step 20
 
 ---
 
-## Step 19: Workflow Complete
+## Step 20: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
