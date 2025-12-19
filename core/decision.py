@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .model_decision import perform_decision_with_model
+from core.path_utils import get_base_path
 
 
 
@@ -126,24 +127,43 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
     print(f"Decision mode: {decision_mode}")
 
     if decision_mode == DecisionMode.FILE_EXISTS:
-        # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
-        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
-        base_path = Path(repo_path)
+        base_path = get_base_path()
+        pattern = step.modeInfo["fileName"]
+
+        print(f"  Base path: {base_path}")
+        print(f"  Pattern: {pattern}")
+        print(f"  RECON_FOUNDRY_ROOT: {os.environ.get('RECON_FOUNDRY_ROOT', '(not set)')}")
+        print(f"  RECON_REPO_PATH: {os.environ.get('RECON_REPO_PATH', '(not set)')}")
+        print(f"  Current working directory: {Path.cwd()}")
 
         # Find the file using glob (supports wildcards like *.txt)
-        matches = list(base_path.glob(step.modeInfo["fileName"]))
+        matches = list(base_path.glob(pattern))
         exists = 1.0 if matches else 0.0
 
-        print(f"matches: {matches}")
-        print(f"File exists: {exists}")
+        print(f"  Matches found: {len(matches)}")
+        if matches:
+            for match in matches:
+                print(f"    - {match}")
+        else:
+            print(f"  No matches found for pattern: {pattern}")
+            # List what IS in the expected directory (if it's looking in a magic/ subdirectory)
+            if 'magic/' in pattern or pattern.startswith('magic/'):
+                magic_dir = base_path / "magic"
+                if magic_dir.exists() and magic_dir.is_dir():
+                    print(f"  Files in {magic_dir}:")
+                    try:
+                        for f in magic_dir.iterdir():
+                            print(f"    - {f.name}")
+                    except Exception as e:
+                        print(f"    (Error listing directory: {e})")
+
+        print(f"  File exists result: {exists}")
 
         action, destination = evaluate_decisions(step.decision, exists)
         return (SUCCESS, action, destination)
 
     if decision_mode == DecisionMode.READ_FILE:
-        # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
-        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
-        base_path = Path(repo_path)
+        base_path = get_base_path()
 
         # Read the file
         matches = list(base_path.glob(step.modeInfo["fileName"]))
@@ -202,9 +222,7 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
             print("⚠ prompt not specified in modeInfo for READ_FILE_WITH_MODEL_DIGEST, defaulting to CONTINUE")
             return (SUCCESS, "CONTINUE", None)
 
-        # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
-        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
-        base_path = Path(repo_path)
+        base_path = get_base_path()
 
         # Try to find the file
         matches = list(base_path.glob(file_name))
