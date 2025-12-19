@@ -127,7 +127,41 @@ npx -y sol-context@latest
 
 ---
 
-## Step 7: Identifying Function Call Sequences
+## Step 7: Generate Non-Reverting Paths
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- Files: Source contracts and build artifacts
+- File: `magic/target-functions.json`
+
+**Command:**
+```bash
+npx -y recon-generate@latest paths && mkdir -p magic && mv recon-paths.json magic/
+```
+
+**Outputs:**
+- File: `magic/recon-paths.json`
+
+**Output JSON Structure:**
+```json
+{
+  "vault_liquidate": [
+    "seizedAssets > 0 && position[id][borrower].collateral == 0 && data.length > 0 && marketParams.oracle.price() && marketParams.collateralToken.safeTransfer(msg.sender, seizedAssets)",
+    "seizedAssets > 0 && position[id][borrower].collateral != 0 && data.length == 0 && marketParams.oracle.price()"
+  ],
+  "vault_borrow": [
+    "assets > 0 && position[id][onBehalf].collateral > 0 && market[id].totalSupplyAssets > 0"
+  ]
+}
+```
+
+**Description:**
+This tool extracts non-reverting execution paths through target functions. Each path is a boolean expression joined by `&&` representing conditions that must be satisfied for that execution flow. These paths are later combined with prerequisite functions to create shortcut handlers.
+
+---
+
+## Step 8: Identifying Function Call Sequences
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -140,14 +174,19 @@ npx -y sol-context@latest
 **Output JSON Structure:**
 ```json
 {
-  "function_name": {
+  "vault_liquidate": {
     "prerequisite_functions": [
-      "prereq_function_1",
-      "prereq_function_2"
+      "vault_supply",
+      "vault_supplyCollateral",
+      "vault_borrow",
+      "oracle_setPrice"
     ]
   },
-  "another_function": {
-    "prerequisite_functions": []
+  "vault_borrow": {
+    "prerequisite_functions": [
+      "vault_supply",
+      "vault_supplyCollateral"
+    ]
   }
 }
 ```
@@ -155,28 +194,91 @@ npx -y sol-context@latest
 **Description:**
 This step identifies the necessary call sequences for target functions. It analyzes the implementation contracts to determine which functions must be called before others to avoid reverts. For example, if a `borrow` function requires a user to have deposited collateral first, the `deposit` function would be listed as a prerequisite.
 
+The agent also identifies **implicit prerequisites** - state changes needed to satisfy execution conditions. For example, `liquidate` requires an unhealthy position, which may require calling `oracle_setPrice` to change the collateral price.
+
 **Important Notes:**
 - Does NOT include initialization functions
 - Does NOT include role management functions (e.g., `grantRole`, `revokeRole`)
 - Does NOT include basic admin configuration functions
-- DOES include prerequisite functions necessary for successful execution
+- DOES include runtime prerequisite functions necessary for successful execution
+- DOES include implicit prerequisites (e.g., oracle price changes, state modifications)
 
 ---
 
-## Step 8: Creating Shortcut Handlers
+## Step 9: Merge Paths and Prerequisites
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- File: `magic/recon-paths.json` (from Step 7)
+- File: `magic/function-sequences.json` (from Step 8)
+
+**Command:**
+```bash
+merge-paths-prerequisites --return-json
+```
+
+**Outputs:**
+- File: `magic/merged-paths-prerequisites.json`
+
+**Output JSON Structure:**
+```json
+{
+  "vault_liquidate": {
+    "prerequisite_functions": [
+      "vault_supply",
+      "vault_supplyCollateral",
+      "vault_borrow",
+      "oracle_setPrice"
+    ],
+    "paths": [
+      "seizedAssets > 0 && position[id][borrower].collateral == 0 && data.length > 0 && marketParams.oracle.price()",
+      "seizedAssets > 0 && position[id][borrower].collateral != 0 && data.length == 0"
+    ]
+  },
+  "vault_borrow": {
+    "prerequisite_functions": [
+      "vault_supply",
+      "vault_supplyCollateral"
+    ],
+    "paths": [
+      "assets > 0 && position[id][onBehalf].collateral > 0 && market[id].totalSupplyAssets > 0"
+    ]
+  }
+}
+```
+
+**Description:**
+This tool merges the paths and prerequisites into a unified structure for each target function. Each entry contains:
+- `prerequisite_functions`: Array of handler functions that must be called before the target
+- `paths`: Array of execution path conditions (from recon-generate paths)
+
+This merged structure is used by the coverage-phase-2 agent to create shortcut handlers that combine prerequisites with specific path conditions.
+
+---
+
+## Step 10: Creating Shortcut Handlers
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
 - Agent: `./.opencode/agent/coverage-phase-2.md`
-- File: `magic/function-sequences.json`
+- File: `magic/merged-paths-prerequisites.json`
 
 **Outputs:**
 - Modified or new shortcut handler functions in test contracts
 
+**Description:**
+This agent implements shortcut functions that help the fuzzer reach full path coverage by:
+1. Calling all prerequisite functions (using clamped handlers)
+2. Reading exact values from system state to satisfy path conditions
+3. Calling the target function with parameters that trigger specific execution paths
+
+Each path in the merged data structure results in one shortcut function with a descriptive name based on the path conditions (e.g., `shortcut_liquidate_bySeizedAssets_badDebt_withCallback`).
+
 ---
 
-## Step 9: Run Echidna Programmatically
+## Step 11: Run Echidna Programmatically
 
 **Type:** Task (PROGRAM)
 
@@ -194,7 +296,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 10: Echidna Output Check
+## Step 12: Echidna Output Check
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -203,11 +305,11 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 11
+- If file exists (value = 1): Continue to Step 13
 
 ---
 
-## Step 11: Generate Functions to Cover
+## Step 13: Generate Functions to Cover
 
 **Type:** Task (PROGRAM)
 
@@ -236,7 +338,7 @@ This tool generates a JSON file containing line ranges per source file that need
 
 ---
 
-## Step 12: Evaluate Coverage
+## Step 14: Evaluate Coverage
 
 **Type:** Task (PROGRAM)
 
@@ -294,7 +396,7 @@ This tool parses the `recon-coverage.json` line ranges, identifies which functio
 
 ---
 
-## Step 13: Initial Check of Coverage
+## Step 15: Initial Check of Coverage
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -302,12 +404,12 @@ This tool parses the `recon-coverage.json` line ranges, identifies which functio
 - Pattern: `magic/functions-missing-covg-*.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps)
-- If file does not exist (value = 0): Jump to Step 20 (Workflow Complete)
+- If file exists (value = 1): Jump to Step 16 (Analyzing Coverage Gaps)
+- If file does not exist (value = 0): Jump to Step 22 (Workflow Complete)
 
 ---
 
-## Step 14: Analyzing Coverage Gaps
+## Step 16: Analyzing Coverage Gaps
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -366,7 +468,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 15: Implementing Coverage Fixes
+## Step 17: Implementing Coverage Fixes
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -383,7 +485,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 16: Run Echidna Programmatically (Iteration)
+## Step 18: Run Echidna Programmatically (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -401,7 +503,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 17: Echidna Output Check (Iteration)
+## Step 19: Echidna Output Check (Iteration)
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -410,11 +512,11 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 18
+- If file exists (value = 1): Continue to Step 20
 
 ---
 
-## Step 18: Evaluate Coverage (Iteration)
+## Step 20: Evaluate Coverage (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -429,11 +531,11 @@ covg-eval magic/ echidna/ --return-json
 
 **Outputs:**
 - File: `magic/functions-missing-covg-{timestamp}.json`
-- Structure: Same as Step 12 output
+- Structure: Same as Step 14 output
 
 ---
 
-## Step 19: Coverage Improvement Decision Check
+## Step 21: Coverage Improvement Decision Check
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -441,12 +543,12 @@ covg-eval magic/ echidna/ --return-json
 - Pattern: `magic/functions-missing-covg-*.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 14 (Analyzing Coverage Gaps - loop)
-- If file does not exist (value = 0): Continue to Step 20
+- If file exists (value = 1): Jump to Step 16 (Analyzing Coverage Gaps - loop)
+- If file does not exist (value = 0): Continue to Step 22
 
 ---
 
-## Step 20: Workflow Complete
+## Step 22: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
