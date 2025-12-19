@@ -74,7 +74,7 @@ def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
     print(f"  ⚠ Defaulting to repo root")
     return repo_path
 
-from server.github import create_github_repo, invite_collaborator, push_to_github, setup_repo_remote
+from server.github import create_github_repo, invite_collaborator, install_github_app_on_repo, push_to_github, setup_repo_remote
 from server.jobs import check_stop_requested, fetch_job_details, fetch_pending_jobs
 from server.postprocess import generate_failure_summary_with_claude, generate_summary_with_claude, mark_job_complete
 from server.setup import clone_claude_config, clone_opencode_config, clone_repository, setup_workspace
@@ -544,10 +544,18 @@ def start_job_listener(
 
                 github_token = os.environ.get("GITHUB_TOKEN", "")
 
-                success, new_repo_url, owner = create_github_repo(new_repo_name, github_token)
+                success, new_repo_url, owner, repo_id = create_github_repo(new_repo_name, github_token)
                 if not success:
                     print("Failed to create GitHub repository")
                     continue
+
+                # Install GitHub App on the new repository if configured
+                github_app_installation_id = os.environ.get("GITHUB_APP_INSTALLATION_ID", "")
+                if github_app_installation_id and repo_id:
+                    if install_github_app_on_repo(github_app_installation_id, repo_id, github_token):
+                        print(f"  ✓ GitHub App installed on repository")
+                    else:
+                        print(f"  ⚠ Failed to install GitHub App on repository")
 
                 # Get user handles from job data and invite them early
                 additional_data = job_info.get("additionalData", {})

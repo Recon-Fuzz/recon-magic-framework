@@ -24,6 +24,7 @@ class ModelType:
     PROGRAM = "PROGRAM"
     CLAUDE_CODE = "CLAUDE_CODE"
     OPENCODE = "OPENCODE"
+    DISPATCH_FUZZING_JOB = "DISPATCH_FUZZING_JOB"
 
 
 class Model(BaseModel):
@@ -38,17 +39,27 @@ class OutputConfig(BaseModel):
     save_to: str | None = None
 
 
+class DispatchConfig(BaseModel):
+    """Configuration for DISPATCH_FUZZING_JOB steps."""
+    fuzzerType: str = "echidna"
+    duration: int = 1800  # 30 minutes default
+    directory: str = "."
+    fuzzerArgs: dict | None = None
+    label: str | None = None
+
+
 class TaskStep(BaseModel):
     """Task step type."""
     type: Literal["task"]
     name: str
     description: str | None = None
-    prompt: str
+    prompt: str = ""  # Optional for DISPATCH_FUZZING_JOB
     model: Model
     shouldCreateSummary: bool = Field(alias="shouldCreateSummary")
     shouldCommitChanges: bool = Field(alias="shouldCommitChanges")
     output: OutputConfig | None = None
     allowFailure: bool = Field(default=False, alias="allowFailure")
+    dispatchConfig: DispatchConfig | None = Field(default=None, alias="dispatchConfig")
 
 
 def resolve_model_string(model_type: str, model_string: str) -> str:
@@ -370,6 +381,92 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
             return (FAILURE, "CONTINUE", None)
 
         return (SUCCESS, "CONTINUE", None)
+
+    if step.model.type == ModelType.DISPATCH_FUZZING_JOB:
+        """
+        Dispatch a fuzzing job to the backend.
+        Reads worker context from environment variables.
+        """
+        import requests
+
+        # Get worker context from environment
+        api_url = os.environ.get('WORKER_API_URL')
+        bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+        job_id = os.environ.get('WORKER_JOB_ID')
+
+        if not all([api_url, bearer_token, job_id]):
+            print("  ❌ Missing worker context (WORKER_API_URL, WORKER_BEARER_TOKEN, WORKER_JOB_ID)")
+            print("     This step only works when running inside a ClaudeJob worker.")
+            return (FAILURE, "CONTINUE", None)
+
+        # Build dispatch config from step config or defaults
+        config = step.dispatchConfig or DispatchConfig()
+
+        # Determine the directory for the fuzzing job
+        # Priority: 1) Explicit config (if not "."), 2) RECON_FOUNDRY_ROOT relative path, 3) "."
+        directory = config.directory
+        if directory == ".":
+            # Check if we have a foundry root that differs from repo root
+            foundry_root = os.environ.get('RECON_FOUNDRY_ROOT')
+            repo_path = os.environ.get('RECON_REPO_PATH')
+            if foundry_root and repo_path and foundry_root != repo_path:
+                # Compute relative path from repo root to foundry root
+                try:
+                    directory = os.path.relpath(foundry_root, repo_path)
+                    print(f"  📁 Detected monorepo: foundry root at '{directory}'")
+                except ValueError:
+                    # On Windows, relpath can fail if paths are on different drives
+                    directory = "."
+
+        payload = {
+            "fuzzerType": config.fuzzerType,
+            "duration": config.duration,
+            "directory": directory,
+        }
+        if config.fuzzerArgs:
+            payload["fuzzerArgs"] = config.fuzzerArgs
+        if config.label:
+            payload["label"] = config.label
+
+        # The API URL is like: https://api.example.com/claude/jobs/worker
+        # We need to call: POST /claude/jobs/worker/{jobId}/dispatch-fuzzing
+        dispatch_url = f"{api_url}/{job_id}/dispatch-fuzzing"
+
+        print(f"  🚀 Dispatching fuzzing job...")
+        print(f"     Fuzzer: {config.fuzzerType}")
+        print(f"     Duration: {config.duration}s")
+        print(f"     Directory: {directory}")
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {bearer_token}",
+                "Content-Type": "application/json"
+            }
+
+            response = requests.post(dispatch_url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            result_data = response.json()
+            data = result_data.get("data", {})
+
+            print(f"  ✓ Fuzzing job dispatched successfully!")
+            print(f"     Job ID: {data.get('jobId')}")
+            print(f"     Status: {data.get('status')}")
+            print(f"     Fuzzer: {data.get('fuzzer')}")
+
+            return (SUCCESS, "CONTINUE", None)
+
+        except requests.exceptions.HTTPError as e:
+            error_body = ""
+            try:
+                error_body = e.response.json().get("message", str(e))
+            except:
+                error_body = str(e)
+            print(f"  ❌ Failed to dispatch fuzzing job: {error_body}")
+            return (FAILURE, "CONTINUE", None)
+        except Exception as e:
+            print(f"  ❌ Error dispatching fuzzing job: {e}")
+            return (FAILURE, "CONTINUE", None)
 
     else:
         print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")

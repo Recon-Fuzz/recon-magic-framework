@@ -12,6 +12,17 @@
     {
       "type": "workflow",
       "workflow_file": "workflow-fuzzing-coverage.json"
+    },
+    {
+      "name": "Dispatch Fuzzing Job",
+      "type": "task",
+      "description": "Queue a 30-minute Echidna fuzzing job with the backend",
+      "model": {
+        "type": "DISPATCH_FUZZING_JOB",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
     }
   ]
 }
