@@ -40,10 +40,10 @@ class OutputConfig(BaseModel):
 
 
 class DispatchConfig(BaseModel):
-    """Configuration for DISPATCH_FUZZING_JOB steps."""
-    fuzzerType: str = "echidna"
-    duration: int = 1800  # 30 minutes default
-    directory: str = "."
+    """Configuration for DISPATCH_FUZZING_JOB steps. Defaults are applied by the backend."""
+    fuzzerType: str | None = None
+    duration: int | None = None
+    directory: str | None = None
     fuzzerArgs: dict | None = None
     label: str | None = None
 
@@ -403,9 +403,9 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         config = step.dispatchConfig or DispatchConfig()
 
         # Determine the directory for the fuzzing job
-        # Priority: 1) Explicit config (if not "."), 2) RECON_FOUNDRY_ROOT relative path, 3) "."
+        # Priority: 1) Explicit config, 2) RECON_FOUNDRY_ROOT relative path, 3) let backend default
         directory = config.directory
-        if directory == ".":
+        if directory is None:
             # Check if we have a foundry root that differs from repo root
             foundry_root = os.environ.get('RECON_FOUNDRY_ROOT')
             repo_path = os.environ.get('RECON_REPO_PATH')
@@ -416,26 +416,28 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
                     print(f"  📁 Detected monorepo: foundry root at '{directory}'")
                 except ValueError:
                     # On Windows, relpath can fail if paths are on different drives
-                    directory = "."
+                    pass
 
-        payload = {
-            "fuzzerType": config.fuzzerType,
-            "duration": config.duration,
-            "directory": directory,
-        }
-        if config.fuzzerArgs:
+        # Only include fields that are explicitly set - backend applies all defaults
+        payload = {}
+        if config.fuzzerType is not None:
+            payload["fuzzerType"] = config.fuzzerType
+        if config.duration is not None:
+            payload["duration"] = config.duration
+        if directory is not None:
+            payload["directory"] = directory
+        if config.fuzzerArgs is not None:
             payload["fuzzerArgs"] = config.fuzzerArgs
-        if config.label:
+        if config.label is not None:
             payload["label"] = config.label
 
         # The API URL is like: https://api.example.com/claude/jobs/worker
         # We need to call: POST /claude/jobs/worker/{jobId}/dispatch-fuzzing
         dispatch_url = f"{api_url}/{job_id}/dispatch-fuzzing"
 
-        print(f"  🚀 Dispatching fuzzing job...")
-        print(f"     Fuzzer: {config.fuzzerType}")
-        print(f"     Duration: {config.duration}s")
-        print(f"     Directory: {directory}")
+        print(f"  🚀 Dispatching fuzzing job (backend applies defaults)...")
+        if payload:
+            print(f"     Overrides: {payload}")
 
         try:
             headers = {
