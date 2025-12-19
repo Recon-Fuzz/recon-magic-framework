@@ -308,8 +308,33 @@ def extract_code_snippets(
     return result
 
 
+def parse_line_range(line_range: str) -> tuple[int, int]:
+    """Parse a line range string like '66-130' or '17' into (start, end) tuple.
+
+    Args:
+        line_range: String like "66-130" or "17"
+
+    Returns:
+        Tuple of (start_line, end_line)
+    """
+    if '-' in line_range:
+        start, end = line_range.split('-')
+        return int(start), int(end)
+    else:
+        line = int(line_range)
+        return line, line
+
+
 def load_functions_to_cover(magic_dir: Path) -> dict[str, list[str]]:
-    """Load the functions-to-cover.json file.
+    """Load the recon-coverage.json file and extract function names from line ranges.
+
+    The recon-coverage.json format is:
+    {
+      "src/hub/Hub.sol": ["66-130", "133-173", ...],
+      ...
+    }
+
+    This function parses the source files to find which functions are in those line ranges.
 
     Args:
         magic_dir: Path to the magic directory.
@@ -321,14 +346,34 @@ def load_functions_to_cover(magic_dir: Path) -> dict[str, list[str]]:
         FileNotFoundError: If the JSON file doesn't exist.
         json.JSONDecodeError: If the JSON is invalid.
     """
-    json_path = magic_dir / "functions-to-cover.json"
+    json_path = magic_dir / "recon-coverage.json"
     with open(json_path) as f:
         data = json.load(f)
 
     result: dict[str, list[str]] = {}
-    for contract, info in data.items():
-        if "functions_to_cover" in info:
-            result[contract] = info["functions_to_cover"]
+
+    # data maps source_path -> list of line ranges
+    for source_path, line_ranges in data.items():
+        # Extract contract name from path (e.g., "src/hub/Hub.sol" -> "Hub")
+        contract_name = Path(source_path).stem
+
+        # Find all functions in this source file
+        all_functions = find_functions_in_source(source_path)
+
+        # Determine which functions overlap with the specified line ranges
+        functions_to_cover = set()
+
+        for line_range_str in line_ranges:
+            range_start, range_end = parse_line_range(line_range_str)
+
+            # Check which functions overlap with this range
+            for func_name, (func_start, func_end) in all_functions.items():
+                # Check if there's any overlap between the range and the function
+                if not (range_end < func_start or range_start > func_end):
+                    functions_to_cover.add(func_name)
+
+        if functions_to_cover:
+            result[contract_name] = sorted(list(functions_to_cover))
 
     return result
 
@@ -404,16 +449,17 @@ Example usage:
   covg-eval magic/ echidna/
 
 This will:
-  1. Read functions-to-cover.json from the magic/ directory
-  2. Find the most recent LCOV file in echidna/
-  3. Evaluate coverage for each specified function
-  4. Write results to magic/functions-missing-covg-N.json
+  1. Read recon-coverage.json from the magic/ directory
+  2. Parse source files to identify functions in the specified line ranges
+  3. Find the most recent LCOV file in echidna/
+  4. Evaluate coverage for each identified function
+  5. Write results to magic/functions-missing-covg-N.json
         """,
     )
     parser.add_argument(
         "magic_dir",
         type=Path,
-        help="Path to the magic directory containing functions-to-cover.json",
+        help="Path to the magic directory containing recon-coverage.json",
     )
     parser.add_argument(
         "echidna_dir",
@@ -451,12 +497,12 @@ This will:
         functions_to_cover = load_functions_to_cover(magic_dir)
     except FileNotFoundError:
         print(
-            f"Error: functions-to-cover.json not found in {magic_dir}",
+            f"Error: recon-coverage.json not found in {magic_dir}",
             file=sys.stderr,
         )
         return 1
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in functions-to-cover.json: {e}", file=sys.stderr)
+        print(f"Error: Invalid JSON in recon-coverage.json: {e}", file=sys.stderr)
         return 1
 
     # Determine output stream for verbose messages

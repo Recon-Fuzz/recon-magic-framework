@@ -66,23 +66,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 5: Identifying Touched Functions",
-      "type": "task",
-      "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
-      "prompt": "touched-function-identifier --sol-expand-dir context_output --target-functions magic/target-functions.json --return-json",
-      "model": {
-        "type": "PROGRAM",
-        "model": "inherit"
-      },
-      "output": {
-        "capture": true,
-        "save_to": "magic/functions-to-cover.json"
-      },
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Step 6: Identifying Meaningful Values",
+      "name": "Step 5: Identifying Meaningful Values",
       "type": "task",
       "description": "Identify values that are useful for clamping target function handlers with",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify values useful for clamping.",
@@ -94,7 +78,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 7: Creating Clamped Handlers",
+      "name": "Step 6: Creating Clamped Handlers",
       "type": "task",
       "description": "Implement clamped function handlers to achieve full coverage on the system setup",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to implement clamped handlers",
@@ -106,7 +90,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 8: Identifying Function Call Sequences",
+      "name": "Step 7: Identifying Function Call Sequences",
       "type": "task",
       "description": "Identify necessary function call sequences and prerequisites for target functions",
       "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-1.md. Exclusively run the setup-phase-1 agent to identify function call sequences",
@@ -122,7 +106,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 9: Creating Shortcut Handlers",
+      "name": "Step 8: Creating Shortcut Handlers",
       "type": "task",
       "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to implement shortcut functions",
@@ -134,7 +118,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 10: Run Echidna Programmatically",
+      "name": "Step 9: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -147,7 +131,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 11: Echidna Output Check",
+      "name": "Step 10: Echidna Output Check",
       "type": "decision",
       "description": "Verify Echidna produced output; exit if not.",
       "mode": "FILE_EXISTS",
@@ -172,9 +156,21 @@
       "shouldCommitChanges": false
     },
     {
+      "name": "Step 11: Generate Functions to Cover",
+      "type": "task",
+      "description": "Generate list of functions that need coverage and move to magic directory",
+      "prompt": "npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
       "name": "Step 12: Evaluate Coverage",
       "type": "task",
-      "description": "Run coverage evaluation tool",
+      "description": "Evaluate coverage for functions in recon-coverage.json",
       "prompt": "covg-eval magic/ echidna/ --return-json",
       "model": {
         "type": "PROGRAM",
@@ -193,7 +189,7 @@
       "description": "Determine if coverage needs to be improved",
       "mode": "FILE_EXISTS",
       "modeInfo": {
-        "fileName": "functions-missing-covg-*.json"
+        "fileName": "magic/functions-missing-covg-*.json"
       },
       "decision": [
         {
@@ -298,7 +294,7 @@
       "description": "Check if coverage needs to be improved",
       "mode": "FILE_EXISTS",
       "modeInfo": {
-        "fileName": "functions-missing-covg-*.json"
+        "fileName": "magic/functions-missing-covg-*.json"
       },
       "decision": [
         {

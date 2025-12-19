@@ -14,7 +14,7 @@ uv tool install -e .
 covg-eval <magic_dir> <echidna_dir>
 ```
 
-- `magic_dir` - Directory containing `functions-to-cover.json`
+- `magic_dir` - Directory containing `recon-coverage.json`
 - `echidna_dir` - Directory containing Echidna LCOV files (`covered.*.lcov`)
 
 The tool automatically selects the most recent LCOV file based on timestamp.
@@ -33,15 +33,16 @@ covg-eval -v magic/ echidna/
 
 ## Input Format
 
-`functions-to-cover.json`:
+`recon-coverage.json`:
 
 ```json
 {
-  "ContractName": {
-    "functions_to_cover": ["function1", "function2"]
-  }
+  "src/hub/Hub.sol": ["66-130", "133-173", "176-185"],
+  "src/hub/libraries/AssetLogic.sol": ["26-31", "42-47"]
 }
 ```
+
+The tool parses the source files to identify which functions fall within the specified line ranges.
 
 ## Output
 
