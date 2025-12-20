@@ -315,6 +315,17 @@
       "shouldCommitChanges": false
     },
     {
+      "name": "Dispatch Fuzzing Job",
+      "type": "task",
+      "description": "Queue a 100 MLN TestEchidna fuzzing job with the backend.",
+      "model": {
+        "type": "DISPATCH_FUZZING_JOB",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
       "name": "Step 20: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
