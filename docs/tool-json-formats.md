@@ -386,26 +386,23 @@ When the workflow saves this, the entire output is written (no `data` field extr
 
 **Command:**
 ```bash
-order-prerequisite-func magic/testing-priority.json --return-json
+order-prerequisite-func magic/function-sequences.json --return-json
 ```
 
-### Input: testing-priority.json (unsorted)
+### Input: function-sequences.json (unsorted)
+The tool accepts the function-sequences.json format from setup-phase-1:
 ```json
 {
-  "1": {
-    "function_name": "supply",
+  "supply": {
     "prerequisite_functions": ["approve", "mint", "initialize"]
   },
-  "2": {
-    "function_name": "initialize",
+  "initialize": {
     "prerequisite_functions": []
   },
-  "3": {
-    "function_name": "borrow",
+  "borrow": {
     "prerequisite_functions": ["supply", "accrueInterest"]
   },
-  "4": {
-    "function_name": "approve",
+  "approve": {
     "prerequisite_functions": []
   }
 }
@@ -434,7 +431,7 @@ order-prerequisite-func magic/testing-priority.json --return-json
   },
   "summary": {
     "total_functions": 4,
-    "file_path": "magic/testing-priority.json"
+    "file_path": "magic/function-sequences.json"
   }
 }
 ```

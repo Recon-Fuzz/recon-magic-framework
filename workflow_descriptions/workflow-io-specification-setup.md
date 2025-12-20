@@ -203,15 +203,15 @@ extract-target-functions --return-json
 **Type:** Task (PROGRAM)
 
 **Inputs:**
-- File: `magic/testing-priority.json`
+- File: `magic/function-sequences.json`
 
 **Command:**
 ```bash
-order-prerequisite-func ./magic/testing-priority.json --return-json
+order-prerequisite-func ./magic/function-sequences.json --return-json
 ```
 
 **Outputs:**
-- File: `magic/testing-priority.json` (modified in-place)
+- File: `magic/function-sequences-sorted.json`
 
 **Output JSON Structure:**
 ```json
@@ -225,7 +225,7 @@ order-prerequisite-func ./magic/testing-priority.json --return-json
 ```json
 {
   "data": {"1": {"function_name": "functionWithNoPrereqs", "prerequisite_functions": []}},
-  "summary": {"total_functions": 1, "file_path": "magic/testing-priority.json"}
+  "summary": {"total_functions": 1, "file_path": "magic/function-sequences.json"}
 }
 ```
 
@@ -237,9 +237,10 @@ order-prerequisite-func ./magic/testing-priority.json --return-json
 
 **Inputs:**
 - Agent: `./.opencode/agent/setup-phase-1.md`
-- Files: `magic/target-functions.json`, `magic/testing-priority.json`
+- Files: `magic/target-functions.json`
 
 **Outputs:**
+- File: `magic/function-sequences.json`
 - Contract scaffolding and target function infrastructure
 
 ---

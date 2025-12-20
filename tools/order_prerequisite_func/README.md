@@ -1,16 +1,16 @@
 # Order Prerequisite Functions Tool
 
-This tool sorts functions in a `testing-priority.json` file based on the number of prerequisite functions they have, ordering from fewest to most prerequisites.
+This tool sorts functions in a `function-sequences.json` file based on the number of prerequisite functions they have, ordering from fewest to most prerequisites.
 
 ## Usage
 
 ```bash
-python3 tools/order_prerequisite_func/order_prerequisite_func.py <path_to_testing-priority.json>
+python3 tools/order_prerequisite_func/order_prerequisite_func.py <path_to_function-sequences.json>
 ```
 
 ## Input Format
 
-The input file should be a JSON file with the following structure:
+The tool accepts the `function-sequences.json` format from setup-phase-1:
 
 ```json
 {
@@ -45,5 +45,5 @@ Functions are sorted by the number of prerequisites (ascending order) and number
 ## Example
 
 ```bash
-python3 tools/order_prerequisite_func/order_prerequisite_func.py ./testing-priority.json
+python3 tools/order_prerequisite_func/order_prerequisite_func.py ./function-sequences.json
 ```
