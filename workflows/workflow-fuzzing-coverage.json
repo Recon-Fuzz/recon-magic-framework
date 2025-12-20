@@ -33,7 +33,7 @@
       "name": "Step 2: Build Artifacts",
       "type": "task",
       "description": "Generate Forge build artifacts with build-info",
-      "prompt": "forge clean && forge build --build-info",
+      "prompt": "forge clean && forge build --build-info --skip */test/** */tests/** */script/** */scripts/** */contracts/test/**",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"

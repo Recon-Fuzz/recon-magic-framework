@@ -61,7 +61,7 @@ extract-target-functions --targets test/recon --return-json
 
 **Command:**
 ```bash
-forge clean && forge build --build-info
+forge clean && forge build --build-info --skip */test/** */tests/** */script/** */scripts/** */contracts/test/**
 ```
 
 **Outputs:**
