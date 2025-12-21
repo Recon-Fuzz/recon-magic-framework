@@ -259,7 +259,7 @@
         "type": "OPENCODE",
         "model": "inherit"
       },
-      "shouldCreateSummary": false,
+      "shouldCreateSummary": true,
       "shouldCommitChanges": true
     },
     {
