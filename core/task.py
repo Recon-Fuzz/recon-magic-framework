@@ -66,25 +66,40 @@ class TaskStep(BaseModel):
 
 def resolve_model_string(model_type: str, model_string: str) -> str:
     """
-    Resolve the model string, handling 'inherit' by returning appropriate defaults.
+    Resolve the model string, handling 'inherit' and shorthand names like 'opus', 'sonnet', 'haiku'.
 
     Args:
         model_type: The model type (CLAUDE_CODE, OPENCODE, etc.)
-        model_string: The model string from the workflow (may be "inherit")
+        model_string: The model string from the workflow (may be "inherit", "opus", "sonnet", "haiku", or full model name)
 
     Returns:
         str: The resolved model string to use in commands
     """
-    if model_string.lower() != "inherit":
-        return model_string
+    model_lower = model_string.lower()
 
-    # Handle inherit based on model type
+    # Model shorthand mappings per model type
+    CLAUDE_CODE_MODELS = {
+        "inherit": "sonnet",
+        "opus": "opus",
+        "sonnet": "sonnet",
+        "haiku": "haiku",
+    }
+
+    OPENCODE_MODELS = {
+        "inherit": "openrouter/anthropic/claude-sonnet-4.5",
+        "opus": "openrouter/anthropic/claude-opus-4.5",
+        "sonnet": "openrouter/anthropic/claude-sonnet-4.5",
+        "haiku": "openrouter/anthropic/claude-haiku-4.5",
+    }
+
+    # Resolve based on model type, fall back to default if not found
     if model_type == ModelType.CLAUDE_CODE:
-        return "sonnet"
+        return CLAUDE_CODE_MODELS.get(model_lower, CLAUDE_CODE_MODELS["inherit"])
     elif model_type == ModelType.OPENCODE:
-        return "openrouter/anthropic/claude-sonnet-4.5"
+        return OPENCODE_MODELS.get(model_lower, OPENCODE_MODELS["inherit"])
     else:
-        return model_string  # For PROGRAM or unknown types, return as-is
+        ## TODO: This feels odd. Prob throw on misconfig?
+        return OPENCODE_MODELS.get(model_lower, OPENCODE_MODELS["inherit"])  # Default to OPENCODE for unknown types
 
 
 def resolve_path_template(path_template: str, step_num: int, tool_data: dict | None = None) -> Path:
