@@ -7,7 +7,7 @@
       "description": "Analyze contracts to create dependency list and review priority",
       "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-0.md. Run exclusively the properties-phase-0 agent using the Task tool. This phase will analyze all contracts, create a dependency list showing function calls and storage slot access, and generate a review priority order.",
       "model": {
-        "type": "OPENROUTER",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
@@ -69,7 +69,7 @@
       "description": "Perform line-by-line review and identify all properties",
       "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-1.md. Run exclusively the properties-phase-1 agent using the Task tool. This phase will perform a full line-by-line review of all functions and contracts, writing down all identified properties in magic/properties-first-pass.md.",
       "model": {
-        "type": "OPENROUTER",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
@@ -106,7 +106,7 @@
       "description": "Review properties and filter out invalid, vacuous, or obvious ones",
       "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-2.md. Run exclusively the properties-phase-2 agent using the Task tool. This phase will review the first pass properties, discard invalid/vacuous/obvious properties to magic/discarded-properties.md, and create the refined magic/properties-second-pass.md.",
       "model": {
-        "type": "OPENROUTER",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
@@ -168,7 +168,7 @@
       "description": "Implement the refined properties as invariant tests",
       "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-3.md. Run exclusively the properties-phase-3 agent using the Task tool. This phase will implement the properties from magic/properties-second-pass.md as actual invariant tests.",
       "model": {
-        "type": "OPENROUTER",
+        "type": "OPENCODE",
         "model": "inherit"
       },
       "shouldCreateSummary": true,
