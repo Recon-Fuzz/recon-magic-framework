@@ -183,10 +183,38 @@ def is_internal_or_private_function(source_path: str, func_name: str, start_line
     return False
 
 
+def find_function_body_start(source_path: str, start_line: int) -> int:
+    """Find the line where the function body starts (after the opening brace).
+
+    Args:
+        source_path: Path to the Solidity source file.
+        start_line: Function definition start line (1-indexed).
+
+    Returns:
+        Line number where the function body starts (line after '{'), or start_line if not found.
+    """
+    try:
+        with open(source_path) as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return start_line
+
+    # Search for the first opening brace starting from start_line
+    for i in range(start_line - 1, len(lines)):
+        if '{' in lines[i]:
+            # Return the line AFTER the opening brace (i + 2 because i is 0-indexed)
+            # This excludes both the signature and the line with the opening brace
+            return i + 2  # Return 1-indexed line number of the line after '{'
+
+    # If no opening brace found, return start_line
+    return start_line
+
+
 def analyze_function_coverage(
     line_coverage: dict[int, int],
     start_line: int,
     end_line: int,
+    source_path: str | None = None,
 ) -> tuple[float, list[int]]:
     """Analyze line coverage for a specific function.
 
@@ -194,15 +222,23 @@ def analyze_function_coverage(
         line_coverage: Dict mapping line numbers to hit counts.
         start_line: Function start line (1-indexed).
         end_line: Function end line (1-indexed).
+        source_path: Optional path to the source file (used to exclude signature lines).
 
     Returns:
         A tuple of (coverage_percentage, list_of_uncovered_lines).
     """
-    # Extract lines within function range that have coverage data
+    # Find where the function body actually starts (first '{')
+    # This excludes the function signature from coverage analysis
+    body_start_line = start_line
+    if source_path:
+        body_start_line = find_function_body_start(source_path, start_line)
+
+    # Extract lines within function body range that have coverage data
+    # Exclude signature lines (before the opening brace)
     function_lines = {
         ln: hits
         for ln, hits in line_coverage.items()
-        if start_line <= ln <= end_line
+        if body_start_line <= ln <= end_line
     }
 
     if not function_lines:
@@ -617,6 +653,7 @@ This will:
                 line_coverage,
                 start_line,
                 end_line,
+                source_path,
             )
 
             if verbose:
