@@ -1,0 +1,42 @@
+{
+  "name": "Properties Specification Workflow",
+  "steps": [
+    {
+      "name": "Check Recon Setup Exists",
+      "type": "decision",
+      "description": "Check if recon/Setup.sol exists before proceeding to property implementation",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "**/recon/Setup.sol"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Recon Setup found, continue to Phase 3 implementation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Recon Setup not found - run recon-generate first to create scaffolding"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 3: Property Implementation",
+      "type": "task",
+      "description": "Implement the refined properties as invariant tests",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-3.md. Run exclusively the properties-phase-3 agent using the Task tool. This phase will implement the properties from magic/properties-second-pass.md as actual invariant tests.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    }
+  ]
+}
