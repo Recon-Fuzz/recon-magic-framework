@@ -1,9 +1,13 @@
 {
-  "name": "Setup → Coverage Pipeline",
+  "name": "Setup → Properties → Coverage Pipeline",
   "steps": [
     {
       "type": "workflow",
       "workflow_file": "workflow-fuzzing-setup.json"
+    },
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-properties-opus.json"
     },
     {
       "type": "workflow",
