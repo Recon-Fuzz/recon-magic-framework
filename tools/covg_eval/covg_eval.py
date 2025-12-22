@@ -149,6 +149,40 @@ def find_functions_in_source(source_path: str) -> dict[str, tuple[int, int]]:
     return functions
 
 
+def is_internal_or_private_function(source_path: str, func_name: str, start_line: int) -> bool:
+    """Check if a function is internal or private by examining its visibility modifier.
+
+    Args:
+        source_path: Path to the Solidity source file.
+        func_name: Name of the function.
+        start_line: Starting line number of the function (1-indexed).
+
+    Returns:
+        True if the function is internal or private, False otherwise.
+    """
+    try:
+        with open(source_path) as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return False
+
+    # Read the function signature (may span multiple lines until we hit '{')
+    signature = ""
+    for i in range(start_line - 1, len(lines)):
+        line = lines[i]
+        signature += " " + line.strip()
+        if "{" in line:
+            break
+
+    # Check for visibility modifiers
+    # Internal or private functions are marked with 'internal' or 'private' keywords
+    # Common pattern: function name(...) <visibility> <modifiers> { ... }
+    if re.search(r'\b(internal|private)\b', signature):
+        return True
+
+    return False
+
+
 def analyze_function_coverage(
     line_coverage: dict[int, int],
     start_line: int,
@@ -588,6 +622,39 @@ This will:
                         },
                         "uncovered_code": snippet,
                     })
+
+    # Filter out internal/private functions to avoid redundant reporting
+    # Internal/private functions can only be called from within the same contract,
+    # so if they're uncovered, it's because their caller is uncovered.
+    # We filter them out to show only the root cause (the uncovered caller).
+    if verbose:
+        print(f"Filtering internal/private functions...", file=verbose_out)
+        print(f"  Before filtering: {len(missing_coverage)} uncovered sections", file=verbose_out)
+
+    filtered_coverage = []
+    for entry in missing_coverage:
+        func_name = entry["function"]
+        source_path = entry["source_file"]
+        start_line = entry["function_range"]["start"]
+
+        # Check if this function is internal or private
+        is_internal = is_internal_or_private_function(source_path, func_name, start_line)
+
+        if is_internal:
+            if verbose:
+                print(f"  Filtering out internal/private function: {func_name}", file=verbose_out)
+            # Skip this entry - it's an internal/private function that can only
+            # be called from within the contract, so covering its caller will
+            # automatically cover this function
+            continue
+
+        # Keep this entry - it's a public/external function that needs direct coverage
+        filtered_coverage.append(entry)
+
+    if verbose:
+        print(f"  After filtering: {len(filtered_coverage)} uncovered sections", file=verbose_out)
+
+    missing_coverage = filtered_coverage
 
     # Prepare output data
     # Count unique functions with missing coverage
