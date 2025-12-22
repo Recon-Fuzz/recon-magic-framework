@@ -259,7 +259,11 @@ def extract_code_snippets(
     uncovered_lines: list[int],
     line_coverage: dict[int, int],
 ) -> list[dict[str, str | int | list[str]]]:
-    """Extract code snippets for uncovered lines, grouped by consecutive ranges.
+    """Extract code snippets for uncovered lines, grouped by chunks separated by covered lines.
+
+    A new chunk starts whenever there's a covered line between uncovered lines.
+    This means if there are uncovered lines 10, 11, 12 (covered), 13, 14, this will create
+    two chunks: [10, 11] and [13, 14].
 
     Args:
         source_path: Path to the Solidity source file.
@@ -283,16 +287,28 @@ def extract_code_snippets(
     except FileNotFoundError:
         return []
 
-    # Group consecutive line numbers
+    # Group uncovered lines into chunks separated by covered lines
+    # A new chunk starts when there's a covered line between uncovered lines
     groups: list[list[int]] = []
     current_group = [uncovered_lines[0]]
 
     for line_num in uncovered_lines[1:]:
-        if line_num == current_group[-1] + 1:
-            current_group.append(line_num)
-        else:
+        # Check if there are any covered lines between the last uncovered line and this one
+        has_covered_line_between = False
+        for check_line in range(current_group[-1] + 1, line_num):
+            # A line is covered if it exists in line_coverage and has hits > 0
+            if check_line in line_coverage and line_coverage[check_line] > 0:
+                has_covered_line_between = True
+                break
+
+        if has_covered_line_between:
+            # Start a new chunk because there's a covered line in between
             groups.append(current_group)
             current_group = [line_num]
+        else:
+            # Continue the current chunk
+            current_group.append(line_num)
+
     groups.append(current_group)
 
     # Extract code for each group
