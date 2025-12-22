@@ -175,12 +175,11 @@ def perform_decision_with_model(
 
     # Initialize the LLM using OpenRouter
     # OpenRouter allows you to choose from multiple providers (Anthropic, OpenAI, etc.)
-    default_model = "openai/gpt-4o"  # Default to GPT-4o
-    model_name = getattr(model_config, 'model', default_model) if model_config else default_model
+    from core.task import resolve_model_string, ModelType
 
-    # Handle "inherit" as default model
-    if model_name == "inherit":
-        model_name = default_model
+    model_type = getattr(model_config, 'type', ModelType.OPENCODE) if model_config else ModelType.OPENCODE
+    model_string = getattr(model_config, 'model', 'inherit') if model_config else 'inherit'
+    model_name = resolve_model_string(model_type, model_string)
 
     llm = ChatOpenAI(
         model=model_name,  # e.g., "anthropic/claude-3.5-sonnet", "openai/gpt-4o", etc.
