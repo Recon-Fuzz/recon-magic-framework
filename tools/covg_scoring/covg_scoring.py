@@ -89,7 +89,7 @@ def extract_complexity_using_slither(project_path: Path) -> dict[str, dict[str, 
 def add_complexity_and_sort(
     missing_coverage_file: Path,
     complexity_data: dict[str, dict[str, int]],
-) -> list[dict]:
+) -> dict | list[dict]:
     """Add complexity scores to functions and sort by complexity.
 
     Args:
@@ -97,10 +97,20 @@ def add_complexity_and_sort(
         complexity_data: Dict mapping contract names to function complexities.
 
     Returns:
-        List of function entries sorted by complexity (highest to lowest).
+        The full JSON structure with sorted functions (either dict with metadata or list).
     """
     with open(missing_coverage_file) as f:
-        functions = json.load(f)
+        data = json.load(f)
+
+    # Check if this is the new format with metadata
+    if isinstance(data, dict) and "missing_coverage" in data:
+        # New format: extract the function list from missing_coverage key
+        functions = data["missing_coverage"]
+        has_metadata = True
+    else:
+        # Old format: data is directly the function list
+        functions = data
+        has_metadata = False
 
     # Add complexity to each function
     for func_entry in functions:
@@ -122,7 +132,13 @@ def add_complexity_and_sort(
         key=lambda x: (x["complexity"] is None, -(x["complexity"] or 0)),
     )
 
-    return sorted_functions
+    # Return the appropriate format
+    if has_metadata:
+        # Preserve the metadata structure
+        data["missing_coverage"] = sorted_functions
+        return data
+    else:
+        return sorted_functions
 
 
 def find_latest_missing_coverage_file(magic_dir: Path) -> Path:
@@ -241,31 +257,37 @@ This will:
     if verbose:
         print(f"Processing missing coverage file: {missing_coverage_file}", file=verbose_out)
 
-    sorted_functions = add_complexity_and_sort(missing_coverage_file, complexity_data)
+    result = add_complexity_and_sort(missing_coverage_file, complexity_data)
+
+    # Extract function list for statistics (handle both formats)
+    if isinstance(result, dict) and "missing_coverage" in result:
+        function_list = result["missing_coverage"]
+    else:
+        function_list = result
 
     # Count statistics
-    functions_with_complexity = sum(1 for f in sorted_functions if f["complexity"] is not None)
-    functions_without_complexity = len(sorted_functions) - functions_with_complexity
+    functions_with_complexity = sum(1 for f in function_list if f["complexity"] is not None)
+    functions_without_complexity = len(function_list) - functions_with_complexity
 
     if verbose:
-        print(f"Processed {len(sorted_functions)} function entries", file=verbose_out)
+        print(f"Processed {len(function_list)} function entries", file=verbose_out)
         print(f"  - {functions_with_complexity} with complexity scores", file=verbose_out)
         print(f"  - {functions_without_complexity} without complexity scores", file=verbose_out)
 
     # Return JSON or write to file
     if return_json:
-        print(json.dumps(sorted_functions, indent=2))
+        print(json.dumps(result, indent=2))
         return 0
     else:
         # Write back to the same file
         with open(missing_coverage_file, "w") as f:
-            json.dump(sorted_functions, f, indent=2)
+            json.dump(result, f, indent=2)
 
         print(f"Updated {missing_coverage_file} with complexity scores (sorted by complexity)")
 
-        if verbose and sorted_functions:
+        if verbose and function_list:
             print("\nTop 5 most complex functions:")
-            for i, func in enumerate(sorted_functions[:5]):
+            for i, func in enumerate(function_list[:5]):
                 if func["complexity"] is not None:
                     print(f"  {i+1}. {func['contract']}.{func['function']} (complexity: {func['complexity']})")
                 else:
