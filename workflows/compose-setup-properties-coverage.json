@@ -7,7 +7,7 @@
     },
     {
       "type": "workflow",
-      "workflow_file": "workflow-fuzzing-properties-opus.json"
+      "workflow_file": "workflow-properties-full-opus.json"
     },
     {
       "type": "workflow",
