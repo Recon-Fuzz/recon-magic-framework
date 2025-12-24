@@ -247,7 +247,7 @@
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 25: Workflow Complete",
+          "destinationStep": "Step 26: Workflow Complete",
           "NOTE": "No missing coverage file found, skip to workflow completion"
         }
       ],
@@ -255,10 +255,10 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 17: Analyzing Coverage Gaps",
+      "name": "Step 17: Function Grouping and Prioritization",
       "type": "task",
-      "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and document the root causes in the functions-missing-covg file",
+      "description": "Group uncovered functions and prioritize how they should be fixed using the functions-missing-covg file",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and prioritize how they should be fixed in the functions-missing-covg file",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -267,10 +267,10 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 18: Implementing Coverage Fixes",
+      "name": "Step 18: Analyzing Coverage Gaps",
       "type": "task",
-      "description": "Implement clamped handlers and missing target functions based on the analysis from Step 17",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to implement fixes for coverage gaps based on the analysis field in the functions-missing-covg file",
+      "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to identify the root cause for coverage gaps based on the analysis field in the functions-missing-covg file",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -279,7 +279,19 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 19: Run Echidna Programmatically",
+      "name": "Step 19: Implement Coverage Solutions",
+      "type": "task",
+      "description": "Implement solutions to improve coverage based on the analysis from coverage-phase-4",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to implement solutions that will improve coverage",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 20: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -292,7 +304,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 20: Echidna Output Check",
+      "name": "Step 21: Echidna Output Check",
       "type": "decision",
       "description": "Verify Echidna produced output; exit if not.",
       "mode": "FILE_EXISTS",
@@ -317,7 +329,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 21: Evaluate Coverage",
+      "name": "Step 22: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -333,7 +345,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 22: Score and Sort by Complexity",
+      "name": "Step 23: Score and Sort by Complexity",
       "type": "task",
       "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
       "prompt": "covg-scoring --return-json",
@@ -349,7 +361,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 23: Coverage Improvement Decision Check",
+      "name": "Step 24: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
       "mode": "FILE_EXISTS",
@@ -375,7 +387,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 24: Dispatch Fuzzing Job",
+      "name": "Step 25: Dispatch Fuzzing Job",
       "type": "task",
       "description": "Queue a 10 MLN TestEchidna fuzzing job with the backend.",
       "model": {
@@ -386,7 +398,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 25: Workflow Complete",
+      "name": "Step 26: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",
