@@ -110,10 +110,6 @@
         "type": "OPENCODE",
         "model": "inherit"
       },
-      "output": {
-        "capture": false,
-        "save_to": "magic/function-sequences.json"
-      },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
