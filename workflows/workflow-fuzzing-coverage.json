@@ -240,7 +240,7 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 17: Analyzing Coverage Gaps",
+          "destinationStep": "Step 17: Function Grouping and Prioritization",
           "NOTE": "Branch to improve coverage by analyzing and fixing coverage gaps"
         },
         {
@@ -373,7 +373,7 @@
           "operator": "eq",
           "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 17: Analyzing Coverage Gaps",
+          "destinationStep": "Step 17: Function Grouping and Prioritization",
           "NOTE": "Loop back to Step 17 to continue with coverage improvement"
         },
         {
