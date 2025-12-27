@@ -435,11 +435,31 @@ def start_job_listener(
                 # Setup workspace in /app
                 if not setup_workspace("/app"):
                     print("Failed to setup workspace")
+                    mark_job_complete(
+                        api_url,
+                        bearer_token,
+                        job_id,
+                        "Failed to setup workspace. Please try again.",
+                        "unknown",
+                        "unknown",
+                        "main",
+                        status="ERROR"
+                    )
                     continue
 
                 # Clone target repository to /app/repo
                 if not clone_repository(repo_url, repo_ref, "/app/repo"):
                     print("Failed to clone repository")
+                    mark_job_complete(
+                        api_url,
+                        bearer_token,
+                        job_id,
+                        f"Failed to clone repository: {repo_url}. Check that the repository exists, is accessible, and all submodules are public or have proper authentication configured.",
+                        "unknown",
+                        "unknown",
+                        repo_ref,
+                        status="ERROR"
+                    )
                     continue
 
                 # Rename current branch to 'main' for consistent push behavior
