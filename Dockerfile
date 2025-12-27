@@ -61,6 +61,9 @@ COPY . .
 # Install dependencies and build project
 RUN pip install --break-system-packages -e .
 
+# Install Slither for cyclomatic complexity analysis
+RUN pip install --break-system-packages slither-analyzer
+
 # Setup reconuser permissions
 RUN mkdir -p /tmp && \
     chown -R reconuser:reconuser /tmp /app && \
