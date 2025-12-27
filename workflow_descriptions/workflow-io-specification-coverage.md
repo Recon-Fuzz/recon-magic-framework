@@ -396,7 +396,104 @@ This tool parses the `recon-coverage.json` line ranges, identifies which functio
 
 ---
 
-## Step 15: Initial Check of Coverage
+## Step 15: Generate Cyclomatic Complexity
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- Files: All Solidity source contracts in the project
+- Tool: `slither_complexity_extractor.py`
+
+**Command:**
+```bash
+python3 tools/slither_complexity_extractor.py . magic/cyclomatic-complexity.json
+```
+
+**Outputs:**
+- File: `magic/cyclomatic-complexity.json`
+
+**Output JSON Structure:**
+```json
+{
+  "ContractName": {
+    "functionName": complexity_int,
+    "anotherFunction": complexity_int
+  },
+  "AnotherContract": {
+    "someFunction": complexity_int
+  }
+}
+```
+
+**Description:**
+This tool uses Slither's Python API to extract cyclomatic complexity scores for all functions in all contracts. The custom extractor (`slither_complexity_extractor.py`) analyzes the project and generates a simple JSON mapping of contract names to function names to their complexity scores. This data is used in the next step to prioritize coverage fixes based on function complexity.
+
+---
+
+## Step 16: Score and Sort by Complexity
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 14)
+- File: `magic/cyclomatic-complexity.json` (from Step 15)
+
+**Command:**
+```bash
+covg-scoring --return-json
+```
+
+**Outputs:**
+- File: `magic/functions-missing-covg-{timestamp}.json` (updated with complexity scores and sorted)
+
+**Output JSON Structure:**
+```json
+[
+  {
+    "function": "complexFunction",
+    "contract": "ContractName",
+    "source_file": "src/ContractName.sol",
+    "function_range": {"start": 100, "end": 150},
+    "uncovered_code": {
+      "line_range": "120-125",
+      "last_covered_line": 118,
+      "code": ["120: require(condition)", "121: someLogic()"]
+    },
+    "complexity": 8
+  },
+  {
+    "function": "simpleFunction",
+    "contract": "ContractName",
+    "source_file": "src/ContractName.sol",
+    "function_range": {"start": 50, "end": 60},
+    "uncovered_code": {
+      "line_range": "55",
+      "last_covered_line": 53,
+      "code": ["55: return value;"]
+    },
+    "complexity": 1
+  },
+  {
+    "function": "unknownComplexity",
+    "contract": "SomeContract",
+    "source_file": "src/SomeContract.sol",
+    "function_range": {"start": 200, "end": 220},
+    "uncovered_code": {
+      "line_range": "210",
+      "last_covered_line": null,
+      "code": ["210: revert();"]
+    },
+    "complexity": null
+  }
+]
+```
+
+**Description:**
+This tool adds cyclomatic complexity scores to each function in the missing coverage file and sorts them by complexity (highest first). Functions without complexity data are placed at the end with `complexity: null`. This prioritization helps focus coverage efforts on the most complex functions first, as they often represent the most critical business logic.
+
+---
+
+## Step 17: Initial Check of Coverage
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -404,12 +501,12 @@ This tool parses the `recon-coverage.json` line ranges, identifies which functio
 - Pattern: `magic/functions-missing-covg-*.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 16 (Analyzing Coverage Gaps)
-- If file does not exist (value = 0): Jump to Step 22 (Workflow Complete)
+- If file exists (value = 1): Jump to Step 18 (Analyzing Coverage Gaps)
+- If file does not exist (value = 0): Jump to Step 26 (Dispatch Fuzzing Job)
 
 ---
 
-## Step 16: Analyzing Coverage Gaps
+## Step 18: Analyzing Coverage Gaps
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -468,7 +565,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 17: Implementing Coverage Fixes
+## Step 19: Implementing Coverage Fixes
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -485,7 +582,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 18: Run Echidna Programmatically (Iteration)
+## Step 20: Run Echidna Programmatically (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -503,7 +600,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 19: Echidna Output Check (Iteration)
+## Step 21: Echidna Output Check (Iteration)
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -512,11 +609,11 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 20
+- If file exists (value = 1): Continue to Step 22
 
 ---
 
-## Step 20: Evaluate Coverage (Iteration)
+## Step 22: Evaluate Coverage (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -535,7 +632,51 @@ covg-eval magic/ echidna/ --return-json
 
 ---
 
-## Step 21: Coverage Improvement Decision Check
+## Step 23: Generate Cyclomatic Complexity (Iteration)
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- Files: All Solidity source contracts in the project
+- Tool: `slither_complexity_extractor.py`
+
+**Command:**
+```bash
+python3 tools/slither_complexity_extractor.py . magic/cyclomatic-complexity.json
+```
+
+**Outputs:**
+- File: `magic/cyclomatic-complexity.json`
+- Structure: Same as Step 15 output
+
+**Description:**
+Re-runs the cyclomatic complexity extraction to ensure the data is current, especially if new functions or contracts have been added during the coverage improvement iteration.
+
+---
+
+## Step 24: Score and Sort by Complexity (Iteration)
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 22)
+- File: `magic/cyclomatic-complexity.json` (from Step 23)
+
+**Command:**
+```bash
+covg-scoring --return-json
+```
+
+**Outputs:**
+- File: `magic/functions-missing-covg-{timestamp}.json` (updated with complexity scores and sorted)
+- Structure: Same as Step 16 output
+
+**Description:**
+Adds cyclomatic complexity scores to the updated missing coverage functions and re-sorts by complexity to prioritize the next iteration of coverage fixes.
+
+---
+
+## Step 25: Coverage Improvement Decision Check
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -543,12 +684,36 @@ covg-eval magic/ echidna/ --return-json
 - Pattern: `magic/functions-missing-covg-*.json`
 
 **Decision Logic:**
-- If file exists (value = 1): Jump to Step 16 (Analyzing Coverage Gaps - loop)
-- If file does not exist (value = 0): Continue to Step 22
+- If file exists (value = 1): Jump to Step 18 (Analyzing Coverage Gaps - loop)
+- If file does not exist (value = 0): Continue to Step 26
 
 ---
 
-## Step 22: Workflow Complete
+## Step 26: Dispatch Fuzzing Job
+
+**Type:** Task (DISPATCH_FUZZING_JOB)
+
+**Inputs:**
+- All test contracts with implemented handlers
+- Coverage data and analysis results
+
+**Model Type:** DISPATCH_FUZZING_JOB
+
+**Description:**
+This step dispatches a long-running fuzzing job (100 million test limit) to the backend fuzzing infrastructure. After the workflow has completed local coverage optimization, this step queues the project for extended fuzzing to discover deeper bugs and edge cases.
+
+The backend will run:
+- Extended Echidna fuzzing campaign with 100 million tests
+- Property-based testing using all implemented handlers
+- Results will be collected and reported separately
+
+**Outputs:**
+- Job dispatched to backend queue
+- Job ID (if applicable)
+
+---
+
+## Step 27: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
