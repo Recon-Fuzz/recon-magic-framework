@@ -69,6 +69,11 @@ RUN mkdir -p /tmp && \
     chown -R reconuser:reconuser /tmp /app && \
     echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
+# Setup OpenCode config for non-interactive mode (prevents CLI hangs)
+RUN mkdir -p /home/reconuser/.config/opencode && \
+    cp /app/opencode.json /home/reconuser/.config/opencode/opencode.json && \
+    chown -R reconuser:reconuser /home/reconuser/.config
+
 # Ensure echidna binaries are executable by reconuser (defense-in-depth)
 RUN chmod -R 755 /home/linuxbrew/.linuxbrew/bin
 
