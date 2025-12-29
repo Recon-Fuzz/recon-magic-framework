@@ -33,6 +33,7 @@ class DecisionMode(str, Enum):
     READ_FILE = "READ_FILE"          # Read from filesystem (e.g., file exists check)
     USE_MODEL = "USE_MODEL"          # Use a model to decide
     READ_FILE_WITH_MODEL_DIGEST = "READ_FILE_WITH_MODEL_DIGEST" # Read from filesystem and use a model to digest the file contents
+    JSON_KEY_VALUE = "JSON_KEY_VALUE"  # Read a specific key value from a JSON file
 
 
 class Model(BaseModel):
@@ -185,6 +186,64 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
 
         action, destination = evaluate_decisions(step.decision, file_value)
         return (SUCCESS, action, destination)
+
+    if decision_mode == DecisionMode.JSON_KEY_VALUE:
+        import json
+
+        base_path = get_base_path()
+        file_pattern = step.modeInfo.get("fileName")
+        json_key_path = step.modeInfo.get("keyPath")  # e.g., "summary.functions_with_missing_coverage"
+
+        if not file_pattern:
+            print("⚠ fileName not specified in modeInfo, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        if not json_key_path:
+            print("⚠ keyPath not specified in modeInfo, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        # Check if this is a glob pattern or direct file path
+        has_wildcard = '*' in file_pattern or '?' in file_pattern
+
+        if has_wildcard:
+            # Use glob to find matching files
+            matches = list(base_path.glob(file_pattern))
+
+            if not matches:
+                print(f"⚠ No JSON file found matching pattern: {file_pattern}, defaulting to CONTINUE")
+                return (SUCCESS, "CONTINUE", None)
+
+            file_path = matches[0]  # Get first match
+        else:
+            # Direct file path - no glob needed
+            file_path = base_path / file_pattern
+            if not file_path.exists():
+                print(f"⚠ JSON file not found: {file_path}, defaulting to CONTINUE")
+                return (SUCCESS, "CONTINUE", None)
+
+        print(f"📄 Found JSON file: {file_path}")
+
+        try:
+            with open(file_path) as f:
+                data = json.load(f)
+
+            # Navigate through nested keys (e.g., "summary.functions_with_missing_coverage")
+            keys = json_key_path.split(".")
+            value = data
+            for key in keys:
+                value = value[key]
+
+            print(f"  Key path '{json_key_path}' = {value}")
+
+            # Convert to float for comparison
+            numeric_value = float(value)
+
+            action, destination = evaluate_decisions(step.decision, numeric_value)
+            return (SUCCESS, action, destination)
+
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            print(f"⚠ Error reading JSON or accessing key '{json_key_path}': {e}, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
 
     if decision_mode == DecisionMode.USE_MODEL:
         # Use LLM to make decision based on prompt
