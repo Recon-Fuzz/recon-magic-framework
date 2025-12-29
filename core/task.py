@@ -79,14 +79,14 @@ def resolve_model_string(model_type: str, model_string: str) -> str:
 
     # Model shorthand mappings per model type
     CLAUDE_CODE_MODELS = {
-        "inherit": "sonnet",
+        "inherit": "opus",
         "opus": "opus",
         "sonnet": "sonnet",
         "haiku": "haiku",
     }
 
     OPENCODE_MODELS = {
-        "inherit": "openrouter/anthropic/claude-sonnet-4.5",
+        "inherit": "openrouter/anthropic/claude-opus-4.5",
         "opus": "openrouter/anthropic/claude-opus-4.5",
         "sonnet": "openrouter/anthropic/claude-sonnet-4.5",
         "haiku": "openrouter/anthropic/claude-haiku-4.5",
