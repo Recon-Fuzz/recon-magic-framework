@@ -227,24 +227,25 @@
       "name": "Step 16: Initial Check of Coverage",
       "type": "decision",
       "description": "Determine if coverage needs to be improved",
-      "mode": "FILE_EXISTS",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "magic/functions-missing-covg-*.json"
+        "fileName": "magic/functions-missing-covg-*.json",
+        "keyPath": "summary.functions_with_missing_coverage"
       },
       "decision": [
         {
-          "operator": "eq",
-          "value": 1,
+          "operator": "gt",
+          "value": 0,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Step 17: Function Grouping and Prioritization",
-          "NOTE": "Branch to improve coverage by analyzing and fixing coverage gaps"
+          "NOTE": "Functions need coverage improvement"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Step 26: Workflow Complete",
-          "NOTE": "No missing coverage file found, skip to workflow completion"
+          "NOTE": "Full coverage achieved, skip to completion"
         }
       ],
       "shouldCreateSummary": true,
@@ -360,14 +361,15 @@
       "name": "Step 24: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
-      "mode": "FILE_EXISTS",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "magic/functions-missing-covg-*.json"
+        "fileName": "magic/functions-missing-covg-*.json",
+        "keyPath": "summary.functions_with_missing_coverage"
       },
       "decision": [
         {
-          "operator": "eq",
-          "value": 1,
+          "operator": "gt",
+          "value": 0,
           "action": "JUMP_TO_STEP",
           "destinationStep": "Step 17: Function Grouping and Prioritization",
           "NOTE": "Loop back to Step 17 to continue with coverage improvement"
@@ -376,7 +378,7 @@
           "operator": "eq",
           "value": 0,
           "action": "CONTINUE",
-          "NOTE": "No missing coverage file found, proceed to workflow completion"
+          "NOTE": "Full coverage achieved, proceed to workflow completion"
         }
       ],
       "shouldCreateSummary": true,
