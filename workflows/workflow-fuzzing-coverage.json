@@ -224,12 +224,28 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 16: Initial Check of Coverage",
+      "name": "Step 16: Create Latest Coverage Link",
+      "type": "task",
+      "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
+      "prompt": "get-latest-coverage --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-latest.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 17: Initial Check of Coverage",
       "type": "decision",
       "description": "Determine if coverage needs to be improved",
       "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "magic/functions-missing-covg-*.json",
+        "fileName": "magic/functions-missing-covg-latest.json",
         "keyPath": "summary.functions_with_missing_coverage"
       },
       "decision": [
@@ -237,14 +253,14 @@
           "operator": "gt",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 17: Function Grouping and Prioritization",
+          "destinationStep": "Step 18: Function Grouping and Prioritization",
           "NOTE": "Functions need coverage improvement"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 26: Workflow Complete",
+          "destinationStep": "Step 27: Workflow Complete",
           "NOTE": "Full coverage achieved, skip to completion"
         }
       ],
@@ -252,7 +268,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 17: Function Grouping and Prioritization",
+      "name": "Step 18: Function Grouping and Prioritization",
       "type": "task",
       "description": "Group uncovered functions and prioritize how they should be fixed using the functions-missing-covg file",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and prioritize how they should be fixed in the functions-missing-covg file",
@@ -264,7 +280,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 18: Analyzing Coverage Gaps",
+      "name": "Step 19: Analyzing Coverage Gaps",
       "type": "task",
       "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to identify the root cause for coverage gaps based on the analysis field in the functions-missing-covg file",
@@ -276,7 +292,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 19: Implement Coverage Solutions",
+      "name": "Step 20: Implement Coverage Solutions",
       "type": "task",
       "description": "Implement solutions to improve coverage based on the analysis from coverage-phase-4",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to implement solutions that will improve coverage",
@@ -288,7 +304,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 20: Run Echidna Programmatically",
+      "name": "Step 21: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically",
       "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
@@ -301,7 +317,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 21: Echidna Output Check",
+      "name": "Step 22: Echidna Output Check",
       "type": "decision",
       "description": "Verify Echidna produced output; exit if not.",
       "mode": "FILE_EXISTS",
@@ -326,7 +342,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 22: Evaluate Coverage",
+      "name": "Step 23: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -342,7 +358,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 23: Score and Sort by Complexity",
+      "name": "Step 24: Score and Sort by Complexity",
       "type": "task",
       "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
       "prompt": "covg-scoring --return-json",
@@ -358,12 +374,28 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 24: Coverage Improvement Decision Check",
+      "name": "Step 25: Create Latest Coverage Link",
+      "type": "task",
+      "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
+      "prompt": "get-latest-coverage --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-latest.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 26: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
       "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "magic/functions-missing-covg-*.json",
+        "fileName": "magic/functions-missing-covg-latest.json",
         "keyPath": "summary.functions_with_missing_coverage"
       },
       "decision": [
@@ -371,8 +403,8 @@
           "operator": "gt",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 17: Function Grouping and Prioritization",
-          "NOTE": "Loop back to Step 17 to continue with coverage improvement"
+          "destinationStep": "Step 18: Function Grouping and Prioritization",
+          "NOTE": "Loop back to Step 18 to continue with coverage improvement"
         },
         {
           "operator": "eq",
@@ -385,7 +417,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 25: Dispatch Fuzzing Job",
+      "name": "Step 27: Dispatch Fuzzing Job",
       "type": "task",
       "description": "Queue a 10 MLN TestEchidna fuzzing job with the backend.",
       "model": {
@@ -396,7 +428,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 26: Workflow Complete",
+      "name": "Step 28: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",

@@ -202,14 +202,25 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
             print("⚠ keyPath not specified in modeInfo, defaulting to CONTINUE")
             return (SUCCESS, "CONTINUE", None)
 
-        # Find the file using glob pattern
-        matches = list(base_path.glob(file_pattern))
+        # Check if this is a glob pattern or direct file path
+        has_wildcard = '*' in file_pattern or '?' in file_pattern
 
-        if not matches:
-            print(f"⚠ No JSON file found matching pattern: {file_pattern}, defaulting to CONTINUE")
-            return (SUCCESS, "CONTINUE", None)
+        if has_wildcard:
+            # Use glob to find matching files
+            matches = list(base_path.glob(file_pattern))
 
-        file_path = matches[0]  # Get first match
+            if not matches:
+                print(f"⚠ No JSON file found matching pattern: {file_pattern}, defaulting to CONTINUE")
+                return (SUCCESS, "CONTINUE", None)
+
+            file_path = matches[0]  # Get first match
+        else:
+            # Direct file path - no glob needed
+            file_path = base_path / file_pattern
+            if not file_path.exists():
+                print(f"⚠ JSON file not found: {file_path}, defaulting to CONTINUE")
+                return (SUCCESS, "CONTINUE", None)
+
         print(f"📄 Found JSON file: {file_path}")
 
         try:
