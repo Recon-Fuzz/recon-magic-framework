@@ -396,41 +396,7 @@ This tool parses the `recon-coverage.json` line ranges, identifies which functio
 
 ---
 
-## Step 15: Generate Cyclomatic Complexity
-
-**Type:** Task (PROGRAM)
-
-**Inputs:**
-- Files: All Solidity source contracts in the project
-- Tool: `slither_complexity_extractor.py`
-
-**Command:**
-```bash
-python3 tools/slither_complexity_extractor.py . magic/cyclomatic-complexity.json
-```
-
-**Outputs:**
-- File: `magic/cyclomatic-complexity.json`
-
-**Output JSON Structure:**
-```json
-{
-  "ContractName": {
-    "functionName": complexity_int,
-    "anotherFunction": complexity_int
-  },
-  "AnotherContract": {
-    "someFunction": complexity_int
-  }
-}
-```
-
-**Description:**
-This tool uses Slither's Python API to extract cyclomatic complexity scores for all functions in all contracts. The custom extractor (`slither_complexity_extractor.py`) analyzes the project and generates a simple JSON mapping of contract names to function names to their complexity scores. This data is used in the next step to prioritize coverage fixes based on function complexity.
-
----
-
-## Step 16: Score and Sort by Complexity
+## Step 15: Score and Sort by Complexity
 
 **Type:** Task (PROGRAM)
 
@@ -493,20 +459,53 @@ This tool adds cyclomatic complexity scores to each function in the missing cove
 
 ---
 
-## Step 17: Initial Check of Coverage
+## Step 16: Create Latest Coverage Link
 
-**Type:** Decision (FILE_EXISTS)
+**Type:** Task (PROGRAM)
 
 **Inputs:**
-- Pattern: `magic/functions-missing-covg-*.json`
+- Directory: `magic/` (containing timestamped coverage files)
 
-**Decision Logic:**
-- If file exists (value = 1): Jump to Step 18 (Analyzing Coverage Gaps)
-- If file does not exist (value = 0): Jump to Step 26 (Dispatch Fuzzing Job)
+**Command:**
+```bash
+get-latest-coverage --return-json
+```
+
+**Outputs:**
+- File: `magic/functions-missing-covg-latest.json`
+
+**Output JSON Structure:**
+Same structure as `functions-missing-covg-{timestamp}.json` from Step 14, containing the most recent coverage data.
+
+**Description:**
+This tool finds the most recent `functions-missing-covg-{timestamp}.json` file based on timestamp, reads its content, and outputs it to stdout. The workflow captures this output and saves it to `functions-missing-covg-latest.json`.
+
+This creates a stable filename that decision steps can reference, while preserving all timestamped files for historical tracking. The tool:
+1. Searches `magic/` for all `functions-missing-covg-{timestamp}.json` files
+2. Filters out `-grouped-` and `-latest` files
+3. Sorts by timestamp (newest first)
+4. Outputs the content of the most recent file
+
+**Why This Is Needed:**
+Decision steps need to check a specific file, but the timestamped files have unpredictable names. This step creates a deterministic filename (`-latest.json`) that always points to the most current coverage data.
 
 ---
 
-## Step 18: Analyzing Coverage Gaps
+## Step 17: Initial Check of Coverage
+
+**Type:** Decision (JSON_KEY_VALUE)
+
+**Inputs:**
+- File: `magic/functions-missing-covg-latest.json`
+
+**Decision Logic:**
+- Reads: `summary.functions_with_missing_coverage` key
+- If value > 0: Jump to Step 18 (Function Grouping and Prioritization)
+- If value = 0: Jump to Step 28 (Workflow Complete)
+
+---
+
+## Step 18: Function Grouping and Prioritization
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -515,7 +514,23 @@ This tool adds cyclomatic complexity scores to each function in the missing cove
 - File: `magic/functions-missing-covg-{timestamp}.json`
 
 **Outputs:**
-- Modified: `magic/functions-missing-covg-{timestamp}.json` with added `"analysis"` field
+- File: `magic/functions-missing-covg-grouped-{timestamp}.json`
+
+**Description:**
+This agent groups uncovered functions by their state dependencies and prioritizes them for fixing.
+
+---
+
+## Step 19: Analyzing Coverage Gaps
+
+**Type:** Task (OPENCODE - Agent)
+
+**Inputs:**
+- Agent: `./.opencode/agent/coverage-phase-4.md`
+- File: `magic/functions-missing-covg-grouped-{timestamp}.json`
+
+**Outputs:**
+- Modified: `magic/functions-missing-covg-grouped-{timestamp}.json` with added `"analysis"` field
 
 **Output Structure:**
 Each entry in the `missing_coverage` array will have a new `"analysis"` field added:
@@ -565,24 +580,24 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 19: Implementing Coverage Fixes
+## Step 20: Implementing Coverage Fixes
 
 **Type:** Task (OPENCODE - Agent)
 
 **Inputs:**
-- Agent: `./.opencode/agent/coverage-phase-4.md`
-- File: `magic/functions-missing-covg-{timestamp}.json` (with analysis field)
+- Agent: `./.opencode/agent/coverage-phase-5.md`
+- File: `magic/functions-missing-covg-grouped-{timestamp}.json` (with analysis field)
 
 **Outputs:**
 - Modified or new handler functions in test contracts to address coverage gaps based on the analysis
 
 **Implementation Types:**
 1. **Clamped Handlers** - Constrain parameter values to guide the fuzzer
-2. **New Target Functions** - Enable previously unreachable system states
+2. **Shortcut Functions** - Enable previously unreachable system states
 
 ---
 
-## Step 20: Run Echidna Programmatically (Iteration)
+## Step 21: Run Echidna Programmatically (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -600,7 +615,7 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 21: Echidna Output Check (Iteration)
+## Step 22: Echidna Output Check (Iteration)
 
 **Type:** Decision (FILE_EXISTS)
 
@@ -609,11 +624,11 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 **Decision Logic:**
 - If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 22
+- If file exists (value = 1): Continue to Step 23
 
 ---
 
-## Step 22: Evaluate Coverage (Iteration)
+## Step 23: Evaluate Coverage (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -632,35 +647,13 @@ covg-eval magic/ echidna/ --return-json
 
 ---
 
-## Step 23: Generate Cyclomatic Complexity (Iteration)
-
-**Type:** Task (PROGRAM)
-
-**Inputs:**
-- Files: All Solidity source contracts in the project
-- Tool: `slither_complexity_extractor.py`
-
-**Command:**
-```bash
-python3 tools/slither_complexity_extractor.py . magic/cyclomatic-complexity.json
-```
-
-**Outputs:**
-- File: `magic/cyclomatic-complexity.json`
-- Structure: Same as Step 15 output
-
-**Description:**
-Re-runs the cyclomatic complexity extraction to ensure the data is current, especially if new functions or contracts have been added during the coverage improvement iteration.
-
----
-
 ## Step 24: Score and Sort by Complexity (Iteration)
 
 **Type:** Task (PROGRAM)
 
 **Inputs:**
-- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 22)
-- File: `magic/cyclomatic-complexity.json` (from Step 23)
+- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 23)
+- File: `magic/cyclomatic-complexity.json` (auto-generated if missing)
 
 **Command:**
 ```bash
@@ -669,27 +662,48 @@ covg-scoring --return-json
 
 **Outputs:**
 - File: `magic/functions-missing-covg-{timestamp}.json` (updated with complexity scores and sorted)
-- Structure: Same as Step 16 output
+- Structure: Same as Step 15 output
 
 **Description:**
 Adds cyclomatic complexity scores to the updated missing coverage functions and re-sorts by complexity to prioritize the next iteration of coverage fixes.
 
 ---
 
-## Step 25: Coverage Improvement Decision Check
+## Step 25: Create Latest Coverage Link (Iteration)
 
-**Type:** Decision (FILE_EXISTS)
+**Type:** Task (PROGRAM)
 
 **Inputs:**
-- Pattern: `magic/functions-missing-covg-*.json`
+- Directory: `magic/` (containing timestamped coverage files)
 
-**Decision Logic:**
-- If file exists (value = 1): Jump to Step 18 (Analyzing Coverage Gaps - loop)
-- If file does not exist (value = 0): Continue to Step 26
+**Command:**
+```bash
+get-latest-coverage --return-json
+```
+
+**Outputs:**
+- File: `magic/functions-missing-covg-latest.json`
+
+**Description:**
+Same as Step 16 - creates an up-to-date `functions-missing-covg-latest.json` file with the latest coverage data after the iteration, so Step 26 can check the current status.
 
 ---
 
-## Step 26: Dispatch Fuzzing Job
+## Step 26: Coverage Improvement Decision Check
+
+**Type:** Decision (JSON_KEY_VALUE)
+
+**Inputs:**
+- File: `magic/functions-missing-covg-latest.json`
+
+**Decision Logic:**
+- Reads: `summary.functions_with_missing_coverage` key
+- If value > 0: Jump to Step 18 (Function Grouping and Prioritization - loop)
+- If value = 0: Continue to Step 27
+
+---
+
+## Step 27: Dispatch Fuzzing Job
 
 **Type:** Task (DISPATCH_FUZZING_JOB)
 
@@ -713,7 +727,7 @@ The backend will run:
 
 ---
 
-## Step 27: Workflow Complete
+## Step 28: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
