@@ -88,8 +88,7 @@ jobs:
       - name: Validate
         run: |
           cd infrastructure
-          mv backend.production.tf backend.tf && rm backend.staging.tf
-          terraform init
+          terraform init -backend-config="bucket=recon-magic-framework-backend"
           terraform validate
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -117,8 +116,7 @@ jobs:
       - name: Deploy
         run: |
           cd infrastructure
-          mv backend.production.tf backend.tf && rm backend.staging.tf
-          terraform init
+          terraform init -backend-config="bucket=recon-magic-framework-backend"
           terraform apply -auto-approve
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
