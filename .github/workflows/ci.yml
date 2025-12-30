@@ -45,7 +45,9 @@ jobs:
 
       - name: Log in to Amazon ECR
         run: |
-          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY }}
+          ECR_REPOSITORY="${{ secrets.ECR_REPOSITORY }}"
+          ECR_REGISTRY="${ECR_REPOSITORY%%/*}"
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
       - name: Cache Docker layers
         uses: actions/cache@v3
