@@ -88,7 +88,6 @@ jobs:
       - name: Validate
         run: |
           cd infrastructure
-          mv backend.production.tf backend.tf && rm backend.staging.tf
           terraform init
           terraform validate
         env:
@@ -117,7 +116,6 @@ jobs:
       - name: Deploy
         run: |
           cd infrastructure
-          mv backend.production.tf backend.tf && rm backend.staging.tf
           terraform init
           terraform apply -auto-approve
         env:
