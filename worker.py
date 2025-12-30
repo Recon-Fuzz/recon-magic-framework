@@ -514,7 +514,6 @@ def process_job(
             return False
 
         # Get user handles from job data and invite them early
-        additional_data = job_info.get("additionalData", {})
         user_handles = additional_data.get("userHandles", [])
         for handle in user_handles:
             try:
