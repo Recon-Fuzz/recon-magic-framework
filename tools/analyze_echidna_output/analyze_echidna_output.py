@@ -184,7 +184,8 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
             "status": "success",
             "echidna_exit_code": 0,
             "workflow_action": "continue",
-            "message": "Echidna completed successfully"
+            "message": "Echidna completed successfully",
+            "requires_compilation_fix": 0
         }
 
         # Check if coverage files were generated
@@ -196,12 +197,23 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
             result["coverage_generated"] = False
             result["warning"] = "No coverage files found despite successful execution"
 
+        # Add timestamp
+        from datetime import datetime
+        result["timestamp"] = datetime.now().isoformat()
+
         if return_json:
             print(json.dumps(result, indent=2))
         else:
+            # Write file for standalone CLI usage
+            summary_file = "magic/echidna-error-analysis.json"
+            os.makedirs("magic", exist_ok=True)
+            with open(summary_file, 'w') as f:
+                json.dump(result, f, indent=2)
+
             print("✅ Echidna completed successfully")
             if coverage_files:
                 print(f"📊 Generated {len(coverage_files)} coverage files")
+            print(f"💾 Analysis saved to: {summary_file}")
 
         return 0
 
@@ -236,12 +248,6 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
     # Create summary
     summary = create_error_summary(error_type, error_details, exit_code)
 
-    # Save error summary for downstream processing
-    summary_file = "magic/echidna-error-analysis.json"
-    os.makedirs("magic", exist_ok=True)
-    with open(summary_file, 'w') as f:
-        json.dump(summary, f, indent=2)
-
     # Determine return code based on error type
     if error_type == "compilation":
         return_code = 2  # Trigger compilation fix agent
@@ -253,6 +259,12 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
     if return_json:
         print(json.dumps(summary, indent=2))
     else:
+        # Save error summary for downstream processing (standalone CLI usage)
+        summary_file = "magic/echidna-error-analysis.json"
+        os.makedirs("magic", exist_ok=True)
+        with open(summary_file, 'w') as f:
+            json.dump(summary, f, indent=2)
+
         print(f"❌ Echidna failed with exit code {exit_code}")
         print(f"🔍 Error type: {error_type}")
         print(f"📝 {summary['description']}")

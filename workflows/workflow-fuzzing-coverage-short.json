@@ -25,7 +25,7 @@
       },
       "output": {
         "capture": true,
-        "save_to": "magic/echidna-analysis-{timestamp}.json"
+        "save_to": "magic/echidna-error-analysis.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
