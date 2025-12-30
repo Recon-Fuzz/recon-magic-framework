@@ -95,7 +95,7 @@ resource "aws_iam_role_policy_attachment" "ecs-task-execution-role-policy-attach
 
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/ecs/${var.namespace}"
-  retention_in_days = 0
+  retention_in_days = 30
 }
 
 resource "aws_ecs_task_definition" "magic_worker" {
