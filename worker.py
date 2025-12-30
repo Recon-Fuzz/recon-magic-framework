@@ -465,6 +465,9 @@ def process_job(
         elif job_type == "workflowName":
             # Mode 2: Use workflow from framework workflows/
             workflow_name = job_info.get("workflowName")
+            if not workflow_name:
+                print("Error: workflowName is required but not provided in job data")
+                return False
             workflow_file = str(framework_root / "workflows" / f"{workflow_name}.json")
 
             print(f"Framework Workflow Mode: {workflow_name}")
@@ -483,6 +486,9 @@ def process_job(
         elif job_type == "relativeWorkflow":
             # Mode 3: Use workflow from .claude repo (legacy)
             workflow_name = job_info.get("workflowName")
+            if not workflow_name:
+                print("Error: workflowName is required but not provided in job data")
+                return False
 
             # Clone claude config for this mode
             if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
