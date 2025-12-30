@@ -144,8 +144,8 @@
     {
       "name": "Step 11: Run Echidna Programmatically",
       "type": "task",
-      "description": "Run Echidna programmatically",
-      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "description": "Run Echidna programmatically and capture output",
+      "prompt": "(echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -155,29 +155,87 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 12: Echidna Output Check",
+      "name": "Step 12: Analyze Echidna Output",
+      "type": "task",
+      "description": "Analyze Echidna execution results and determine next action",
+      "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-analysis-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 12a: Handle Echidna Results",
       "type": "decision",
-      "description": "Verify Echidna produced output; exit if not.",
-      "mode": "FILE_EXISTS",
+      "description": "Take action based on Echidna analysis results",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "echidna/*.txt"
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "echidna_exit_code"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 0,
-          "action": "STOP",
-          "NOTE": "Echidna output not found, stopping workflow."
+          "action": "CONTINUE",
+          "NOTE": "Echidna ran successfully, continuing workflow"
         },
         {
-          "operator": "eq",
-          "value": 1,
-          "action": "CONTINUE",
-          "NOTE": "Echidna output found, continuing workflow."
+          "operator": "neq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 12b: Check Error Type",
+          "NOTE": "Echidna failed, need to check error type"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 12b: Check Error Type",
+      "type": "decision",
+      "description": "Determine if error is compilation-related",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "requires_compilation_fix"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 12c: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Non-compilation error detected, stopping workflow"
+        }
+      ],
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 12c: Fix Compilation Errors",
+      "type": "task",
+      "description": "Resolve compilation errors in the fuzzing harness",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 11 to retry Echidna.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true,
+      "nextStep": "Step 11: Run Echidna Programmatically"
     },
     {
       "name": "Step 13: Generate Functions to Cover",
@@ -306,8 +364,8 @@
     {
       "name": "Step 21: Run Echidna Programmatically",
       "type": "task",
-      "description": "Run Echidna programmatically",
-      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "description": "Run Echidna programmatically and capture output",
+      "prompt": "(echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -317,29 +375,87 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 22: Echidna Output Check",
+      "name": "Step 22: Analyze Echidna Output",
+      "type": "task",
+      "description": "Analyze Echidna execution results and determine next action",
+      "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-analysis-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 22a: Handle Echidna Results",
       "type": "decision",
-      "description": "Verify Echidna produced output; exit if not.",
-      "mode": "FILE_EXISTS",
+      "description": "Take action based on Echidna analysis results",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "echidna/*.txt"
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "echidna_exit_code"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 0,
-          "action": "STOP",
-          "NOTE": "Echidna output not found, stopping workflow."
+          "action": "CONTINUE",
+          "NOTE": "Echidna ran successfully, continuing workflow"
         },
         {
-          "operator": "eq",
-          "value": 1,
-          "action": "CONTINUE",
-          "NOTE": "Echidna output found, continuing workflow."
+          "operator": "neq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 22b: Check Error Type",
+          "NOTE": "Echidna failed, need to check error type"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 22b: Check Error Type",
+      "type": "decision",
+      "description": "Determine if error is compilation-related",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "requires_compilation_fix"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 22c: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Non-compilation error detected, stopping workflow"
+        }
+      ],
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 22c: Fix Compilation Errors",
+      "type": "task",
+      "description": "Resolve compilation errors in the fuzzing harness",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 21 to retry Echidna.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true,
+      "nextStep": "Step 21: Run Echidna Programmatically"
     },
     {
       "name": "Step 23: Evaluate Coverage",
