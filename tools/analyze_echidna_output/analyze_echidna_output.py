@@ -71,6 +71,35 @@ def analyze_error_type(log_content: str) -> Tuple[str, Dict]:
                 break
         return "compilation", error_details
 
+    # Check for unlinked libraries
+    if "unlinked libraries" in log_content.lower() or "Error toCode" in log_content:
+        error_details["context"] = "Unlinked libraries detected in contract bytecode"
+        error_details["suggested_action"] = "stop"
+
+        # Extract error details
+        lines = log_content.split('\n')
+        for i, line in enumerate(lines):
+            if "unlinked libraries" in line.lower() or "Error toCode" in line:
+                # Get surrounding context
+                start_idx = max(0, i - 2)
+                end_idx = min(len(lines), i + 10)
+                error_details["error_lines"] = lines[start_idx:end_idx]
+                error_details["context"] = '\n'.join(lines[start_idx:end_idx])
+                break
+
+        error_details["suggested_fix"] = (
+            "Link libraries in echidna.yaml configuration:\n"
+            "1. Add library deployment under 'deployContracts' section\n"
+            "2. Add library addresses to cryticArgs with --libraries flag\n"
+            "3. Example: cryticArgs: ['--libraries', 'MyLib:0x1234...']"
+        )
+        error_details["common_causes"] = [
+            "Contract uses library functions but libraries are not linked",
+            "Missing library deployment configuration in echidna.yaml",
+            "Libraries need to be deployed before contract instantiation"
+        ]
+        return "unlinked_libraries", error_details
+
     # Check for setUp() function failure
     if "Calling the setUp() function failed" in log_content:
         error_details["context"] = "setUp() function failed during contract initialization"
@@ -147,6 +176,7 @@ def create_error_summary(error_type: str, error_details: Dict, exit_code: int) -
     # Add human-readable description
     descriptions = {
         "compilation": "Solidity compilation failed. The contracts have syntax errors or dependency issues.",
+        "unlinked_libraries": "Contract bytecode contains unlinked library references. Libraries must be deployed and linked before Echidna can run the contract.",
         "setup": "The setUp() function in the fuzzing harness failed to execute properly.",
         "rpc": "Echidna requires RPC access for mainnet forking but no RPC URL is configured.",
         "contract_not_found": "The specified contract could not be found in the compiled artifacts.",
