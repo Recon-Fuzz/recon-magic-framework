@@ -363,6 +363,300 @@ def create_dynamic_workflow(prompt: str, model_type: str = "CLAUDE_CODE", job_id
     return workflow_file
 
 
+def process_job(
+    job_id: str,
+    job_data: dict,
+    api_url: str,
+    bearer_token: str,
+    permissions_flag: bool = False
+) -> bool:
+    """
+    Process a single job payload deterministically.
+
+    Returns:
+        bool: True if the job ran to completion, False otherwise.
+    """
+    if not job_id or not job_data:
+        print("Error: Missing job_id or job_data")
+        return False
+
+    try:
+        # Extract job information
+        data = job_data.get("data", {})
+        job_info = data.get("job", {})
+
+        repo_url = data.get("repoAccessData", {}).get("url")
+        claude_url = data.get("claudeAccessData", {}).get("url")
+        repo_ref = job_info.get("ref", "main")
+        claude_ref = job_info.get("claudeRef", "main")
+
+        # Get job type (directPrompt, workflowName, relativeWorkflow)
+        additional_data = job_info.get("additionalData", {})
+        job_type = additional_data.get("jobType", "directPrompt")
+
+        print(f"Job Type: {job_type}")
+        print(f"Repo URL: {repo_url}")
+        print(f"Claude URL: {claude_url}")
+
+        # Setup workspace in /app
+        if not setup_workspace("/app"):
+            print("Failed to setup workspace")
+            return False
+
+        # Clone target repository to /app/repo
+        if not clone_repository(repo_url, repo_ref, "/app/repo"):
+            print("Failed to clone repository")
+            return False
+
+        # Rename current branch to 'main' for consistent push behavior
+        # This ensures we always push to 'main' regardless of source repo's default branch
+        subprocess.run(
+            ["git", "branch", "-M", "main"],
+            cwd="/app/repo",
+            capture_output=True
+        )
+
+        # Capture initial commit hash before workflow runs
+        initial_commit_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd="/app/repo",
+            capture_output=True,
+            text=True
+        )
+        initial_commit_hash = initial_commit_result.stdout.strip() if initial_commit_result.returncode == 0 else None
+
+        # Execute workflow using main.py
+        from pathlib import Path
+        from main import run_workflow
+
+        # Set environment variable for framework root
+        framework_root = Path(__file__).parent.resolve()
+        os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
+
+        # Set worker context in environment for hooks to use
+        os.environ['WORKER_API_URL'] = api_url
+        os.environ['WORKER_BEARER_TOKEN'] = bearer_token
+        os.environ['WORKER_JOB_ID'] = str(job_id)
+
+        # Clone config repo (contains both .claude and .opencode agent definitions)
+        # The ai-agent-primers repo has the structure:
+        #   /agents/         -> cloned to /app/.claude/agents/
+        #   /agent/          -> cloned to /app/.opencode/agent/
+        # We clone it twice to different locations for compatibility
+
+        # Determine workflow file based on job type
+        if job_type == "directPrompt":
+            # Mode 1: Direct prompt execution
+            prompt = job_info.get("claudePromptCommand")
+            model_type = job_info.get("modelType", "CLAUDE_CODE")
+
+            print(f"Direct Prompt Mode - Model: {model_type}")
+            print(f"Prompt: {prompt[:100]}..." if len(prompt) > 100 else f"Prompt: {prompt}")
+
+            # Clone config repo for agent definitions (to both .claude and .opencode)
+            if claude_url:
+                if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
+                    print("Warning: Failed to clone Claude config, continuing without it")
+                if not clone_opencode_config(claude_url, claude_ref, "/app/.opencode"):
+                    print("Warning: Failed to clone OpenCode config, continuing without it")
+
+            workflow_file = create_dynamic_workflow(prompt, model_type, str(job_id))
+
+        elif job_type == "workflowName":
+            # Mode 2: Use workflow from framework workflows/
+            workflow_name = job_info.get("workflowName")
+            workflow_file = str(framework_root / "workflows" / f"{workflow_name}.json")
+
+            print(f"Framework Workflow Mode: {workflow_name}")
+
+            # Clone config repo for agent definitions (to both .claude and .opencode)
+            if claude_url:
+                if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
+                    print("Warning: Failed to clone Claude config, continuing without it")
+                if not clone_opencode_config(claude_url, claude_ref, "/app/.opencode"):
+                    print("Warning: Failed to clone OpenCode config, continuing without it")
+
+            if not os.path.exists(workflow_file):
+                print(f"Error: Workflow not found: {workflow_file}")
+                return False
+
+        elif job_type == "relativeWorkflow":
+            # Mode 3: Use workflow from .claude repo (legacy)
+            workflow_name = job_info.get("workflowName")
+
+            # Clone claude config for this mode
+            if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
+                print("Failed to clone Claude config")
+                return False
+
+            workflow_file = f"/app/.claude/workflows/{workflow_name}.json"
+            print(f"Relative Workflow Mode: {workflow_name}")
+
+            if not os.path.exists(workflow_file):
+                print(f"Error: Workflow not found: {workflow_file}")
+                return False
+        else:
+            print(f"Error: Unknown job type: {job_type}")
+            return False
+
+        print(f"Executing workflow: {workflow_file}")
+
+        # Create GitHub repo BEFORE workflow runs so we can push per-step
+        timestamp = int(time.time())
+        repo_basename = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+        new_repo_name = f"{repo_basename}-processed-{timestamp}"
+
+        github_token = os.environ.get("GITHUB_TOKEN", "")
+
+        success, new_repo_url, owner = create_github_repo(new_repo_name, github_token)
+        if not success:
+            print("Failed to create GitHub repository")
+            return False
+
+        # Get user handles from job data and invite them early
+        additional_data = job_info.get("additionalData", {})
+        user_handles = additional_data.get("userHandles", [])
+        for handle in user_handles:
+            try:
+                invite_collaborator(owner, new_repo_name, github_token, handle)
+                print(f"  ✓ Invited {handle} to repository")
+            except Exception as e:
+                print(f"  ⚠ Failed to invite {handle}: {e}")
+
+        # Setup git remote in repo directory for per-step pushes
+        setup_repo_remote("/app/repo", github_token, new_repo_url)
+
+        # Push initial code to the repository
+        try:
+            subprocess.run(
+                ["git", "-C", "/app/repo", "add", "."],
+                check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "-C", "/app/repo", "commit", "-m", "Initial commit"],
+                capture_output=True  # May fail if no changes, that's ok
+            )
+            subprocess.run(
+                ["git", "-C", "/app/repo", "push", "-u", "recon", "main"],
+                check=True, capture_output=True
+            )
+            print("  ✓ Pushed initial code to repository")
+        except subprocess.CalledProcessError as e:
+            print(f"  ⚠ Failed to push initial code: {e}")
+
+        # Send repo URL to backend immediately (not as a step)
+        org_name, _ = parse_repo_info(new_repo_url)
+        update_job_data(api_url, bearer_token, job_id, {
+            "repoUrl": new_repo_url,
+            "orgName": org_name,
+            "repoName": new_repo_name
+        })
+
+        # All job types now run from /app/repo since configs are also in /app
+        effective_repo_path = "/app/repo"
+
+        # Detect Foundry root (for monorepo support)
+        explicit_foundry_root = additional_data.get("foundryRoot")
+        foundry_root = find_foundry_root(effective_repo_path, explicit_foundry_root)
+        os.environ['RECON_FOUNDRY_ROOT'] = foundry_root
+        print(f"  ✓ Foundry root set to: {foundry_root}")
+
+        # Reset failure tracker before running workflow
+        reset_workflow_failure_info()
+
+        # Run the workflow with worker-specific hooks
+        workflow_result = run_workflow(
+            workflow_file=workflow_file,
+            dangerous=permissions_flag,
+            loop_hardcap=5,  # TODO: Make configurable via API
+            logs_dir="/app/logs",
+            repo_path=effective_repo_path,
+            before_hook=worker_before_step_hook,
+            after_hook=worker_after_step_hook
+        )
+
+        # Check if workflow failed
+        workflow_failed = workflow_result != 0
+        failure_info = get_workflow_failure_info()
+
+        if workflow_failed:
+            print(f"Workflow execution failed with code {workflow_result}")
+            if failure_info:
+                print(f"  Failed at step {failure_info['step_num']}: {failure_info['step_name']} ({failure_info['reason']})")
+
+        # Get branch name
+        try:
+            result = subprocess.run(
+                ["git", "-C", "/app/repo", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            branch_name = result.stdout.strip()
+        except Exception:
+            branch_name = "main"
+
+        # Generate appropriate summary based on success/failure
+        if workflow_failed and failure_info:
+            # Generate failure-aware summary
+            summary = generate_failure_summary_with_claude(
+                failed_step_name=failure_info['step_name'],
+                failed_step_num=failure_info['step_num'],
+                since_commit=initial_commit_hash
+            )
+            job_status = "ERROR"
+        else:
+            # Generate success summary
+            summary = generate_summary_with_claude(initial_commit_hash)
+            job_status = "DONE"
+
+        print(f"Summary: {summary}")
+
+        # Parse org name from new repo URL
+        org_name, _ = parse_repo_info(new_repo_url)
+
+        # Mark job with appropriate status
+        mark_job_complete(
+            api_url,
+            bearer_token,
+            job_id,
+            summary,
+            new_repo_name,
+            org_name,
+            branch_name,
+            status=job_status
+        )
+        return True
+
+    except Exception as e:
+        print(f"Error processing job {job_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Try to mark job as ERROR if we have the necessary info
+        try:
+            error_summary = f"Job failed due to unexpected error: {str(e)}"
+            # Use variables if they were set, otherwise use defaults
+            local_vars = locals()
+            final_repo_name = local_vars.get('new_repo_name', "unknown")
+            final_org_name = local_vars.get('org_name', "unknown")
+            final_branch = local_vars.get('branch_name', "main")
+
+            mark_job_complete(
+                api_url,
+                bearer_token,
+                job_id,
+                error_summary,
+                final_repo_name,
+                final_org_name,
+                final_branch,
+                status="ERROR"
+            )
+        except Exception as mark_error:
+            print(f"Failed to mark job as error: {mark_error}")
+        return False
+
+
 def start_job_listener(
     api_url: str,
     bearer_token: str,
@@ -409,280 +703,7 @@ def start_job_listener(
                 print(f"Failed to fetch details for job {job_id}")
                 continue
 
-            try:
-                # Extract job information
-                data = job_data.get("data", {})
-                job_info = data.get("job", {})
-
-                repo_url = data.get("repoAccessData", {}).get("url")
-                claude_url = data.get("claudeAccessData", {}).get("url")
-                repo_ref = job_info.get("ref", "main")
-                claude_ref = job_info.get("claudeRef", "main")
-
-                # Get job type (directPrompt, workflowName, relativeWorkflow)
-                additional_data = job_info.get("additionalData", {})
-                job_type = additional_data.get("jobType", "directPrompt")
-
-                print(f"Job Type: {job_type}")
-                print(f"Repo URL: {repo_url}")
-                print(f"Claude URL: {claude_url}")
-
-                # Setup workspace in /app
-                if not setup_workspace("/app"):
-                    print("Failed to setup workspace")
-                    continue
-
-                # Clone target repository to /app/repo
-                if not clone_repository(repo_url, repo_ref, "/app/repo"):
-                    print("Failed to clone repository")
-                    continue
-
-                # Rename current branch to 'main' for consistent push behavior
-                # This ensures we always push to 'main' regardless of source repo's default branch
-                subprocess.run(
-                    ["git", "branch", "-M", "main"],
-                    cwd="/app/repo",
-                    capture_output=True
-                )
-
-                # Capture initial commit hash before workflow runs
-                initial_commit_result = subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
-                    cwd="/app/repo",
-                    capture_output=True,
-                    text=True
-                )
-                initial_commit_hash = initial_commit_result.stdout.strip() if initial_commit_result.returncode == 0 else None
-
-                # Execute workflow using main.py
-                from pathlib import Path
-                from main import run_workflow
-
-                # Set environment variable for framework root
-                framework_root = Path(__file__).parent.resolve()
-                os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
-
-                # Set worker context in environment for hooks to use
-                os.environ['WORKER_API_URL'] = api_url
-                os.environ['WORKER_BEARER_TOKEN'] = bearer_token
-                os.environ['WORKER_JOB_ID'] = str(job_id)
-
-                # Clone config repo (contains both .claude and .opencode agent definitions)
-                # The ai-agent-primers repo has the structure:
-                #   /agents/         -> cloned to /app/.claude/agents/
-                #   /agent/          -> cloned to /app/.opencode/agent/
-                # We clone it twice to different locations for compatibility
-
-                # Determine workflow file based on job type
-                if job_type == "directPrompt":
-                    # Mode 1: Direct prompt execution
-                    prompt = job_info.get("claudePromptCommand")
-                    model_type = job_info.get("modelType", "CLAUDE_CODE")
-
-                    print(f"Direct Prompt Mode - Model: {model_type}")
-                    print(f"Prompt: {prompt[:100]}..." if len(prompt) > 100 else f"Prompt: {prompt}")
-
-                    # Clone config repo for agent definitions (to both .claude and .opencode)
-                    if claude_url:
-                        if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
-                            print("Warning: Failed to clone Claude config, continuing without it")
-                        if not clone_opencode_config(claude_url, claude_ref, "/app/.opencode"):
-                            print("Warning: Failed to clone OpenCode config, continuing without it")
-
-                    workflow_file = create_dynamic_workflow(prompt, model_type, str(job_id))
-
-                elif job_type == "workflowName":
-                    # Mode 2: Use workflow from framework workflows/
-                    workflow_name = job_info.get("workflowName")
-                    workflow_file = str(framework_root / "workflows" / f"{workflow_name}.json")
-
-                    print(f"Framework Workflow Mode: {workflow_name}")
-
-                    # Clone config repo for agent definitions (to both .claude and .opencode)
-                    if claude_url:
-                        if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
-                            print("Warning: Failed to clone Claude config, continuing without it")
-                        if not clone_opencode_config(claude_url, claude_ref, "/app/.opencode"):
-                            print("Warning: Failed to clone OpenCode config, continuing without it")
-
-                    if not os.path.exists(workflow_file):
-                        print(f"Error: Workflow not found: {workflow_file}")
-                        continue
-
-                elif job_type == "relativeWorkflow":
-                    # Mode 3: Use workflow from .claude repo (legacy)
-                    workflow_name = job_info.get("workflowName")
-
-                    # Clone claude config for this mode
-                    if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
-                        print("Failed to clone Claude config")
-                        continue
-
-                    workflow_file = f"/app/.claude/workflows/{workflow_name}.json"
-                    print(f"Relative Workflow Mode: {workflow_name}")
-
-                    if not os.path.exists(workflow_file):
-                        print(f"Error: Workflow not found: {workflow_file}")
-                        continue
-                else:
-                    print(f"Error: Unknown job type: {job_type}")
-                    continue
-
-                print(f"Executing workflow: {workflow_file}")
-
-                # Create GitHub repo BEFORE workflow runs so we can push per-step
-                timestamp = int(time.time())
-                repo_basename = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-                new_repo_name = f"{repo_basename}-processed-{timestamp}"
-
-                github_token = os.environ.get("GITHUB_TOKEN", "")
-
-                success, new_repo_url, owner = create_github_repo(new_repo_name, github_token)
-                if not success:
-                    print("Failed to create GitHub repository")
-                    continue
-
-                # Get user handles from job data and invite them early
-                additional_data = job_info.get("additionalData", {})
-                user_handles = additional_data.get("userHandles", [])
-                for handle in user_handles:
-                    try:
-                        invite_collaborator(owner, new_repo_name, github_token, handle)
-                        print(f"  ✓ Invited {handle} to repository")
-                    except Exception as e:
-                        print(f"  ⚠ Failed to invite {handle}: {e}")
-
-                # Setup git remote in repo directory for per-step pushes
-                setup_repo_remote("/app/repo", github_token, new_repo_url)
-
-                # Push initial code to the repository
-                try:
-                    subprocess.run(
-                        ["git", "-C", "/app/repo", "add", "."],
-                        check=True, capture_output=True
-                    )
-                    subprocess.run(
-                        ["git", "-C", "/app/repo", "commit", "-m", "Initial commit"],
-                        capture_output=True  # May fail if no changes, that's ok
-                    )
-                    subprocess.run(
-                        ["git", "-C", "/app/repo", "push", "-u", "recon", "main"],
-                        check=True, capture_output=True
-                    )
-                    print("  ✓ Pushed initial code to repository")
-                except subprocess.CalledProcessError as e:
-                    print(f"  ⚠ Failed to push initial code: {e}")
-
-                # Send repo URL to backend immediately (not as a step)
-                org_name, _ = parse_repo_info(new_repo_url)
-                update_job_data(api_url, bearer_token, job_id, {
-                    "repoUrl": new_repo_url,
-                    "orgName": org_name,
-                    "repoName": new_repo_name
-                })
-
-                # All job types now run from /app/repo since configs are also in /app
-                effective_repo_path = "/app/repo"
-
-                # Detect Foundry root (for monorepo support)
-                explicit_foundry_root = additional_data.get("foundryRoot")
-                foundry_root = find_foundry_root(effective_repo_path, explicit_foundry_root)
-                os.environ['RECON_FOUNDRY_ROOT'] = foundry_root
-                print(f"  ✓ Foundry root set to: {foundry_root}")
-
-                # Reset failure tracker before running workflow
-                reset_workflow_failure_info()
-
-                # Run the workflow with worker-specific hooks
-                workflow_result = run_workflow(
-                    workflow_file=workflow_file,
-                    dangerous=permissions_flag,
-                    loop_hardcap=5,  # TODO: Make configurable via API
-                    logs_dir="/app/logs",
-                    repo_path=effective_repo_path,
-                    before_hook=worker_before_step_hook,
-                    after_hook=worker_after_step_hook
-                )
-
-                # Check if workflow failed
-                workflow_failed = workflow_result != 0
-                failure_info = get_workflow_failure_info()
-
-                if workflow_failed:
-                    print(f"Workflow execution failed with code {workflow_result}")
-                    if failure_info:
-                        print(f"  Failed at step {failure_info['step_num']}: {failure_info['step_name']} ({failure_info['reason']})")
-
-                # Get branch name
-                try:
-                    result = subprocess.run(
-                        ["git", "-C", "/app/repo", "rev-parse", "--abbrev-ref", "HEAD"],
-                        capture_output=True,
-                        text=True,
-                        check=True
-                    )
-                    branch_name = result.stdout.strip()
-                except Exception:
-                    branch_name = "main"
-
-                # Generate appropriate summary based on success/failure
-                if workflow_failed and failure_info:
-                    # Generate failure-aware summary
-                    summary = generate_failure_summary_with_claude(
-                        failed_step_name=failure_info['step_name'],
-                        failed_step_num=failure_info['step_num'],
-                        since_commit=initial_commit_hash
-                    )
-                    job_status = "ERROR"
-                else:
-                    # Generate success summary
-                    summary = generate_summary_with_claude(initial_commit_hash)
-                    job_status = "DONE"
-
-                print(f"Summary: {summary}")
-
-                # Parse org name from new repo URL
-                org_name, _ = parse_repo_info(new_repo_url)
-
-                # Mark job with appropriate status
-                mark_job_complete(
-                    api_url,
-                    bearer_token,
-                    job_id,
-                    summary,
-                    new_repo_name,
-                    org_name,
-                    branch_name,
-                    status=job_status
-                )
-
-            except Exception as e:
-                print(f"Error processing job {job_id}: {e}")
-                import traceback
-                traceback.print_exc()
-
-                # Try to mark job as ERROR if we have the necessary info
-                try:
-                    error_summary = f"Job failed due to unexpected error: {str(e)}"
-                    # Use variables if they were set, otherwise use defaults
-                    local_vars = locals()
-                    final_repo_name = local_vars.get('new_repo_name', "unknown")
-                    final_org_name = local_vars.get('org_name', "unknown")
-                    final_branch = local_vars.get('branch_name', "main")
-
-                    mark_job_complete(
-                        api_url,
-                        bearer_token,
-                        job_id,
-                        error_summary,
-                        final_repo_name,
-                        final_org_name,
-                        final_branch,
-                        status="ERROR"
-                    )
-                except Exception as mark_error:
-                    print(f"Failed to mark job as error: {mark_error}")
-
+            if not process_job(job_id, job_data, api_url, bearer_token, permissions_flag):
                 continue
 
         print(f"\nWaiting {check_interval} seconds until next check...")

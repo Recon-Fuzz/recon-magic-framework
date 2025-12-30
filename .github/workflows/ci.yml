@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+  docker-build:
+    name: Docker Build and Push
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Log in to Amazon ECR
+        run: |
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY }}
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build and Push Docker Image
+        timeout-minutes: 40
+        run: |
+          DOCKER_BUILDKIT=1 docker buildx build \
+            --progress=plain \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new \
+            --platform linux/amd64 \
+            -t ${{ secrets.ECR_REPOSITORY }}:latest . \
+            --push
+
+      - name: Update Docker Cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Terraform 1.6.x
+        run: |
+          wget https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
+          unzip terraform_1.6.6_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
+      - name: Validate
+        run: |
+          cd infrastructure
+          mv backend.production.tf backend.tf && rm backend.staging.tf
+          terraform init
+          terraform validate
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE }}
+          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU }}
+          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM }}
+          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL }}
+          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS }}
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [build-and-test, docker-build, validate]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Terraform 1.6.x
+        run: |
+          wget https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
+          unzip terraform_1.6.6_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
+      - name: Deploy
+        run: |
+          cd infrastructure
+          mv backend.production.tf backend.tf && rm backend.staging.tf
+          terraform init
+          terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE }}
+          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU }}
+          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM }}
+          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL }}
+          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS }}
