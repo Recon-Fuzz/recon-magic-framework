@@ -183,8 +183,9 @@
         {
           "operator": "eq",
           "value": 0,
-          "action": "CONTINUE",
-          "NOTE": "Echidna ran successfully, continuing workflow"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 13: Generate Functions to Cover",
+          "NOTE": "Echidna ran successfully, skip error handling and continue workflow"
         },
         {
           "operator": "neq",
@@ -403,8 +404,9 @@
         {
           "operator": "eq",
           "value": 0,
-          "action": "CONTINUE",
-          "NOTE": "Echidna ran successfully, continuing workflow"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 23: Evaluate Coverage",
+          "NOTE": "Echidna ran successfully, skip error handling and continue workflow"
         },
         {
           "operator": "neq",
