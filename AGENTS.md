@@ -66,16 +66,16 @@ Maximize code quality and development speed while minimizing long-term maintenan
 
 ### Job Dispatch Flow
 - Backend triggers a job by calling ECS RunTask with environment overrides:
-  - WORKER_API_URL (required): base backend API URL (ex: https://api.example.com/jobs)
+  - WORKER_API_URL (required): base backend API URL (ex: https://api.example.com)
   - WORKER_BEARER_TOKEN (required): backend auth token for callbacks
   - WORKER_JOB_ID (required when no payload): backend job identifier
-  - WORKER_JOB_PAYLOAD (optional): full job payload JSON (same shape as GET {api_url}/{job_id})
+  - WORKER_JOB_PAYLOAD (optional): full job payload JSON (same shape as GET {api_url}/jobs/{job_id})
   - WORKER_PERMISSIONS (optional): true to enable dangerous permissions
 - The task runs python runner.py, processes a single job, reports progress, and exits.
 
 ### Backend <-> Worker Contract
 Inputs:
-- The worker fetches job data from GET {WORKER_API_URL}/{WORKER_JOB_ID} unless WORKER_JOB_PAYLOAD is provided.
+- The worker fetches job data from GET {WORKER_API_URL}/jobs/{WORKER_JOB_ID} unless WORKER_JOB_PAYLOAD is provided.
 - Job data must include data.job, data.repoAccessData, and data.claudeAccessData as used by worker.py.
 
 Callbacks:
