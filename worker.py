@@ -450,6 +450,10 @@ def process_job(
             prompt = job_info.get("claudePromptCommand")
             model_type = job_info.get("modelType", "CLAUDE_CODE")
 
+            # Validate prompt before using it
+            if not isinstance(prompt, str) or not prompt.strip():
+                print("Error: Missing or empty 'claudePromptCommand' for directPrompt job; cannot create workflow.")
+                return False
             print(f"Direct Prompt Mode - Model: {model_type}")
             print(f"Prompt: {prompt[:100]}..." if len(prompt) > 100 else f"Prompt: {prompt}")
 
