@@ -483,6 +483,11 @@ def process_job(
         elif job_type == "relativeWorkflow":
             # Mode 3: Use workflow from .claude repo (legacy)
             workflow_name = job_info.get("workflowName")
+            
+            # Validate workflow_name before using it
+            if not workflow_name:
+                print("Error: workflowName is required for relativeWorkflow job type")
+                return False
 
             # Clone claude config for this mode
             if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
