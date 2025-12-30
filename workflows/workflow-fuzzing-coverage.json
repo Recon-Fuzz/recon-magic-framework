@@ -167,6 +167,7 @@
         "capture": true,
         "save_to": "magic/echidna-error-analysis.json"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
@@ -388,6 +389,7 @@
         "capture": true,
         "save_to": "magic/echidna-error-analysis.json"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },

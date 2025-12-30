@@ -27,6 +27,7 @@
         "capture": true,
         "save_to": "magic/echidna-error-analysis.json"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
@@ -43,14 +44,43 @@
         {
           "operator": "eq",
           "value": 0,
-          "action": "CONTINUE",
-          "NOTE": "Echidna ran successfully, continuing workflow"
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 13: Generate Functions to Cover",
+          "NOTE": "Echidna ran successfully, skip error handling and continue workflow"
         },
         {
           "operator": "neq",
           "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 12b: Check Error Type",
+          "NOTE": "Echidna failed, need to check error type"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 12b: Check Error Type",
+      "type": "decision",
+      "description": "Determine if error is compilation-related",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "requires_compilation_fix"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 12c: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
           "action": "STOP",
-          "NOTE": "Echidna failed, stopping workflow"
+          "NOTE": "Non-compilation error detected, stopping workflow"
         }
       ],
       "shouldCreateSummary": true,
