@@ -278,18 +278,14 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
     # Create summary
     summary = create_error_summary(error_type, error_details, exit_code)
 
-    # Determine return code based on error type
-    if error_type == "compilation":
-        return_code = 2  # Trigger compilation fix agent
-    elif error_type in ["setup", "rpc", "contract_not_found", "unknown"]:
-        return_code = 3  # Generate AI summary
-    else:
-        return_code = 1  # General failure
-
     if return_json:
+        # Workflow mode: Always return 0 if analysis completed successfully
+        # The JSON content indicates what was found; decision steps will route workflow
         print(json.dumps(summary, indent=2))
+        return 0
     else:
-        # Save error summary for downstream processing (standalone CLI usage)
+        # Standalone CLI mode: Use exit codes to signal error types directly
+        # Save error summary for downstream processing
         summary_file = "magic/echidna-error-analysis.json"
         os.makedirs("magic", exist_ok=True)
         with open(summary_file, 'w') as f:
@@ -302,10 +298,12 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
 
         if error_type == "compilation":
             print("🔧 Compilation error detected - triggering fix agent")
-        else:
+            return 2  # CLI: User can check exit code in scripts
+        elif error_type in ["setup", "rpc", "contract_not_found", "unknown", "unlinked_libraries"]:
             print("📋 Other error detected - generating AI summary")
-
-    return return_code
+            return 3  # CLI: Different exit code for non-compilation errors
+        else:
+            return 1  # CLI: General failure
 
 
 def main():
