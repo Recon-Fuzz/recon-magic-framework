@@ -145,7 +145,7 @@
       "name": "Step 11: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically and capture output",
-      "prompt": "(echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
+      "prompt": "(set -o pipefail; echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -366,7 +366,7 @@
       "name": "Step 21: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically and capture output",
-      "prompt": "(echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
+      "prompt": "(set -o pipefail; echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
