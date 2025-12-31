@@ -213,6 +213,7 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
         result = {
             "status": "success",
             "echidna_exit_code": 0,
+            "error_type": None,  # Explicitly set to None for success case
             "workflow_action": "continue",
             "message": "Echidna completed successfully",
             "requires_compilation_fix": 0

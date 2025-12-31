@@ -205,21 +205,21 @@
       "mode": "JSON_KEY_VALUE",
       "modeInfo": {
         "fileName": "magic/echidna-error-analysis.json",
-        "keyPath": "requires_compilation_fix"
+        "keyPath": "error_type"
       },
       "decision": [
         {
           "operator": "eq",
-          "value": 1,
+          "value": "compilation",
           "action": "JUMP_TO_STEP",
           "destinationStep": "Step 15: Fix Compilation Errors",
           "NOTE": "Compilation error detected, triggering fix agent"
         },
         {
-          "operator": "eq",
-          "value": 0,
+          "operator": "neq",
+          "value": "compilation",
           "action": "STOP",
-          "NOTE": "Non-compilation error detected, stopping workflow"
+          "NOTE": "Non-compilation error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
         }
       ],
       "shouldCreateSummary": true,
@@ -426,21 +426,21 @@
       "mode": "JSON_KEY_VALUE",
       "modeInfo": {
         "fileName": "magic/echidna-error-analysis.json",
-        "keyPath": "requires_compilation_fix"
+        "keyPath": "error_type"
       },
       "decision": [
         {
           "operator": "eq",
-          "value": 1,
+          "value": "compilation",
           "action": "JUMP_TO_STEP",
           "destinationStep": "Step 28: Fix Compilation Errors",
           "NOTE": "Compilation error detected, triggering fix agent"
         },
         {
-          "operator": "eq",
-          "value": 0,
+          "operator": "neq",
+          "value": "compilation",
           "action": "STOP",
-          "NOTE": "Non-compilation error detected, stopping workflow"
+          "NOTE": "Non-compilation error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
         }
       ],
       "shouldCreateSummary": true,

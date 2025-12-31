@@ -5,7 +5,7 @@ Decision execution module for workflow steps.
 import os
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -45,7 +45,7 @@ class Model(BaseModel):
 class Decision(BaseModel):
     """Decision configuration for DecisionStep."""
     operator: Literal["eq", "gt", "lt", "gte", "lte", "neq"]
-    value: float
+    value: Union[float, str]  # Support both numeric and string comparisons
     action: Literal["CONTINUE", "STOP", "REPEAT_PREVIOUS_STEP", "JUMP_TO_STEP"]
     destinationStep: str | None = None  # Required when action is JUMP_TO_STEP
 
@@ -63,13 +63,13 @@ class DecisionStep(BaseModel):
     decision: list[Decision]
 
 
-def evaluate_decisions(decisions: list[Decision], actual_value: float, debug: bool = True) -> tuple[str, str | None]:
+def evaluate_decisions(decisions: list[Decision], actual_value: Union[float, str], debug: bool = True) -> tuple[str, str | None]:
     """
     Evaluate a list of decisions against an actual value.
 
     Args:
         decisions: List of Decision objects to evaluate
-        actual_value: The actual value to compare against
+        actual_value: The actual value to compare against (can be numeric or string)
         debug: Whether to print debug information
 
     Returns:
@@ -83,18 +83,49 @@ def evaluate_decisions(decisions: list[Decision], actual_value: float, debug: bo
 
         matched = False
 
-        if decision.operator == "eq" and actual_value == decision.value:
-            matched = True
-        elif decision.operator == "neq" and actual_value != decision.value:
-            matched = True
-        elif decision.operator == "gt" and actual_value > decision.value:
-            matched = True
-        elif decision.operator == "lt" and actual_value < decision.value:
-            matched = True
-        elif decision.operator == "gte" and actual_value >= decision.value:
-            matched = True
-        elif decision.operator == "lte" and actual_value <= decision.value:
-            matched = True
+        # Handle string comparisons
+        if isinstance(actual_value, str) and isinstance(decision.value, str):
+            if decision.operator == "eq" and actual_value == decision.value:
+                matched = True
+            elif decision.operator == "neq" and actual_value != decision.value:
+                matched = True
+            # String comparison operators like gt, lt don't make sense in most contexts
+            # but we could support them for lexicographic comparisons if needed
+            elif decision.operator in ["gt", "lt", "gte", "lte"]:
+                print(f"⚠ Warning: Using {decision.operator} with strings, using lexicographic comparison")
+                if decision.operator == "gt" and actual_value > decision.value:
+                    matched = True
+                elif decision.operator == "lt" and actual_value < decision.value:
+                    matched = True
+                elif decision.operator == "gte" and actual_value >= decision.value:
+                    matched = True
+                elif decision.operator == "lte" and actual_value <= decision.value:
+                    matched = True
+        # Handle numeric comparisons
+        else:
+            # Try to convert both to float for comparison
+            try:
+                actual_num = float(actual_value) if isinstance(actual_value, str) else actual_value
+                decision_num = float(decision.value) if isinstance(decision.value, str) else decision.value
+
+                if decision.operator == "eq" and actual_num == decision_num:
+                    matched = True
+                elif decision.operator == "neq" and actual_num != decision_num:
+                    matched = True
+                elif decision.operator == "gt" and actual_num > decision_num:
+                    matched = True
+                elif decision.operator == "lt" and actual_num < decision_num:
+                    matched = True
+                elif decision.operator == "gte" and actual_num >= decision_num:
+                    matched = True
+                elif decision.operator == "lte" and actual_num <= decision_num:
+                    matched = True
+            except (ValueError, TypeError):
+                # If we can't convert to numbers, treat as string comparison
+                if decision.operator == "eq" and str(actual_value) == str(decision.value):
+                    matched = True
+                elif decision.operator == "neq" and str(actual_value) != str(decision.value):
+                    matched = True
 
         if matched:
             if debug:
@@ -235,13 +266,12 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
 
             print(f"  Key path '{json_key_path}' = {value}")
 
-            # Convert to float for comparison
-            numeric_value = float(value)
-
-            action, destination = evaluate_decisions(step.decision, numeric_value)
+            # Keep value as-is (string or number) for comparison
+            # The evaluate_decisions function now handles both types
+            action, destination = evaluate_decisions(step.decision, value)
             return (SUCCESS, action, destination)
 
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
             print(f"⚠ Error reading JSON or accessing key '{json_key_path}': {e}, defaulting to CONTINUE")
             return (SUCCESS, "CONTINUE", None)
 
