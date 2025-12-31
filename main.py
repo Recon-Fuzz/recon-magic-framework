@@ -281,7 +281,7 @@ def execute_step(
     return_code, action, destination = None, None, None
 
     # Check if we've hit the loop hardcap for decision steps
-    if isinstance(step, DecisionStep) and execution_count > loop_hardcap:
+    if isinstance(step, DecisionStep) and execution_count >= loop_hardcap:
         print(f"⚠️  Loop hardcap ({loop_hardcap}) reached for step {step_num}, forcing CONTINUE")
         return_code, action, destination = (SUCCESS, "CONTINUE", None)
     else:
