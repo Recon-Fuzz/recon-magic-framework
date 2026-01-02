@@ -1,0 +1,519 @@
+{
+  "name": "Fuzzing Coverage Workflow",
+  "steps": [
+    {
+      "name": "Step 0: Build with Forge",
+      "type": "task",
+      "description": "Run forge build to compile the project",
+      "prompt": "forge build",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 1: Extract Target Functions",
+      "type": "task",
+      "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
+      "prompt": "extract-target-functions --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/target-functions.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 2: Build Artifacts",
+      "type": "task",
+      "description": "Generate Forge build artifacts with build-info",
+      "prompt": "forge clean && forge build --build-info",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 3: Filter Build Artifacts",
+      "type": "task",
+      "description": "Filter build-info to remove sources without AST data (foundry-pp files)",
+      "prompt": "filter-build-info $(find out/build-info -name '*.json' -not -name '*.filtered.json' | head -1)",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 4: Extract Context with sol-expand",
+      "type": "task",
+      "description": "Run sol-context tool to extract context from filtered build artifacts",
+      "prompt": "npx -y sol-context@latest",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 5: Identifying Meaningful Values",
+      "type": "task",
+      "description": "Identify values that are useful for clamping target function handlers with",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify values useful for clamping.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 6: Creating Clamped Handlers",
+      "type": "task",
+      "description": "Implement clamped function handlers to achieve full coverage on the system setup",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to implement clamped handlers",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 7: Generate Non-Reverting Paths",
+      "type": "task",
+      "description": "Extract non-reverting paths through target functions and move to magic directory",
+      "prompt": "forge clean && forge build --build-info && npx -y recon-generate@latest paths && mkdir -p magic && mv recon-paths.json magic/",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 8: Identifying Function Call Sequences",
+      "type": "task",
+      "description": "Identify necessary function call sequences and prerequisites for target functions",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-1.md. Exclusively run the setup-phase-1 agent to identify function call sequences",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 9: Merge Paths and Prerequisites",
+      "type": "task",
+      "description": "Merge paths and prerequisites into a unified structure for each target function",
+      "prompt": "merge-paths-prerequisites --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/merged-paths-prerequisites.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 10: Creating Shortcut Handlers",
+      "type": "task",
+      "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to implement shortcut functions",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 11: Run Echidna Programmatically",
+      "type": "task",
+      "description": "Run Echidna programmatically and capture output",
+      "prompt": "(set -o pipefail; echidna test/recon/CryticTester.sol --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "allowFailure": true,
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 12: Analyze Echidna Output",
+      "type": "task",
+      "description": "Analyze Echidna execution results and determine next action",
+      "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-error-analysis.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 13: Handle Echidna Results",
+      "type": "decision",
+      "description": "Take action based on Echidna exit code",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "exit_code"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 15: Generate Functions to Cover",
+          "NOTE": "Echidna ran successfully, continue workflow"
+        },
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 14: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 2,
+          "action": "STOP",
+          "NOTE": "Other error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 14: Fix Compilation Errors",
+      "type": "task",
+      "description": "Resolve compilation errors in the fuzzing harness",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 11 to retry Echidna.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true,
+      "nextStep": "Step 11: Run Echidna Programmatically"
+    },
+    {
+      "name": "Step 15: Generate Functions to Cover",
+      "type": "task",
+      "description": "Generate list of functions that need coverage and move to magic directory",
+      "prompt": "forge clean && forge build --build-info && npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 16: Evaluate Coverage",
+      "type": "task",
+      "description": "Evaluate coverage for functions in recon-coverage.json",
+      "prompt": "covg-eval magic/ echidna/ --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 17: Score and Sort by Complexity",
+      "type": "task",
+      "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
+      "prompt": "covg-scoring --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 18: Create Latest Coverage Link",
+      "type": "task",
+      "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
+      "prompt": "get-latest-coverage --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-latest.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 19: Initial Check of Coverage",
+      "type": "decision",
+      "description": "Determine if coverage needs to be improved",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/functions-missing-covg-latest.json",
+        "keyPath": "summary.functions_with_missing_coverage"
+      },
+      "decision": [
+        {
+          "operator": "gt",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 20: Function Grouping and Prioritization",
+          "NOTE": "Functions need coverage improvement"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 32: Workflow Complete",
+          "NOTE": "Full coverage achieved, skip to completion"
+        }
+      ],
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 20: Function Grouping and Prioritization",
+      "type": "task",
+      "description": "Group uncovered functions and prioritize how they should be fixed using the functions-missing-covg file",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and prioritize how they should be fixed in the functions-missing-covg file",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 21: Analyzing Coverage Gaps",
+      "type": "task",
+      "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to identify the root cause for coverage gaps based on the analysis field in the functions-missing-covg file",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 22: Implement Coverage Solutions",
+      "type": "task",
+      "description": "Implement solutions to improve coverage based on the analysis from coverage-phase-4",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to implement solutions that will improve coverage",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 23: Run Echidna Programmatically",
+      "type": "task",
+      "description": "Run Echidna programmatically and capture output",
+      "prompt": "(set -o pipefail; echidna test/recon/CryticTester.sol --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "allowFailure": true,
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 24: Analyze Echidna Output",
+      "type": "task",
+      "description": "Analyze Echidna execution results and determine next action",
+      "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-error-analysis.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 25: Handle Echidna Results",
+      "type": "decision",
+      "description": "Take action based on Echidna exit code",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "exit_code"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 27: Evaluate Coverage",
+          "NOTE": "Echidna ran successfully, continue workflow"
+        },
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 26: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 2,
+          "action": "STOP",
+          "NOTE": "Other error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 26: Fix Compilation Errors",
+      "type": "task",
+      "description": "Resolve compilation errors in the fuzzing harness",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 21 to retry Echidna.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true,
+      "nextStep": "Step 23: Run Echidna Programmatically"
+    },
+    {
+      "name": "Step 27: Evaluate Coverage",
+      "type": "task",
+      "description": "Run coverage evaluation tool",
+      "prompt": "covg-eval magic/ echidna/ --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 28: Score and Sort by Complexity",
+      "type": "task",
+      "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
+      "prompt": "covg-scoring --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 29: Create Latest Coverage Link",
+      "type": "task",
+      "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
+      "prompt": "get-latest-coverage --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-latest.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 30: Coverage Improvement Decision Check",
+      "type": "decision",
+      "description": "Check if coverage needs to be improved",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/functions-missing-covg-latest.json",
+        "keyPath": "summary.functions_with_missing_coverage"
+      },
+      "decision": [
+        {
+          "operator": "gt",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 20: Function Grouping and Prioritization",
+          "NOTE": "Loop back to Step 18 to continue with coverage improvement"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE",
+          "NOTE": "Full coverage achieved, proceed to workflow completion"
+        }
+      ],
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 31: Dispatch Fuzzing Job",
+      "type": "task",
+      "description": "Queue a 10 MLN TestEchidna fuzzing job with the backend.",
+      "model": {
+        "type": "DISPATCH_FUZZING_JOB",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 32: Workflow Complete",
+      "type": "task",
+      "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
+      "prompt": "echo 'Fuzzing coverage workflow completed successfully'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    }
+  ]
+}

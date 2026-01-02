@@ -1,0 +1,18 @@
+[project]
+name = "update-coverage-groups"
+version = "0.1.0"
+description = "Update coverage groups by removing newly covered functions and appending new uncovered ones"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Recon Magic Framework", email = "contact@recon.com" }
+]
+dependencies = []
+
+[project.scripts]
+update-coverage-groups = "update_coverage_groups:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

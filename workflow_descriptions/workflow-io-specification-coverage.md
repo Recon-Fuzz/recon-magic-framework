@@ -570,7 +570,7 @@ Decision steps need to check a specific file, but the timestamped files have unp
 **Decision Logic:**
 - Reads: `summary.functions_with_missing_coverage` key
 - If value > 0: Jump to Step 21 (Function Grouping and Prioritization)
-- If value = 0: Jump to Step 34 (Workflow Complete)
+- If value = 0: Jump to Step 35 (Workflow Complete)
 
 ---
 
@@ -794,7 +794,75 @@ Same as Step 19 - creates an up-to-date `functions-missing-covg-latest.json` fil
 
 ---
 
-## Step 32: Coverage Improvement Decision Check
+## Step 32: Update Coverage Groups
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- File: `magic/functions-missing-covg-{timestamp}.json` (latest non-grouped coverage file)
+- File: `magic/functions-missing-covg-grouped-{timestamp}.json` (previous grouped file, if exists)
+
+**Command:**
+```bash
+update-coverage-groups
+```
+
+**Outputs:**
+- File: `magic/functions-missing-covg-grouped-{timestamp}.json` (updated grouped file)
+
+**Output JSON Structure:**
+```json
+{
+  "timestamp": "1767307439",
+  "lcov_file": "echidna/covered.1767307439.lcov",
+  "missing_coverage": [
+    {
+      "group_name": "Authorization Issues",
+      "group_description": "Functions blocked by authorization checks",
+      "functions": [
+        {
+          "function": "borrow",
+          "contract": "Morpho",
+          "analysis": "Previously analyzed - still uncovered..."
+        }
+      ]
+    },
+    {
+      "function": "newUncoveredFunction",
+      "contract": "Contract",
+      "source_file": "src/Contract.sol",
+      "uncovered_code": { /* ... */ }
+      // Note: New function without group structure or analysis
+    }
+  ],
+  "summary": {
+    "functions_analyzed": 186,
+    "functions_missing_coverage": 19,
+    "functions_removed_now_covered": 0,
+    "new_uncovered_functions": 0,
+    "functions_retained_still_uncovered": 19
+  }
+}
+```
+
+**Description:**
+This tool maintains the grouped coverage file by comparing the latest non-grouped coverage file with the previous grouped file to:
+
+1. **Remove functions that are now covered**: Functions that exist in the grouped file but not in the latest coverage file (they gained 100% coverage)
+2. **Retain functions still uncovered**: Functions that exist in both files (still have coverage gaps)
+3. **Append new uncovered functions**: Functions that exist in the latest coverage but not in the grouped file (newly discovered gaps)
+
+The tool preserves the group structure and analysis fields for retained functions while appending new ungrouped functions at the end of the `missing_coverage` array. These new functions will be grouped and analyzed by the coverage-phase-3 agent in the next iteration.
+
+**Key Features:**
+- Automatically finds the latest files by timestamp
+- Excludes grouped files with the same timestamp to avoid self-comparison
+- Preserves existing group structure and analysis
+- Updates summary statistics with accurate counts
+
+---
+
+## Step 33: Coverage Improvement Decision Check
 
 **Type:** Decision (JSON_KEY_VALUE)
 
@@ -804,11 +872,11 @@ Same as Step 19 - creates an up-to-date `functions-missing-covg-latest.json` fil
 **Decision Logic:**
 - Reads: `summary.functions_with_missing_coverage` key
 - If value > 0: Jump to Step 21 (Function Grouping and Prioritization - loop)
-- If value = 0: Continue to Step 33
+- If value = 0: Continue to Step 34
 
 ---
 
-## Step 33: Dispatch Fuzzing Job
+## Step 34: Dispatch Fuzzing Job
 
 **Type:** Task (DISPATCH_FUZZING_JOB)
 
@@ -832,7 +900,7 @@ The backend will run:
 
 ---
 
-## Step 34: Workflow Complete
+## Step 35: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
