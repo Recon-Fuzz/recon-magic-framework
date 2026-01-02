@@ -466,7 +466,19 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 30: Coverage Improvement Decision Check",
+      "name": "Step 30: Update Coverage Groups",
+      "type": "task",
+      "description": "Update grouped coverage file by removing now-covered functions and appending new uncovered ones",
+      "prompt": "update-coverage-groups",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 31: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
       "mode": "JSON_KEY_VALUE",
@@ -493,7 +505,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 31: Dispatch Fuzzing Job",
+      "name": "Step 32: Dispatch Fuzzing Job",
       "type": "task",
       "description": "Queue a 10 MLN TestEchidna fuzzing job with the backend.",
       "model": {
@@ -504,7 +516,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 32: Workflow Complete",
+      "name": "Step 33: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",
