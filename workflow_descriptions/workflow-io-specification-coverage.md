@@ -296,20 +296,89 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 12: Echidna Output Check
+## Step 12: Analyze Echidna Output
 
-**Type:** Decision (FILE_EXISTS)
+**Type:** Task (PROGRAM)
 
 **Inputs:**
-- Pattern: `echidna/*.txt`
+- File: `echidna-exit-code.txt` (exit code from Step 11)
+- File: `echidna-output.log` (Echidna execution log)
 
-**Decision Logic:**
-- If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 13
+**Command:**
+```bash
+EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json
+```
+
+**Outputs:**
+- File: `magic/echidna-error-analysis.json`
+
+**Output JSON Structure:**
+```json
+{
+  "status": "success" | "error",
+  "exit_code": 0,
+  "workflow_action": "continue" | "stop",
+  "message": "Description of result",
+  "error_type": "compilation" | "unlinked_libraries" | "setup" | "rpc" | "contract_not_found" | "unknown",
+  "error_details": {
+    "error_lines": ["line1", "line2"],
+    "context": "Error context",
+    "suggested_action": "Action to take",
+    "suggested_fix": "Fix instructions",
+    "common_causes": ["cause1", "cause2"]
+  },
+  "description": "Human-readable description",
+  "timestamp": "2025-12-30T11:26:23.871017"
+}
+```
+
+**Description:**
+This tool analyzes Echidna's execution output to categorize errors and determine the appropriate workflow action. It detects:
+- **Compilation errors**: Triggers compilation fix agent
+- **Unlinked libraries**: Provides library linking guidance
+- **Setup failures**: Documents setUp() issues
+- **RPC errors**: Missing RPC configuration
+- **Contract not found**: Contract location issues
+- **Unknown errors**: Unrecognized patterns
+
+The tool returns exit code 0 in workflow mode (with `--return-json`), allowing the JSON content to communicate findings to decision steps rather than using exit codes.
 
 ---
 
-## Step 13: Generate Functions to Cover
+## Step 13: Handle Echidna Results
+
+**Type:** Decision (JSON_KEY_VALUE)
+
+**Inputs:**
+- File: `magic/echidna-error-analysis.json`
+
+**Decision Logic:**
+- Reads: `exit_code` key
+- If value = 0: Jump to Step 16 (Echidna succeeded, continue workflow)
+- If value ≠ 0: Jump to Step 14 (Echidna failed, check error type)
+
+---
+
+
+## Step 15: Fix Compilation Errors
+
+**Type:** Task (OPENCODE - Agent)
+
+**Inputs:**
+- Agent: `./.opencode/agent/fix-compilation-errors.md`
+- File: `magic/echidna-error-analysis.json` (error details)
+
+**Outputs:**
+- Fixed Solidity source files or configuration
+
+**Next Step:** Step 11 (Retry Echidna after fixing compilation errors)
+
+**Description:**
+This agent analyzes compilation errors from the error analysis file and attempts to fix them automatically. After fixes are applied, the workflow jumps back to Step 11 to retry Echidna execution.
+
+---
+
+## Step 16: Generate Functions to Cover
 
 **Type:** Task (PROGRAM)
 
@@ -338,7 +407,7 @@ This tool generates a JSON file containing line ranges per source file that need
 
 ---
 
-## Step 14: Evaluate Coverage
+## Step 17: Evaluate Coverage
 
 **Type:** Task (PROGRAM)
 
@@ -396,13 +465,13 @@ This tool parses the `recon-coverage.json` line ranges, identifies which functio
 
 ---
 
-## Step 15: Score and Sort by Complexity
+## Step 18: Score and Sort by Complexity
 
 **Type:** Task (PROGRAM)
 
 **Inputs:**
-- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 14)
-- File: `magic/cyclomatic-complexity.json` (from Step 15)
+- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 17)
+- File: `magic/cyclomatic-complexity.json` (auto-generated if missing)
 
 **Command:**
 ```bash
@@ -459,7 +528,7 @@ This tool adds cyclomatic complexity scores to each function in the missing cove
 
 ---
 
-## Step 16: Create Latest Coverage Link
+## Step 19: Create Latest Coverage Link
 
 **Type:** Task (PROGRAM)
 
@@ -491,7 +560,7 @@ Decision steps need to check a specific file, but the timestamped files have unp
 
 ---
 
-## Step 17: Initial Check of Coverage
+## Step 20: Initial Check of Coverage
 
 **Type:** Decision (JSON_KEY_VALUE)
 
@@ -500,12 +569,12 @@ Decision steps need to check a specific file, but the timestamped files have unp
 
 **Decision Logic:**
 - Reads: `summary.functions_with_missing_coverage` key
-- If value > 0: Jump to Step 18 (Function Grouping and Prioritization)
-- If value = 0: Jump to Step 28 (Workflow Complete)
+- If value > 0: Jump to Step 21 (Function Grouping and Prioritization)
+- If value = 0: Jump to Step 35 (Workflow Complete)
 
 ---
 
-## Step 18: Function Grouping and Prioritization
+## Step 21: Function Grouping and Prioritization
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -521,7 +590,7 @@ This agent groups uncovered functions by their state dependencies and prioritize
 
 ---
 
-## Step 19: Analyzing Coverage Gaps
+## Step 22: Analyzing Coverage Gaps
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -580,7 +649,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 20: Implementing Coverage Fixes
+## Step 23: Implementing Coverage Fixes
 
 **Type:** Task (OPENCODE - Agent)
 
@@ -597,7 +666,7 @@ The `"analysis"` field is a string containing:
 
 ---
 
-## Step 21: Run Echidna Programmatically (Iteration)
+## Step 24: Run Echidna Programmatically (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -615,20 +684,56 @@ echidna . --contract CryticTester --config echidna.yaml --format text --timeout 
 
 ---
 
-## Step 22: Echidna Output Check (Iteration)
+## Step 25: Analyze Echidna Output (Iteration)
 
-**Type:** Decision (FILE_EXISTS)
+**Type:** Task (PROGRAM)
 
 **Inputs:**
-- Pattern: `echidna/*.txt`
+- File: `echidna-exit-code.txt` (exit code from Step 24)
+- File: `echidna-output.log` (Echidna execution log)
 
-**Decision Logic:**
-- If file does not exist (value = 0): STOP workflow (Echidna failed)
-- If file exists (value = 1): Continue to Step 23
+**Command:**
+```bash
+EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json
+```
+
+**Outputs:**
+- File: `magic/echidna-error-analysis.json`
+- Structure: Same as Step 12 output
 
 ---
 
-## Step 23: Evaluate Coverage (Iteration)
+## Step 26: Handle Echidna Results (Iteration)
+
+**Type:** Decision (JSON_KEY_VALUE)
+
+**Inputs:**
+- File: `magic/echidna-error-analysis.json`
+
+**Decision Logic:**
+- Reads: `exit_code` key
+- If value = 0: Jump to Step 29 (Echidna succeeded, continue workflow)
+- If value ≠ 0: Jump to Step 27 (Echidna failed, check error type)
+
+---
+
+
+## Step 28: Fix Compilation Errors (Iteration)
+
+**Type:** Task (OPENCODE - Agent)
+
+**Inputs:**
+- Agent: `./.opencode/agent/fix-compilation-errors.md`
+- File: `magic/echidna-error-analysis.json` (error details)
+
+**Outputs:**
+- Fixed Solidity source files or configuration
+
+**Next Step:** Step 24 (Retry Echidna after fixing compilation errors)
+
+---
+
+## Step 29: Evaluate Coverage (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -643,16 +748,16 @@ covg-eval magic/ echidna/ --return-json
 
 **Outputs:**
 - File: `magic/functions-missing-covg-{timestamp}.json`
-- Structure: Same as Step 14 output
+- Structure: Same as Step 17 output
 
 ---
 
-## Step 24: Score and Sort by Complexity (Iteration)
+## Step 30: Score and Sort by Complexity (Iteration)
 
 **Type:** Task (PROGRAM)
 
 **Inputs:**
-- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 23)
+- File: `magic/functions-missing-covg-{timestamp}.json` (from Step 29)
 - File: `magic/cyclomatic-complexity.json` (auto-generated if missing)
 
 **Command:**
@@ -662,14 +767,14 @@ covg-scoring --return-json
 
 **Outputs:**
 - File: `magic/functions-missing-covg-{timestamp}.json` (updated with complexity scores and sorted)
-- Structure: Same as Step 15 output
+- Structure: Same as Step 18 output
 
 **Description:**
 Adds cyclomatic complexity scores to the updated missing coverage functions and re-sorts by complexity to prioritize the next iteration of coverage fixes.
 
 ---
 
-## Step 25: Create Latest Coverage Link (Iteration)
+## Step 31: Create Latest Coverage Link (Iteration)
 
 **Type:** Task (PROGRAM)
 
@@ -685,11 +790,79 @@ get-latest-coverage --return-json
 - File: `magic/functions-missing-covg-latest.json`
 
 **Description:**
-Same as Step 16 - creates an up-to-date `functions-missing-covg-latest.json` file with the latest coverage data after the iteration, so Step 26 can check the current status.
+Same as Step 19 - creates an up-to-date `functions-missing-covg-latest.json` file with the latest coverage data after the iteration, so Step 32 can check the current status.
 
 ---
 
-## Step 26: Coverage Improvement Decision Check
+## Step 32: Update Coverage Groups
+
+**Type:** Task (PROGRAM)
+
+**Inputs:**
+- File: `magic/functions-missing-covg-{timestamp}.json` (latest non-grouped coverage file)
+- File: `magic/functions-missing-covg-grouped-{timestamp}.json` (previous grouped file, if exists)
+
+**Command:**
+```bash
+update-coverage-groups
+```
+
+**Outputs:**
+- File: `magic/functions-missing-covg-grouped-{timestamp}.json` (updated grouped file)
+
+**Output JSON Structure:**
+```json
+{
+  "timestamp": "1767307439",
+  "lcov_file": "echidna/covered.1767307439.lcov",
+  "missing_coverage": [
+    {
+      "group_name": "Authorization Issues",
+      "group_description": "Functions blocked by authorization checks",
+      "functions": [
+        {
+          "function": "borrow",
+          "contract": "Morpho",
+          "analysis": "Previously analyzed - still uncovered..."
+        }
+      ]
+    },
+    {
+      "function": "newUncoveredFunction",
+      "contract": "Contract",
+      "source_file": "src/Contract.sol",
+      "uncovered_code": { /* ... */ }
+      // Note: New function without group structure or analysis
+    }
+  ],
+  "summary": {
+    "functions_analyzed": 186,
+    "functions_missing_coverage": 19,
+    "functions_removed_now_covered": 0,
+    "new_uncovered_functions": 0,
+    "functions_retained_still_uncovered": 19
+  }
+}
+```
+
+**Description:**
+This tool maintains the grouped coverage file by comparing the latest non-grouped coverage file with the previous grouped file to:
+
+1. **Remove functions that are now covered**: Functions that exist in the grouped file but not in the latest coverage file (they gained 100% coverage)
+2. **Retain functions still uncovered**: Functions that exist in both files (still have coverage gaps)
+3. **Append new uncovered functions**: Functions that exist in the latest coverage but not in the grouped file (newly discovered gaps)
+
+The tool preserves the group structure and analysis fields for retained functions while appending new ungrouped functions at the end of the `missing_coverage` array. These new functions will be grouped and analyzed by the coverage-phase-3 agent in the next iteration.
+
+**Key Features:**
+- Automatically finds the latest files by timestamp
+- Excludes grouped files with the same timestamp to avoid self-comparison
+- Preserves existing group structure and analysis
+- Updates summary statistics with accurate counts
+
+---
+
+## Step 33: Coverage Improvement Decision Check
 
 **Type:** Decision (JSON_KEY_VALUE)
 
@@ -698,12 +871,12 @@ Same as Step 16 - creates an up-to-date `functions-missing-covg-latest.json` fil
 
 **Decision Logic:**
 - Reads: `summary.functions_with_missing_coverage` key
-- If value > 0: Jump to Step 18 (Function Grouping and Prioritization - loop)
-- If value = 0: Continue to Step 27
+- If value > 0: Jump to Step 21 (Function Grouping and Prioritization - loop)
+- If value = 0: Continue to Step 34
 
 ---
 
-## Step 27: Dispatch Fuzzing Job
+## Step 34: Dispatch Fuzzing Job
 
 **Type:** Task (DISPATCH_FUZZING_JOB)
 
@@ -727,7 +900,7 @@ The backend will run:
 
 ---
 
-## Step 28: Workflow Complete
+## Step 35: Workflow Complete
 
 **Type:** Task (PROGRAM)
 
