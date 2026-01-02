@@ -173,60 +173,39 @@
     {
       "name": "Step 13: Handle Echidna Results",
       "type": "decision",
-      "description": "Take action based on Echidna analysis results",
+      "description": "Take action based on Echidna exit code",
       "mode": "JSON_KEY_VALUE",
       "modeInfo": {
         "fileName": "magic/echidna-error-analysis.json",
-        "keyPath": "echidna_exit_code"
+        "keyPath": "exit_code"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 16: Generate Functions to Cover",
-          "NOTE": "Echidna ran successfully, skip error handling and continue workflow"
+          "destinationStep": "Step 15: Generate Functions to Cover",
+          "NOTE": "Echidna ran successfully, continue workflow"
         },
         {
-          "operator": "neq",
-          "value": 0,
+          "operator": "eq",
+          "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 14: Check Error Type",
-          "NOTE": "Echidna failed, need to check error type"
+          "destinationStep": "Step 14: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 2,
+          "action": "STOP",
+          "NOTE": "Other error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 14: Check Error Type",
-      "type": "decision",
-      "description": "Determine if error is compilation-related",
-      "mode": "JSON_KEY_VALUE",
-      "modeInfo": {
-        "fileName": "magic/echidna-error-analysis.json",
-        "keyPath": "error_type"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": "compilation",
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 15: Fix Compilation Errors",
-          "NOTE": "Compilation error detected, triggering fix agent"
-        },
-        {
-          "operator": "neq",
-          "value": "compilation",
-          "action": "STOP",
-          "NOTE": "Non-compilation error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
-        }
-      ],
-      "shouldCreateSummary": true,
-      "shouldCommitChanges": false
-    },
-    {
-      "name": "Step 15: Fix Compilation Errors",
+      "name": "Step 14: Fix Compilation Errors",
       "type": "task",
       "description": "Resolve compilation errors in the fuzzing harness",
       "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 11 to retry Echidna.",
@@ -239,7 +218,7 @@
       "nextStep": "Step 11: Run Echidna Programmatically"
     },
     {
-      "name": "Step 16: Generate Functions to Cover",
+      "name": "Step 15: Generate Functions to Cover",
       "type": "task",
       "description": "Generate list of functions that need coverage and move to magic directory",
       "prompt": "forge clean && forge build --build-info && npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/",
@@ -251,7 +230,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 17: Evaluate Coverage",
+      "name": "Step 16: Evaluate Coverage",
       "type": "task",
       "description": "Evaluate coverage for functions in recon-coverage.json",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -267,7 +246,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 18: Score and Sort by Complexity",
+      "name": "Step 17: Score and Sort by Complexity",
       "type": "task",
       "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
       "prompt": "covg-scoring --return-json",
@@ -283,7 +262,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 19: Create Latest Coverage Link",
+      "name": "Step 18: Create Latest Coverage Link",
       "type": "task",
       "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
       "prompt": "get-latest-coverage --return-json",
@@ -299,7 +278,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 20: Initial Check of Coverage",
+      "name": "Step 19: Initial Check of Coverage",
       "type": "decision",
       "description": "Determine if coverage needs to be improved",
       "mode": "JSON_KEY_VALUE",
@@ -312,14 +291,14 @@
           "operator": "gt",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 21: Function Grouping and Prioritization",
+          "destinationStep": "Step 20: Function Grouping and Prioritization",
           "NOTE": "Functions need coverage improvement"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 34: Workflow Complete",
+          "destinationStep": "Step 32: Workflow Complete",
           "NOTE": "Full coverage achieved, skip to completion"
         }
       ],
@@ -327,7 +306,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 21: Function Grouping and Prioritization",
+      "name": "Step 20: Function Grouping and Prioritization",
       "type": "task",
       "description": "Group uncovered functions and prioritize how they should be fixed using the functions-missing-covg file",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and prioritize how they should be fixed in the functions-missing-covg file",
@@ -339,7 +318,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 22: Analyzing Coverage Gaps",
+      "name": "Step 21: Analyzing Coverage Gaps",
       "type": "task",
       "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to identify the root cause for coverage gaps based on the analysis field in the functions-missing-covg file",
@@ -351,7 +330,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 23: Implement Coverage Solutions",
+      "name": "Step 22: Implement Coverage Solutions",
       "type": "task",
       "description": "Implement solutions to improve coverage based on the analysis from coverage-phase-4",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to implement solutions that will improve coverage",
@@ -363,7 +342,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 24: Run Echidna Programmatically",
+      "name": "Step 23: Run Echidna Programmatically",
       "type": "task",
       "description": "Run Echidna programmatically and capture output",
       "prompt": "(set -o pipefail; echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
@@ -376,7 +355,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 25: Analyze Echidna Output",
+      "name": "Step 24: Analyze Echidna Output",
       "type": "task",
       "description": "Analyze Echidna execution results and determine next action",
       "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
@@ -392,62 +371,41 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 26: Handle Echidna Results",
+      "name": "Step 25: Handle Echidna Results",
       "type": "decision",
-      "description": "Take action based on Echidna analysis results",
+      "description": "Take action based on Echidna exit code",
       "mode": "JSON_KEY_VALUE",
       "modeInfo": {
         "fileName": "magic/echidna-error-analysis.json",
-        "keyPath": "echidna_exit_code"
+        "keyPath": "exit_code"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 29: Evaluate Coverage",
-          "NOTE": "Echidna ran successfully, skip error handling and continue workflow"
+          "destinationStep": "Step 27: Evaluate Coverage",
+          "NOTE": "Echidna ran successfully, continue workflow"
         },
         {
-          "operator": "neq",
-          "value": 0,
+          "operator": "eq",
+          "value": 1,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 27: Check Error Type",
-          "NOTE": "Echidna failed, need to check error type"
+          "destinationStep": "Step 26: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 2,
+          "action": "STOP",
+          "NOTE": "Other error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 27: Check Error Type",
-      "type": "decision",
-      "description": "Determine if error is compilation-related",
-      "mode": "JSON_KEY_VALUE",
-      "modeInfo": {
-        "fileName": "magic/echidna-error-analysis.json",
-        "keyPath": "error_type"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": "compilation",
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 28: Fix Compilation Errors",
-          "NOTE": "Compilation error detected, triggering fix agent"
-        },
-        {
-          "operator": "neq",
-          "value": "compilation",
-          "action": "STOP",
-          "NOTE": "Non-compilation error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
-        }
-      ],
-      "shouldCreateSummary": true,
-      "shouldCommitChanges": false
-    },
-    {
-      "name": "Step 28: Fix Compilation Errors",
+      "name": "Step 26: Fix Compilation Errors",
       "type": "task",
       "description": "Resolve compilation errors in the fuzzing harness",
       "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 21 to retry Echidna.",
@@ -457,10 +415,10 @@
       },
       "shouldCreateSummary": true,
       "shouldCommitChanges": true,
-      "nextStep": "Step 24: Run Echidna Programmatically"
+      "nextStep": "Step 23: Run Echidna Programmatically"
     },
     {
-      "name": "Step 29: Evaluate Coverage",
+      "name": "Step 27: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -476,7 +434,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 30: Score and Sort by Complexity",
+      "name": "Step 28: Score and Sort by Complexity",
       "type": "task",
       "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
       "prompt": "covg-scoring --return-json",
@@ -492,7 +450,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 31: Create Latest Coverage Link",
+      "name": "Step 29: Create Latest Coverage Link",
       "type": "task",
       "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
       "prompt": "get-latest-coverage --return-json",
@@ -508,7 +466,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 32: Coverage Improvement Decision Check",
+      "name": "Step 30: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
       "mode": "JSON_KEY_VALUE",
@@ -521,8 +479,8 @@
           "operator": "gt",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 21: Function Grouping and Prioritization",
-          "NOTE": "Loop back to Step 18 to continue with coverage improvement"
+          "destinationStep": "Step 20: Function Grouping and Prioritization",
+          "NOTE": "Loop back to Step 20 to continue with coverage improvement"
         },
         {
           "operator": "eq",
@@ -535,7 +493,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 33: Dispatch Fuzzing Job",
+      "name": "Step 31: Dispatch Fuzzing Job",
       "type": "task",
       "description": "Queue a 10 MLN TestEchidna fuzzing job with the backend.",
       "model": {
@@ -546,7 +504,7 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 34: Workflow Complete",
+      "name": "Step 32: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",

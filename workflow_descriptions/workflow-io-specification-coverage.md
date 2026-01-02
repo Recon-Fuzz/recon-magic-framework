@@ -316,10 +316,9 @@ EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); an
 ```json
 {
   "status": "success" | "error",
-  "echidna_exit_code": 0,
+  "exit_code": 0,
   "workflow_action": "continue" | "stop",
   "message": "Description of result",
-  "requires_compilation_fix": 0 | 1,
   "error_type": "compilation" | "unlinked_libraries" | "setup" | "rpc" | "contract_not_found" | "unknown",
   "error_details": {
     "error_lines": ["line1", "line2"],
@@ -354,28 +353,12 @@ The tool returns exit code 0 in workflow mode (with `--return-json`), allowing t
 - File: `magic/echidna-error-analysis.json`
 
 **Decision Logic:**
-- Reads: `echidna_exit_code` key
+- Reads: `exit_code` key
 - If value = 0: Jump to Step 16 (Echidna succeeded, continue workflow)
 - If value ≠ 0: Jump to Step 14 (Echidna failed, check error type)
 
 ---
 
-## Step 14: Check Error Type
-
-**Type:** Decision (JSON_KEY_VALUE)
-
-**Inputs:**
-- File: `magic/echidna-error-analysis.json`
-
-**Decision Logic:**
-- Reads: `requires_compilation_fix` key
-- If value = 1: Jump to Step 15 (Compilation error, trigger fix agent)
-- If value = 0: STOP (Non-compilation error, manual fix required)
-
-**Description:**
-Only true compilation errors (CryticCompile errors) trigger the automated fix agent. All other errors (unlinked libraries, setup failures, etc.) stop the workflow with detailed error documentation for manual resolution.
-
----
 
 ## Step 15: Fix Compilation Errors
 
@@ -728,25 +711,12 @@ EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); an
 - File: `magic/echidna-error-analysis.json`
 
 **Decision Logic:**
-- Reads: `echidna_exit_code` key
+- Reads: `exit_code` key
 - If value = 0: Jump to Step 29 (Echidna succeeded, continue workflow)
 - If value ≠ 0: Jump to Step 27 (Echidna failed, check error type)
 
 ---
 
-## Step 27: Check Error Type (Iteration)
-
-**Type:** Decision (JSON_KEY_VALUE)
-
-**Inputs:**
-- File: `magic/echidna-error-analysis.json`
-
-**Decision Logic:**
-- Reads: `requires_compilation_fix` key
-- If value = 1: Jump to Step 28 (Compilation error, trigger fix agent)
-- If value = 0: STOP (Non-compilation error, manual fix required)
-
----
 
 ## Step 28: Fix Compilation Errors (Iteration)
 

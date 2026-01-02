@@ -47,7 +47,7 @@ def analyze_error_type(log_content: str) -> Tuple[str, Dict]:
 
     Returns:
         Tuple of (error_type, error_details)
-        error_type: 'compilation', 'setup', 'rpc', 'contract_not_found', 'unknown'
+        error_type: One of the 16+ Echidna error types
         error_details: Dictionary with specific error information
     """
     error_details = {
@@ -56,20 +56,121 @@ def analyze_error_type(log_content: str) -> Tuple[str, Dict]:
         "suggested_action": ""
     }
 
-    # Check for compilation errors (highest priority)
-    if "CryticCompile:Error" in log_content:
-        # Extract compilation error details
-        lines = log_content.split('\n')
+    # Helper function to extract context around matching lines
+    def extract_context(lines, pattern, context_before=2, context_after=10):
         for i, line in enumerate(lines):
-            if "CryticCompile:Error" in line:
-                # Get surrounding context
-                start_idx = max(0, i - 2)
-                end_idx = min(len(lines), i + 10)
-                error_details["error_lines"] = lines[start_idx:end_idx]
-                error_details["context"] = '\n'.join(lines[start_idx:end_idx])
-                error_details["suggested_action"] = "trigger_compilation_fix_agent"
-                break
+            if re.search(pattern, line, re.IGNORECASE):
+                start_idx = max(0, i - context_before)
+                end_idx = min(len(lines), i + context_after)
+                return lines[start_idx:end_idx]
+        return []
+
+    lines = log_content.split('\n')
+
+    # Check for compilation errors (highest priority)
+    if "CryticCompile:Error" in log_content or re.search(r"Couldn't compile given file", log_content):
+        error_details["error_lines"] = extract_context(lines, r"CryticCompile:Error|Couldn't compile given file")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "trigger_compilation_fix_agent"
         return "compilation", error_details
+
+    # Check for no_crytic_compile error
+    if re.search(r"crytic-compile not installed|not found in PATH", log_content):
+        error_details["error_lines"] = extract_context(lines, r"crytic-compile not installed|not found in PATH")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "stop"
+        return "no_crytic_compile", error_details
+
+    # Check for solc_read_failure
+    if re.search(r"Could not read crytic-export/combined_solc\.json", log_content):
+        error_details["error_lines"] = extract_context(lines, r"Could not read crytic-export/combined_solc\.json")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "solc_read_failure", error_details
+
+    # Check for no_contracts
+    if re.search(r"No contracts found in given file", log_content):
+        error_details["error_lines"] = extract_context(lines, r"No contracts found")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "no_contracts", error_details
+
+    # Check for contract_not_found
+    if re.search(r"Given contract .* not found in given file|could not find contract", log_content, re.IGNORECASE):
+        error_details["error_lines"] = extract_context(lines, r"contract .* not found|could not find contract")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "contract_not_found", error_details
+
+    # Check for no_bytecode
+    if re.search(r"No bytecode found for contract", log_content):
+        error_details["error_lines"] = extract_context(lines, r"No bytecode found")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "no_bytecode", error_details
+
+    # Check for no_funcs
+    if re.search(r"ABI is empty, are you sure your constructor is right\?", log_content):
+        error_details["error_lines"] = extract_context(lines, r"ABI is empty")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "no_funcs", error_details
+
+    # Check for no_tests
+    if re.search(r"No tests found in ABI", log_content):
+        error_details["error_lines"] = extract_context(lines, r"No tests found")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "no_tests", error_details
+
+    # Check for only_tests
+    if re.search(r"Only tests and no public functions found in ABI", log_content):
+        error_details["error_lines"] = extract_context(lines, r"Only tests and no public")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "only_tests", error_details
+
+    # Check for constructor_args
+    if re.search(r"Constructor arguments are required", log_content):
+        error_details["error_lines"] = extract_context(lines, r"Constructor arguments are required")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "constructor_args", error_details
+
+    # Check for deployment_failed
+    if re.search(r"Deploying the contract .* failed", log_content):
+        error_details["error_lines"] = extract_context(lines, r"Deploying the contract .* failed")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "deployment_failed", error_details
+
+    # Check for invalid_method_filters
+    if re.search(r"Applying the filter .* to the methods produces an empty list", log_content):
+        error_details["error_lines"] = extract_context(lines, r"Applying the filter")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "invalid_method_filters", error_details
+
+    # Check for outdated_solc_version
+    if re.search(r"Solc version .* detected.*doesn't support versions of solc before", log_content):
+        error_details["error_lines"] = extract_context(lines, r"Solc version .* detected")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "stop"
+        return "outdated_solc_version", error_details
+
+    # Check for bad_addr
+    if re.search(r"No contract at .* exists", log_content):
+        error_details["error_lines"] = extract_context(lines, r"No contract at .* exists")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "bad_addr", error_details
+
+    # Check for test_args_found
+    if re.search(r"Test .* has arguments, aborting", log_content):
+        error_details["error_lines"] = extract_context(lines, r"Test .* has arguments")
+        error_details["context"] = '\n'.join(error_details["error_lines"])
+        error_details["suggested_action"] = "generate_ai_summary"
+        return "test_args_found", error_details
 
     # Check for unlinked libraries
     if "unlinked libraries" in log_content.lower() or "Error toCode" in log_content:
@@ -165,10 +266,12 @@ def create_error_summary(error_type: str, error_details: Dict, exit_code: int) -
     Returns:
         Dictionary with complete error summary
     """
+    # Simplify exit codes: 0=success, 1=compilation error, 2=other errors
+    simplified_exit_code = 1 if error_type == "compilation" else 2
+
     summary = {
-        "echidna_exit_code": exit_code,
+        "exit_code": simplified_exit_code,
         "error_type": error_type,
-        "requires_compilation_fix": 1 if error_type == "compilation" else 0,
         "error_details": error_details,
         "workflow_action": error_details.get("suggested_action", "stop")
     }
@@ -176,10 +279,23 @@ def create_error_summary(error_type: str, error_details: Dict, exit_code: int) -
     # Add human-readable description
     descriptions = {
         "compilation": "Solidity compilation failed. The contracts have syntax errors or dependency issues.",
-        "unlinked_libraries": "Contract bytecode contains unlinked library references. Libraries must be deployed and linked before Echidna can run the contract.",
-        "setup": "The setUp() function in the fuzzing harness failed to execute properly.",
-        "rpc": "Echidna requires RPC access for mainnet forking but no RPC URL is configured.",
+        "no_crytic_compile": "crytic-compile is not installed or not found in PATH. This tool is required for contract compilation.",
+        "solc_read_failure": "Could not read the compiled Solidity output file (crytic-export/combined_solc.json).",
+        "no_contracts": "No contracts found in the given file. The file may be empty or contain only interfaces/libraries.",
         "contract_not_found": "The specified contract could not be found in the compiled artifacts.",
+        "no_bytecode": "No bytecode found for the specified contract. The contract may not have compiled successfully.",
+        "no_funcs": "ABI is empty. This usually means the constructor parameters or configuration is incorrect.",
+        "no_tests": "No test functions found in the contract ABI. Check that test functions are properly defined.",
+        "only_tests": "Only test functions found with no public functions to fuzz. Add public functions to the contract.",
+        "constructor_args": "Constructor arguments are required but not provided in the configuration.",
+        "deployment_failed": "Failed to deploy the contract. This can be due to revert, out-of-gas, or constructor issues.",
+        "setup": "The setUp() function in the fuzzing harness failed to execute properly.",
+        "invalid_method_filters": "The method filter configuration produces an empty list of functions to test.",
+        "outdated_solc_version": "The Solidity compiler version is too old. Echidna requires solc 0.4.25 or newer.",
+        "bad_addr": "No contract exists at the specified address.",
+        "test_args_found": "Test function has arguments. Echidna test functions should have no parameters.",
+        "unlinked_libraries": "Contract bytecode contains unlinked library references. Libraries must be deployed and linked before Echidna can run the contract.",
+        "rpc": "Echidna requires RPC access for mainnet forking but no RPC URL is configured.",
         "unknown": "An unrecognized error occurred during Echidna execution."
     }
 
@@ -203,20 +319,18 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
 
     Returns:
         0: Success - continue workflow
-        1: General failure - stop workflow
-        2: Compilation error - trigger compilation fix agent
-        3: Other error - generate AI summary and stop
+        1: Compilation error - trigger compilation fix agent
+        2: All other errors - stop workflow or generate AI summary
     """
 
     # Handle successful execution
     if exit_code == 0:
         result = {
             "status": "success",
-            "echidna_exit_code": 0,
+            "exit_code": 0,  # 0 = success
             "error_type": None,  # Explicitly set to None for success case
             "workflow_action": "continue",
-            "message": "Echidna completed successfully",
-            "requires_compilation_fix": 0
+            "message": "Echidna completed successfully"
         }
 
         # Check if coverage files were generated
@@ -255,7 +369,7 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
     if not log_file or not os.path.exists(log_file):
         error_result = {
             "status": "error",
-            "echidna_exit_code": exit_code,
+            "exit_code": 2,  # 2 = other errors (can't determine if compilation without log)
             "error": "Log file not found",
             "workflow_action": "stop",
             "message": f"Echidna failed with exit code {exit_code} but no log file found for analysis"
@@ -297,14 +411,19 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
         print(f"📝 {summary['description']}")
         print(f"💾 Error analysis saved to: {summary_file}")
 
+        # Simplified exit codes: 0=success, 1=compilation error, 2=all other errors
         if error_type == "compilation":
             print("🔧 Compilation error detected - triggering fix agent")
-            return 2  # CLI: User can check exit code in scripts
-        elif error_type in ["setup", "rpc", "contract_not_found", "unknown", "unlinked_libraries"]:
-            print("📋 Other error detected - generating AI summary")
-            return 3  # CLI: Different exit code for non-compilation errors
+            return 1  # CLI: Compilation error
         else:
-            return 1  # CLI: General failure
+            # All other error types
+            if error_type in ["no_crytic_compile", "outdated_solc_version"]:
+                print("⚠️ Environment setup error - manual intervention required")
+            elif error_type == "unlinked_libraries":
+                print("🔗 Unlinked libraries detected - configuration update needed")
+            else:
+                print("📋 Error detected - generating AI summary")
+            return 2  # CLI: All other errors
 
 
 def main():
