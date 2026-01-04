@@ -5,6 +5,7 @@
       "name": "Phase 0: Dependency Analysis",
       "type": "task",
       "description": "Analyze contracts to create dependency list and review priority",
+      "preconditions": ["forge-build-gate"],
       "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-0.md. Run exclusively the properties-phase-0 agent using the Task tool. This phase will analyze all contracts, create a dependency list showing function calls and storage slot access, and generate a review priority order.",
       "model": {
         "type": "CLAUDE_CODE",
