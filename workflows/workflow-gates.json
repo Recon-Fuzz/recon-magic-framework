@@ -8,7 +8,7 @@
         "name": "Forge Build Check",
         "type": "task",
         "description": "Run forge build and check for errors",
-        "prompt": "rm -f magic/BUILD_FAILED.txt && forge build 2>&1 | tee magic/build-output.log || (mkdir -p magic && echo 'BUILD_FAILED' > magic/BUILD_FAILED.txt)",
+        "prompt": "rm -f magic/BUILD_FAILED.txt && forge build -o out --build-info 2>&1 | tee magic/build-output.log || (mkdir -p magic && echo 'BUILD_FAILED' > magic/BUILD_FAILED.txt)",
         "model": {
           "type": "PROGRAM",
           "model": "inherit"
@@ -28,7 +28,7 @@
         "name": "Forge Build Fix",
         "type": "task",
         "description": "Fix compilation errors",
-        "prompt": "Run 'forge build' to verify the code compiles successfully. If there are compilation errors, fix them and run 'forge build' again until the code compiles without errors.",
+        "prompt": "Run 'forge build -o out' to verify the code compiles successfully. If there are compilation errors, fix them and run 'forge build -o out' again until the code compiles without errors.",
         "model": {
           "type": "OPENCODE",
           "model": "inherit"
