@@ -22,7 +22,7 @@
       "name": "Step 2: Build Artifacts",
       "type": "task",
       "description": "Generate Forge build artifacts with build-info",
-      "prompt": "forge clean && forge build --build-info",
+      "prompt": "forge clean && forge build -o out --build-info",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -82,7 +82,7 @@
       "name": "Step 7: Generate Non-Reverting Paths",
       "type": "task",
       "description": "Extract non-reverting paths through target functions and move to magic directory",
-      "prompt": "rm -rf out/build-info && forge build --build-info && npx -y recon-generate@latest paths && mkdir -p magic && mv recon-paths.json magic/",
+      "prompt": "rm -rf out/build-info && forge build -o out --build-info && npx -y recon-generate@latest paths && mkdir -p magic && mv recon-paths.json magic/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -210,7 +210,7 @@
       "name": "Step 15: Generate Functions to Cover",
       "type": "task",
       "description": "Generate list of functions that need coverage and move to magic directory",
-      "prompt": "rm -rf out/build-info && forge build --build-info && npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/",
+      "prompt": "rm -rf out/build-info && forge build -o out --build-info && npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
