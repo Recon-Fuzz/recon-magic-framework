@@ -723,13 +723,17 @@ def start_job_listener(
                     branch_name = "main"
 
                 # Generate appropriate summary based on success/failure/stopped
-                if workflow_failed and failure_info:
-                    # Generate failure-aware summary
-                    summary = generate_failure_summary_with_claude(
-                        failed_step_name=failure_info['step_name'],
-                        failed_step_num=failure_info['step_num'],
-                        since_commit=initial_commit_hash
-                    )
+                if workflow_failed:
+                    if failure_info:
+                        # Generate failure-aware summary with step info
+                        summary = generate_failure_summary_with_claude(
+                            failed_step_name=failure_info['step_name'],
+                            failed_step_num=failure_info['step_num'],
+                            since_commit=initial_commit_hash
+                        )
+                    else:
+                        # Workflow failed before any step ran (e.g., invalid resume step ID)
+                        summary = "Workflow failed to start. Check that the resume step ID is valid."
                     job_status = "ERROR"
                 elif workflow_stopped:
                     # Generate summary for gracefully stopped job
