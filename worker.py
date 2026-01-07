@@ -317,6 +317,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
 
     # Add step_result data if available
     if step_result:
+        if step_result.get("internal_id"):
+            step_data["internal_id"] = step_result["internal_id"]
         if step_result.get("summary"):
             step_data["summary"] = step_result["summary"]
         if step_result.get("commit_info"):
