@@ -1,0 +1,101 @@
+{
+  "name": "Shared Workflow Gates",
+  "gates": {
+    "forge-build-gate": {
+      "description": "Verify project compiles with Forge, attempt fix if failed",
+      "maxRetries": 2,
+      "check": {
+        "name": "Forge Build Check",
+        "type": "task",
+        "description": "Run forge build and check for errors",
+        "prompt": "rm -f magic/BUILD_FAILED.txt && forge build -o out --build-info 2>&1 | tee magic/build-output.log || (mkdir -p magic && echo 'BUILD_FAILED' > magic/BUILD_FAILED.txt)",
+        "model": {
+          "type": "PROGRAM",
+          "model": "inherit"
+        },
+        "allowFailure": true,
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": false
+      },
+      "successCondition": {
+        "mode": "FILE_EXISTS",
+        "modeInfo": {
+          "fileName": "magic/BUILD_FAILED.txt"
+        },
+        "successValue": 0
+      },
+      "fix": {
+        "name": "Forge Build Fix",
+        "type": "task",
+        "description": "Fix compilation errors",
+        "prompt": "Run 'forge build -o out' to verify the code compiles successfully. If there are compilation errors, fix them and run 'forge build -o out' again until the code compiles without errors.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      },
+      "onFailure": {
+        "name": "Generate Failure Report",
+        "type": "task",
+        "description": "Generate a user-readable failure report when gate fails",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/generate-failure-report.md. Run exclusively the generate-failure-report agent to create magic/WORKFLOW_FAILURE_REPORT.md explaining what failed and how to fix it.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      }
+    },
+    "echidna-run-gate": {
+      "description": "Run Echidna and verify it completes successfully, attempt fix if failed",
+      "maxRetries": 3,
+      "check": {
+        "name": "Run Echidna",
+        "type": "task",
+        "description": "Run Echidna to test the fuzzing setup and save logs",
+        "prompt": "rm -rf echidna/*.txt 2>/dev/null; (echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration 2>&1 | tee magic/echidna-output.log) || true; mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true)",
+        "model": {
+          "type": "PROGRAM",
+          "model": "inherit"
+        },
+        "allowFailure": true,
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      },
+      "successCondition": {
+        "mode": "FILE_EXISTS",
+        "modeInfo": {
+          "fileName": "echidna/*.txt"
+        },
+        "successValue": 1
+      },
+      "fix": {
+        "name": "Fix Echidna Failure",
+        "type": "task",
+        "description": "Resolve issues preventing Echidna from running successfully",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/fix-echidna-failures.md. Exclusively run the fix-echidna-failures agent using the Task tool. This agent will analyze the saved Echidna logs and implement fixes to resolve the issues.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": true,
+        "shouldCommitChanges": true
+      },
+      "onFailure": {
+        "name": "Generate Failure Report",
+        "type": "task",
+        "description": "Generate a user-readable failure report when gate fails",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/generate-failure-report.md. Run exclusively the generate-failure-report agent to create magic/WORKFLOW_FAILURE_REPORT.md explaining what failed and how to fix it.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      }
+    }
+  }
+}

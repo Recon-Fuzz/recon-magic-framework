@@ -1,0 +1,55 @@
+{
+  "name": "Fuzzing Coverage Workflow",
+  "steps": [
+    {
+      "name": "Step 12: Analyze Echidna Output",
+      "type": "task",
+      "description": "Analyze Echidna execution results and determine next action",
+      "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-error-analysis.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 13: Handle Echidna Results",
+      "type": "decision",
+      "description": "Take action based on Echidna exit code",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "exit_code"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 15: Generate Functions to Cover",
+          "NOTE": "Echidna ran successfully, continue workflow"
+        },
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 14: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 2,
+          "action": "STOP",
+          "NOTE": "Other error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}

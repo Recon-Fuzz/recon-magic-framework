@@ -62,6 +62,7 @@ class TaskStep(BaseModel):
     output: OutputConfig | None = None
     allowFailure: bool = Field(default=False, alias="allowFailure")
     dispatchConfig: DispatchConfig | None = Field(default=None, alias="dispatchConfig")
+    preconditions: list[str] | None = Field(default=None, alias="preconditions")
 
 
 def resolve_model_string(model_type: str, model_string: str) -> str:

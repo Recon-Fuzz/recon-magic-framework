@@ -28,6 +28,34 @@ STOPPED = 2  # Graceful stop requested
 # Default loop hardcap to prevent infinite loops
 DEFAULT_LOOP_HARDCAP = 5
 
+# Global gates storage
+_workflow_gates: dict[str, dict] = {}
+
+
+def load_gates(workflows_dir: Path) -> dict[str, dict]:
+    """
+    Load shared gates from workflow-gates.json.
+
+    Args:
+        workflows_dir: Directory containing workflow files
+
+    Returns:
+        Dict mapping gate name to gate configuration
+    """
+    global _workflow_gates
+
+    gates_file = workflows_dir / "workflow-gates.json"
+    if not gates_file.exists():
+        print("  ℹ️  No workflow-gates.json found, skipping gates loading")
+        return {}
+
+    with open(gates_file, 'r') as f:
+        data = json.load(f)
+
+    _workflow_gates = data.get("gates", {})
+    print(f"  ✓ Loaded {len(_workflow_gates)} gates: {list(_workflow_gates.keys())}")
+    return _workflow_gates
+
 
 class ModelType(str, Enum):
     """Model type enum matching TypeScript ModelType."""
@@ -253,6 +281,142 @@ def default_after_step_execution(step: Step, step_num: int, return_code: int, ac
     """
     pass  # Default implementation does nothing
 
+
+def check_gate_condition(gate: dict) -> bool:
+    """
+    Check if a gate's success condition is met.
+
+    Args:
+        gate: Gate configuration dict
+
+    Returns:
+        bool: True if condition is met (gate passes), False otherwise
+    """
+    from core.path_utils import get_base_path
+
+    condition = gate.get("successCondition", {})
+    mode = condition.get("mode")
+    mode_info = condition.get("modeInfo", {})
+    success_value = condition.get("successValue", 1)  # Default: file exists = success
+
+    if mode == "FILE_EXISTS":
+        base_path = get_base_path()
+        pattern = mode_info.get("fileName", "")
+        matches = list(base_path.glob(pattern))
+        actual_value = 1 if matches else 0
+        return actual_value == success_value
+
+    # Default: assume pass if no condition specified
+    return True
+
+
+def execute_gate(
+    gate_name: str,
+    step_num: int,
+    workflow: 'Workflow'
+) -> tuple[bool, str | None]:
+    """
+    Execute a gate's check and fix cycle.
+
+    Gate steps are executed exactly like regular workflow steps, producing:
+    - Logs in the logs directory with step numbering: {step_num}.{gate_step}
+    - Git commits if shouldCommitChanges is set
+    - Summaries if shouldCreateSummary is set
+
+    Args:
+        gate_name: Name of the gate to execute
+        step_num: Current step number (for logging)
+        workflow: The workflow object (for context)
+
+    Returns:
+        tuple[bool, str | None]: (success, error_message)
+            - success: True if gate passed, False if max retries exceeded
+            - error_message: Description of failure if gate failed
+    """
+    global _workflow_gates
+
+    if gate_name not in _workflow_gates:
+        print(f"  ⚠️  Gate '{gate_name}' not found in workflow-gates.json")
+        return (True, None)  # Assume pass if gate not found
+
+    gate = _workflow_gates[gate_name]
+    max_retries = gate.get("maxRetries", 2)
+
+    print(f"\n🔒 Executing gate: {gate_name}")
+    print(f"   Max retries: {max_retries}")
+
+    # Gate sub-step counter for unique log naming
+    gate_sub_step = 0
+
+    for attempt in range(max_retries + 1):
+        print(f"\n   [Gate attempt {attempt + 1}/{max_retries + 1}]")
+
+        # Execute the check step
+        check_step_data = gate.get("check", {})
+        if check_step_data:
+            gate_sub_step += 1
+            # Use decimal step number for gate sub-steps (e.g., 1.1, 1.2)
+            gate_step_num = float(f"{step_num}.{gate_sub_step}")
+            
+            check_step = TaskStep(**check_step_data)
+            print(f"   Running check: {check_step.name}")
+            return_code, _, _ = execute_task_step(check_step, int(gate_step_num * 10))
+
+            if return_code != SUCCESS and not check_step.allowFailure:
+                print(f"   ❌ Check step failed")
+
+        # Evaluate success condition
+        if check_gate_condition(gate):
+            print(f"   ✅ Gate '{gate_name}' PASSED")
+            return (True, None)
+
+        print(f"   ❌ Gate condition not met")
+
+        # If we have retries left, run the fix step
+        if attempt < max_retries:
+            fix_step_data = gate.get("fix", {})
+            if fix_step_data:
+                gate_sub_step += 1
+                gate_step_num = float(f"{step_num}.{gate_sub_step}")
+                
+                fix_step = TaskStep(**fix_step_data)
+                print(f"   🔧 Running fix: {fix_step.name}")
+                return_code, _, _ = execute_task_step(fix_step, int(gate_step_num * 10))
+
+                # Handle artifacts exactly like regular workflow steps
+                if fix_step.shouldCreateSummary:
+                    create_summary(fix_step, int(gate_step_num * 10))
+                
+                if fix_step.shouldCommitChanges:
+                    commit_info = commit_changes(fix_step, int(gate_step_num * 10))
+                    if commit_info:
+                        push_changes(int(gate_step_num * 10))
+        else:
+            print(f"   ❌ Max retries ({max_retries}) exceeded for gate '{gate_name}'")
+            
+            # Execute onFailure handler if defined (e.g., generate failure report)
+            on_failure_data = gate.get("onFailure", {})
+            if on_failure_data:
+                gate_sub_step += 1
+                gate_step_num = float(f"{step_num}.{gate_sub_step}")
+                
+                on_failure_step = TaskStep(**on_failure_data)
+                print(f"\n   📋 Running failure handler: {on_failure_step.name}")
+                execute_task_step(on_failure_step, int(gate_step_num * 10))
+                
+                # Handle artifacts exactly like regular workflow steps
+                if on_failure_step.shouldCreateSummary:
+                    create_summary(on_failure_step, int(gate_step_num * 10))
+                
+                if on_failure_step.shouldCommitChanges:
+                    commit_info = commit_changes(on_failure_step, int(gate_step_num * 10))
+                    if commit_info:
+                        push_changes(int(gate_step_num * 10))
+            
+            return (False, f"Gate '{gate_name}' failed after {max_retries} retries")
+
+    return (False, f"Gate '{gate_name}' failed")
+
 def execute_step(
     step: Step,
     step_num: int,
@@ -281,7 +445,7 @@ def execute_step(
     return_code, action, destination = None, None, None
 
     # Check if we've hit the loop hardcap for decision steps
-    if isinstance(step, DecisionStep) and execution_count > loop_hardcap:
+    if isinstance(step, DecisionStep) and execution_count >= loop_hardcap:
         print(f"⚠️  Loop hardcap ({loop_hardcap}) reached for step {step_num}, forcing CONTINUE")
         return_code, action, destination = (SUCCESS, "CONTINUE", None)
     else:
@@ -555,6 +719,10 @@ def run_workflow(
     # Load the workflow
     workflow = load_workflow(workflow_file)
 
+    # Load gates from workflow-gates.json
+    workflows_dir = Path(workflow_file).parent
+    load_gates(workflows_dir)
+
     print(f"\n{'#'*60}")
     print(f"# Workflow: {workflow.name}")
     print(f"# Number of steps: {len(workflow.steps)}")
@@ -589,6 +757,20 @@ def run_workflow(
         print(f"Type: {step.type}")
         if hasattr(step, 'model') and step.model:
             print(f"Model: {step.model.type}")
+
+        # Check preconditions (gates) if any are defined
+        if hasattr(step, 'preconditions') and step.preconditions:
+            print(f"\n🔐 Checking preconditions: {step.preconditions}")
+            for gate_name in step.preconditions:
+                gate_passed, error_msg = execute_gate(gate_name, i, workflow)
+                if not gate_passed:
+                    print(f"\n❌ Gate '{gate_name}' failed for step {i}")
+                    print(f"   {error_msg}")
+                    print("Stopping workflow execution due to gate failure.")
+                    if after_hook:
+                        step_result = {"step_name": step.name, "step_num": i, "failed": True, "gate_failed": gate_name}
+                        after_hook(step, i, FAILURE, "GATE_FAILED", step_result)
+                    return FAILURE
 
         # Execute the step
         return_code, action, destination_step_name = execute_step(
