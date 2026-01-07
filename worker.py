@@ -535,6 +535,16 @@ def start_job_listener(
 
                     if not os.path.exists(workflow_file):
                         print(f"Error: Workflow not found: {workflow_file}")
+                        mark_job_complete(
+                            api_url,
+                            bearer_token,
+                            job_id,
+                            f"Workflow not found: {workflow_name}. Please check the workflow name is valid.",
+                            "unknown",
+                            "unknown",
+                            repo_ref,
+                            status="ERROR"
+                        )
                         continue
 
                 elif job_type == "relativeWorkflow":
@@ -544,6 +554,16 @@ def start_job_listener(
                     # Clone claude config for this mode
                     if not clone_claude_config(claude_url, claude_ref, "/app/.claude"):
                         print("Failed to clone Claude config")
+                        mark_job_complete(
+                            api_url,
+                            bearer_token,
+                            job_id,
+                            f"Failed to clone Claude config repository. Check that the repository is accessible.",
+                            "unknown",
+                            "unknown",
+                            repo_ref,
+                            status="ERROR"
+                        )
                         continue
 
                     workflow_file = f"/app/.claude/workflows/{workflow_name}.json"
@@ -551,9 +571,29 @@ def start_job_listener(
 
                     if not os.path.exists(workflow_file):
                         print(f"Error: Workflow not found: {workflow_file}")
+                        mark_job_complete(
+                            api_url,
+                            bearer_token,
+                            job_id,
+                            f"Workflow not found: {workflow_name}. Please check the workflow name is valid.",
+                            "unknown",
+                            "unknown",
+                            repo_ref,
+                            status="ERROR"
+                        )
                         continue
                 else:
                     print(f"Error: Unknown job type: {job_type}")
+                    mark_job_complete(
+                        api_url,
+                        bearer_token,
+                        job_id,
+                        f"Unknown job type: {job_type}. Please contact support.",
+                        "unknown",
+                        "unknown",
+                        repo_ref,
+                        status="ERROR"
+                    )
                     continue
 
                 print(f"Executing workflow: {workflow_file}")
@@ -570,6 +610,16 @@ def start_job_listener(
                 success, new_repo_url, owner, repo_id = create_github_repo(new_repo_name, github_token)
                 if not success:
                     print("Failed to create GitHub repository")
+                    mark_job_complete(
+                        api_url,
+                        bearer_token,
+                        job_id,
+                        "Failed to create GitHub repository. Please check GitHub credentials and try again.",
+                        "unknown",
+                        "unknown",
+                        repo_ref,
+                        status="ERROR"
+                    )
                     continue
 
                 # Install GitHub App on the new repository if configured

@@ -831,6 +831,10 @@ def run_workflow(
         # Collect step results
         step_result: dict = {"step_name": step.name, "step_num": i}
 
+        # Add internal_id for resume functionality
+        if i in _step_metadata:
+            step_result["internal_id"] = _step_metadata[i].get("internal_id")
+
         # Check if we should create a summary
         if step.shouldCreateSummary:
             summary = create_summary(step, i)
