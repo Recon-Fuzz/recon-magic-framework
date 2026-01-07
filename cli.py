@@ -31,15 +31,18 @@ def main():
         epilog="""
 Examples:
   # Run a workflow by name
-  recon --workflow audit              # Uses framework's workflows/audit.json
-  recon --workflow workflow-loop      # Uses framework's workflows/workflow-loop.json
-  recon --workflow ./my-workflow.json --dangerous --cap 10
-  recon --workflow /absolute/path/to/workflow.json --logs ./custom-logs
+  recon-magic-framework --workflow audit              # Uses framework's workflows/audit.json
+  recon-magic-framework --workflow workflow-loop      # Uses framework's workflows/workflow-loop.json
+  recon-magic-framework --workflow ./my-workflow.json --dangerous --cap 10
+  recon-magic-framework --workflow /absolute/path/to/workflow.json --logs ./custom-logs
 
   # Run a direct prompt
-  recon --prompt "Analyze this code for security issues" --dangerous
-  recon --prompt "Add tests" --model-type CLAUDE_CODE --repo ./my-repo
-  recon --prompt "npm run build" --model-type PROGRAM
+  recon-magic-framework --prompt "Analyze this code for security issues" --dangerous
+  recon-magic-framework --prompt "Add tests" --model-type CLAUDE_CODE --repo ./my-repo
+  recon-magic-framework --prompt "npm run build" --model-type PROGRAM
+
+  # Resume from a specific step by ID
+  recon-magic-framework --workflow audit --resume-from-step-id "audit:3"
 
 Workflows can be run from any directory.
         """
@@ -92,6 +95,14 @@ Workflows can be run from any directory.
         type=str,
         default=None,
         help='Path to repository directory (default: current directory)'
+    )
+
+    parser.add_argument(
+        '--resume-from-step-id',
+        type=str,
+        default=None,
+        metavar='ID',
+        help='Resume workflow from step with internal ID (e.g., "audit:2", "workflow-fuzzing:3")'
     )
 
     args = parser.parse_args()
@@ -164,6 +175,8 @@ Workflows can be run from any directory.
         print(f"⚠️  Dangerous mode: ENABLED")
     if args.logs:
         print(f"📝 Logs directory: {args.logs}")
+    if args.resume_from_step_id:
+        print(f"🔄 Resume mode: Starting from step ID '{args.resume_from_step_id}'")
     print()
 
     # Run the workflow
@@ -172,7 +185,8 @@ Workflows can be run from any directory.
         dangerous=args.dangerous,
         loop_hardcap=args.cap,
         logs_dir=args.logs,
-        repo_path=repo_root
+        repo_path=repo_root,
+        resume_from_step_id=args.resume_from_step_id
     )
     sys.exit(exit_code)
 

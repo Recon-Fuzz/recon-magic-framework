@@ -255,8 +255,16 @@ def load_workflow(filepath: str) -> Workflow:
         data["steps"] = flattened_steps
         print(f"  ✓ Flattened to {len(flattened_steps)} total steps")
     else:
-        # No composition - build simple metadata
+        # No composition - build metadata with proper internal IDs
+        workflow_key = _get_workflow_key(filepath)
+        for idx, step in enumerate(original_steps):
+            step["_internal_id"] = f"{workflow_key}:{idx}"
+            step["_source_workflow"] = filepath_path.name
         _step_metadata = _build_step_metadata(original_steps)
+        # Strip internal fields before Pydantic validation
+        for step in original_steps:
+            step.pop("_internal_id", None)
+            step.pop("_source_workflow", None)
 
     return Workflow(**data)
 
@@ -684,7 +692,8 @@ def run_workflow(
     repo_path: str | None = None,
     before_hook: Callable[[Step, int], None] | None = None,
     after_hook: Callable[[Step, int, int, str, dict | None], None] | None = None,
-    stop_checker: Callable[[], bool] | None = None
+    stop_checker: Callable[[], bool] | None = None,
+    resume_from_step_id: str | None = None
 ) -> int:
     """
     Execute a workflow with explicit parameters.
@@ -697,6 +706,7 @@ def run_workflow(
         repo_path: Path to cd to for PROGRAM execution (None = run in current dir)
         before_hook: Optional callback to run before each step execution
         after_hook: Optional callback to run after each step execution
+        resume_from_step_id: If set, skip steps before the one with this internal ID (e.g., "audit:3")
             - Receives: (step, step_num, return_code, action, step_result)
             - step_result contains: {summary, commit_info, pushed}
         stop_checker: Optional callback to check if graceful stop was requested
@@ -726,7 +736,29 @@ def run_workflow(
     print(f"\n{'#'*60}")
     print(f"# Workflow: {workflow.name}")
     print(f"# Number of steps: {len(workflow.steps)}")
+    if resume_from_step_id:
+        print(f"# Resume from step ID: {resume_from_step_id}")
     print(f"{'#'*60}\n")
+
+    # Resolve resume_from_step_id to flattened index if provided
+    resume_from_step: int | None = None
+    if resume_from_step_id is not None:
+        # Find the flattened index for the given internal_id
+        for idx, meta in _step_metadata.items():
+            if meta.get("internal_id") == resume_from_step_id:
+                resume_from_step = idx
+                break
+
+        if resume_from_step is None:
+            print(f"❌ Invalid resume step ID: '{resume_from_step_id}' not found in workflow")
+            print(f"   Available step IDs:")
+            for idx, meta in _step_metadata.items():
+                print(f"     {meta.get('internal_id')}: {meta.get('name')}")
+            return FAILURE
+
+        print(f"🔄 Resuming workflow from step ID '{resume_from_step_id}'")
+        print(f"   Resolved to flattened step {resume_from_step}: {workflow.steps[resume_from_step - 1].name}")
+        print(f"   Skipping steps 1-{resume_from_step - 1}\n")
 
     # In-memory cache to track step execution counts
     step_execution_count: dict[int, int] = {}
@@ -735,6 +767,12 @@ def run_workflow(
     i = 1
     while i <= len(workflow.steps):
         step = workflow.steps[i - 1]
+
+        # Skip steps if resuming from a later step
+        if resume_from_step and i < resume_from_step:
+            print(f"⏩ Skipping step {i}/{len(workflow.steps)}: {step.name}")
+            i += 1
+            continue
 
         # Check for graceful stop request before executing each step
         if stop_checker and stop_checker():

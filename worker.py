@@ -427,10 +427,13 @@ def start_job_listener(
                 # Get job type (directPrompt, workflowName, relativeWorkflow)
                 additional_data = job_info.get("additionalData", {})
                 job_type = additional_data.get("jobType", "directPrompt")
+                resume_from_step_id = additional_data.get("resumeFromStepId")
 
                 print(f"Job Type: {job_type}")
                 print(f"Repo URL: {repo_url}")
                 print(f"Claude URL: {claude_url}")
+                if resume_from_step_id:
+                    print(f"Resume from step ID: {resume_from_step_id}")
 
                 # Setup workspace in /app
                 if not setup_workspace("/app"):
@@ -637,7 +640,8 @@ def start_job_listener(
                     repo_path=effective_repo_path,
                     before_hook=worker_before_step_hook,
                     after_hook=worker_after_step_hook,
-                    stop_checker=create_stop_checker()
+                    stop_checker=create_stop_checker(),
+                    resume_from_step_id=resume_from_step_id
                 )
 
                 # Check workflow result: 0 = success, 1 = failure, 2 = stopped
