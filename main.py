@@ -782,6 +782,9 @@ def run_workflow(
             # Call after_hook to notify about the stop
             if after_hook:
                 step_result = {"step_name": step.name, "step_num": i, "stopped": True}
+                # Add internal_id for resume functionality
+                if i in _step_metadata:
+                    step_result["internal_id"] = _step_metadata[i].get("internal_id")
                 after_hook(step, i, STOPPED, "GRACEFUL_STOP", step_result)
 
             return STOPPED
@@ -807,6 +810,9 @@ def run_workflow(
                     print("Stopping workflow execution due to gate failure.")
                     if after_hook:
                         step_result = {"step_name": step.name, "step_num": i, "failed": True, "gate_failed": gate_name}
+                        # Add internal_id for resume functionality
+                        if i in _step_metadata:
+                            step_result["internal_id"] = _step_metadata[i].get("internal_id")
                         after_hook(step, i, FAILURE, "GATE_FAILED", step_result)
                     return FAILURE
 
@@ -822,6 +828,9 @@ def run_workflow(
             # Call after_hook on failure so worker can track failed step
             if after_hook:
                 step_result = {"step_name": step.name, "step_num": i, "failed": True}
+                # Add internal_id for resume functionality
+                if i in _step_metadata:
+                    step_result["internal_id"] = _step_metadata[i].get("internal_id")
                 after_hook(step, i, return_code, "FAILED", step_result)
 
             return return_code
