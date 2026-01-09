@@ -5,6 +5,8 @@ Setup operations for workspace and repository cloning.
 import os
 import shutil
 import subprocess
+from pathlib import Path
+from urllib.parse import urlparse
 
 
 def setup_workspace(workspace_root: str = "/app") -> bool:
@@ -68,6 +70,19 @@ def clone_repository(repo_url: str, repo_ref: str = "main", target_dir: str = "/
         return False
 
 
+def _inject_github_token(repo_url: str) -> str:
+    """Inject GitHub token into https URL when available."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        return repo_url
+    parsed = urlparse(repo_url)
+    if parsed.scheme != "https" or parsed.netloc != "github.com":
+        return repo_url
+    if "@" in parsed.netloc:
+        return repo_url
+    return f"https://{token}@github.com{parsed.path}"
+
+
 def clone_claude_config(claude_url: str, claude_ref: str = "main", target_dir: str = "/app/.claude") -> bool:
     """
     Clone Claude configuration repository.
@@ -76,15 +91,31 @@ def clone_claude_config(claude_url: str, claude_ref: str = "main", target_dir: s
     - Clone to .claude directory (default: /app/.claude)
     """
     try:
+        if os.path.isdir("/app/.ai-agent-primers"):
+            source_dir = "/app/.ai-agent-primers"
+            if os.path.exists(target_dir):
+                shutil.rmtree(target_dir)
+            source_path = Path(source_dir) / "agents"
+            if not source_path.exists():
+                source_path = Path(source_dir) / "agent"
+            if source_path.exists():
+                target_path = Path(target_dir) / source_path.name
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(source_path, target_path)
+                return True
+            print("Error: ai-agent-primers missing agents/ or agent/ directory")
+            return False
+
         cmd = [
             "git", "clone",
             "--recurse-submodules",
             "-b", claude_ref,
             "--single-branch",
-            claude_url,
+            _inject_github_token(claude_url),
             target_dir
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         if result.returncode != 0:
             print(f"Error cloning Claude config: {result.stderr}")
@@ -104,15 +135,31 @@ def clone_opencode_config(opencode_url: str, opencode_ref: str = "main", target_
     - Clone to .opencode directory (default: /app/.opencode)
     """
     try:
+        if os.path.isdir("/app/.ai-agent-primers"):
+            source_dir = "/app/.ai-agent-primers"
+            if os.path.exists(target_dir):
+                shutil.rmtree(target_dir)
+            source_path = Path(source_dir) / "agent"
+            if not source_path.exists():
+                source_path = Path(source_dir) / "agents"
+            if source_path.exists():
+                target_path = Path(target_dir) / source_path.name
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(source_path, target_path)
+                return True
+            print("Error: ai-agent-primers missing agent/ or agents/ directory")
+            return False
+
         cmd = [
             "git", "clone",
             "--recurse-submodules",
             "-b", opencode_ref,
             "--single-branch",
-            opencode_url,
+            _inject_github_token(opencode_url),
             target_dir
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         if result.returncode != 0:
             print(f"Error cloning OpenCode config: {result.stderr}")

@@ -25,6 +25,7 @@ A workflow automation framework for running LLM-powered tasks on code repositori
 # Clone the repository
 git clone <repository-url>
 cd recon-magic-framework
+git submodule update --init --recursive
 
 # Install globally using uv
 uv tool install --editable .

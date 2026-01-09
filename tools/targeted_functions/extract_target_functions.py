@@ -262,6 +262,11 @@ def main():
         action="store_true",
         help="Return JSON output to stdout instead of writing to file"
     )
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Return an empty target list if no recon/ directory is found"
+    )
 
     args = parser.parse_args()
 
@@ -271,6 +276,17 @@ def main():
     try:
         targets_dir = find_recon_directory(quiet=args.return_json)
     except (FileNotFoundError, NotADirectoryError) as e:
+        if args.allow_missing:
+            output = {
+                "data": [],
+                "summary": {
+                    "total_contracts": 0,
+                    "total_unique_functions": 0,
+                    "reason": "recon directory not found"
+                }
+            }
+            print(json.dumps(output, indent=2))
+            return 0
         print(str(e), file=sys.stderr)
         return 1
 

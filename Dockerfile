@@ -55,6 +55,19 @@ WORKDIR /app
 # Copy project files
 COPY . .
 
+# Prime agent primers into expected locations if the submodule is present.
+RUN mkdir -p /app/.claude /app/.opencode && \
+    if [ -d "/app/.ai-agent-primers/agents" ]; then \
+      cp -R /app/.ai-agent-primers/agents /app/.claude/; \
+    elif [ -d "/app/.ai-agent-primers/agent" ]; then \
+      cp -R /app/.ai-agent-primers/agent /app/.claude/; \
+    fi && \
+    if [ -d "/app/.ai-agent-primers/agent" ]; then \
+      cp -R /app/.ai-agent-primers/agent /app/.opencode/; \
+    elif [ -d "/app/.ai-agent-primers/agents" ]; then \
+      cp -R /app/.ai-agent-primers/agents /app/.opencode/; \
+    fi
+
 # Install dependencies and build project
 RUN pip install --break-system-packages -e .
 
@@ -64,7 +77,7 @@ RUN mkdir -p /tmp && \
     echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Fix echidna permissions for reconuser
-RUN chmod -R 755 /home/linuxbrew/.linuxbrew/bin
+RUN chmod -R a+rx /home/linuxbrew
 
 # Switch to non-root user
 USER reconuser

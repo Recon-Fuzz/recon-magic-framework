@@ -175,6 +175,7 @@ resource "aws_ecs_task_definition" "magic_worker" {
     image     = "${module.ecr.repository_url}:latest",
     name      = var.namespace,
     command   = ["python", "runner.py"],
+    workingDirectory = "/app",
     logConfiguration = {
       logDriver = "awslogs",
       options = {

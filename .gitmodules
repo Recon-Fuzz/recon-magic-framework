@@ -1,3 +1,6 @@
 [submodule ".opencode"]
 	path = .opencode
 	url = https://github.com/Recon-Fuzz/ai-agent-primers
+[submodule ".ai-agent-primers"]
+	path = .ai-agent-primers
+	url = https://github.com/Recon-Fuzz/ai-agent-primers

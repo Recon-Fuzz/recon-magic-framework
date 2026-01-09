@@ -147,7 +147,7 @@
       "name": "Phase 2: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "prompt": "extract-target-functions --return-json",
+      "prompt": "extract-target-functions --return-json --allow-missing",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
