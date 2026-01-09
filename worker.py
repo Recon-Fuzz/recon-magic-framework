@@ -645,33 +645,6 @@ def start_job_listener(
                 # Setup git remote in repo directory for per-step pushes
                 setup_repo_remote("/app/repo", github_token, new_repo_url)
 
-                # If resuming from a specific step, sync local state with the
-                # generated repo before continuing so we pull any latest fixes.
-                if resume_from_step_id:
-                    print("  ↻ Resume detected, syncing repo before continue...")
-                    try:
-                        # Stash local changes (if any), rebase onto remote, then re-apply.
-                        subprocess.run(
-                            ["git", "-C", "/app/repo", "stash", "push", "-u", "-m", "resume-sync"],
-                            check=False,
-                            capture_output=True
-                        )
-                        subprocess.run(
-                            ["git", "-C", "/app/repo", "pull", "--rebase", "recon", "main"],
-                            check=True,
-                            capture_output=True
-                        )
-                        pop_result = subprocess.run(
-                            ["git", "-C", "/app/repo", "stash", "pop"],
-                            check=False,
-                            capture_output=True,
-                            text=True
-                        )
-                        if pop_result.returncode != 0 and "No stash entries" not in (pop_result.stderr or ""):
-                            print(f"  ⚠ Stash pop encountered an issue: {pop_result.stderr.strip()}")
-                    except subprocess.CalledProcessError as e:
-                        print(f"  ⚠ Failed to sync repo before resume: {e}")
-
                 # Push initial code to the repository
                 try:
                     subprocess.run(
@@ -736,6 +709,37 @@ def start_job_listener(
                     print(f"Workflow was gracefully stopped")
                     if failure_info:
                         print(f"  Stopped before step {failure_info['step_num']}: {failure_info['step_name']}")
+
+                # On failure or stop, commit and push any uncommitted changes
+                # This preserves progress for potential resume
+                if workflow_failed or workflow_stopped:
+                    try:
+                        # Check if there are any changes to commit
+                        status_result = subprocess.run(
+                            ["git", "-C", "/app/repo", "status", "--porcelain"],
+                            capture_output=True,
+                            text=True
+                        )
+                        if status_result.stdout.strip():
+                            print("  Committing uncommitted changes before marking job...")
+                            subprocess.run(
+                                ["git", "-C", "/app/repo", "add", "."],
+                                check=True,
+                                capture_output=True
+                            )
+                            commit_msg = "WIP: Uncommitted changes before failure" if workflow_failed else "WIP: Uncommitted changes before stop"
+                            subprocess.run(
+                                ["git", "-C", "/app/repo", "commit", "-m", commit_msg],
+                                capture_output=True
+                            )
+                            subprocess.run(
+                                ["git", "-C", "/app/repo", "push", "recon", "main"],
+                                check=True,
+                                capture_output=True
+                            )
+                            print("  ✓ Pushed uncommitted changes")
+                    except subprocess.CalledProcessError as e:
+                        print(f"  ⚠ Failed to commit/push uncommitted changes: {e}")
 
                 # Get branch name
                 try:
