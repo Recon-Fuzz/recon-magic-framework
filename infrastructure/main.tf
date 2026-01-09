@@ -77,8 +77,21 @@ resource "aws_security_group" "vpc_endpoints" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [module.vpc.vpc_cidr_block]
+    security_groups = [aws_security_group.ecs_tasks.id]
   }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "ecs_tasks" {
+  name        = "${var.namespace}-ecs-tasks"
+  description = "ECS task egress"
+  vpc_id      = module.vpc.vpc_id
 
   egress {
     from_port   = 0
@@ -191,7 +204,7 @@ resource "aws_ecs_service" "this" {
   }
 
   network_configuration {
-    security_groups = [module.vpc.default_security_group_id]
+    security_groups = [aws_security_group.ecs_tasks.id]
     subnets         = module.vpc.private_subnets
   }
 }

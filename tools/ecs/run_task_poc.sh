@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+INFRA_DIR="${ROOT_DIR}/infrastructure"
 ENV_FILE="${ROOT_DIR}/.env"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
@@ -35,23 +36,23 @@ if [[ -z "${WORKER_PERMISSIONS:-}" ]]; then
   WORKER_PERMISSIONS="false"
 fi
 
-pushd "${ROOT_DIR}/infrastructure" >/dev/null
+pushd "${INFRA_DIR}" >/dev/null
 tmp_dir="$(mktemp -d)"
 cleanup() {
-  rm -f backend.tf
+  rm -f "${INFRA_DIR}/backend.tf"
   if [[ -f "${tmp_dir}/backend.staging.tf" ]]; then
-    mv "${tmp_dir}/backend.staging.tf" backend.staging.tf
+    mv "${tmp_dir}/backend.staging.tf" "${INFRA_DIR}/backend.staging.tf"
   fi
   if [[ -f "${tmp_dir}/backend.production.tf" ]]; then
-    mv "${tmp_dir}/backend.production.tf" backend.production.tf
+    mv "${tmp_dir}/backend.production.tf" "${INFRA_DIR}/backend.production.tf"
   fi
   rmdir "${tmp_dir}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-mv backend.staging.tf "${tmp_dir}/backend.staging.tf"
-mv backend.production.tf "${tmp_dir}/backend.production.tf"
-cp "${tmp_dir}/backend.staging.tf" backend.tf
+mv "${INFRA_DIR}/backend.staging.tf" "${tmp_dir}/backend.staging.tf"
+mv "${INFRA_DIR}/backend.production.tf" "${tmp_dir}/backend.production.tf"
+cp "${tmp_dir}/backend.staging.tf" "${INFRA_DIR}/backend.tf"
 terraform init -reconfigure -input=false >/dev/null
 terraform output -json > "${tmp_dir}/terraform_outputs.json"
 popd >/dev/null
