@@ -117,6 +117,38 @@ Notes:
   `workflow-fuzzing-coverage`.
 - You can also set `WORKER_JOB_PAYLOAD` to bypass the GET call if needed.
 
+### ECS POC Walkthrough
+
+This is the full end-to-end POC flow:
+
+```bash
+# 0) Initialize submodules for agent primers
+git submodule update --init --recursive
+
+# 1) Start the mock backend (must be reachable from ECS)
+python tools/mock_backend/mock_backend.py --host 0.0.0.0 --port 8080 --log-file /tmp/mock_backend.log
+
+# 2) Verify from another host (or a browser) that the backend is reachable
+curl http://<public-ip>:8080/health
+
+# 3) Launch the ECS task (uses staging Terraform outputs)
+bash tools/ecs/run_task_poc.sh
+
+# 4) Inspect backend requests
+tail -n 200 /tmp/mock_backend.log
+```
+
+Expected HTTP interactions:
+
+- `GET /job-coverage` (job payload)
+- `PUT /data` (step updates)
+- `PUT /end` (completion)
+
+ECS logs:
+
+- CloudWatch log group: `/ecs/recon-magic-framework`
+- Stream prefix: `ecs`
+
 ```bash
 bash tools/ecs/run_task_poc.sh
 ```
