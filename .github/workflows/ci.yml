@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,7 +30,7 @@ jobs:
     name: Docker Build and Push
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v3
 
@@ -87,7 +88,7 @@ jobs:
       - name: Validate
         run: |
           cd infrastructure
-          mv backend.production.tf backend.tf && rm backend.staging.tf
+          mv backend.staging.tf backend.tf && rm backend.production.tf
           terraform init
           terraform validate
         env:
@@ -100,10 +101,38 @@ jobs:
           TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS }}
 
   deploy:
-    name: Deploy
+    name: Deploy Staging
     runs-on: ubuntu-latest
     needs: [build-and-test, docker-build, validate]
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.6"
+
+      - name: Deploy
+        run: |
+          cd infrastructure
+          mv backend.staging.tf backend.tf && rm backend.production.tf
+          terraform init
+          terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE }}
+          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU }}
+          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM }}
+          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL }}
+          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS }}
+
+  deploy-production:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    needs: [build-and-test, docker-build, validate]
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v3
 

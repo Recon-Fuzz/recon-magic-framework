@@ -69,3 +69,6 @@ htmlcov/
 *.swp
 
 .claude
+
+# Terraform
+.terraform/
