@@ -57,7 +57,7 @@
       "type": "task",
       "description": "Auto linking libraries using recon-generate",
       "preconditions": ["forge-build-gate"],
-      "prompt": "npx -y recon-generate@latest link",
+      "prompt": "npx -y recon-generate@latest link2",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"

@@ -8,7 +8,7 @@
         "name": "Forge Build Check",
         "type": "task",
         "description": "Run forge build and check for errors",
-        "prompt": "rm -f magic/BUILD_FAILED.txt && forge build -o out --build-info 2>&1 | tee magic/build-output.log || (mkdir -p magic && echo 'BUILD_FAILED' > magic/BUILD_FAILED.txt)",
+        "prompt": "mkdir -p magic; rm -f magic/BUILD_FAILED.txt; forge build -o out --build-info > magic/build-output.log 2>&1; status=$?; cat magic/build-output.log; if [ $status -ne 0 ]; then echo BUILD_FAILED > magic/BUILD_FAILED.txt; fi",
         "model": {
           "type": "PROGRAM",
           "model": "inherit"

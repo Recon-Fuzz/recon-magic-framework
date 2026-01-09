@@ -645,6 +645,33 @@ def start_job_listener(
                 # Setup git remote in repo directory for per-step pushes
                 setup_repo_remote("/app/repo", github_token, new_repo_url)
 
+                # If resuming from a specific step, sync local state with the
+                # generated repo before continuing so we pull any latest fixes.
+                if resume_from_step_id:
+                    print("  ↻ Resume detected, syncing repo before continue...")
+                    try:
+                        # Stash local changes (if any), rebase onto remote, then re-apply.
+                        subprocess.run(
+                            ["git", "-C", "/app/repo", "stash", "push", "-u", "-m", "resume-sync"],
+                            check=False,
+                            capture_output=True
+                        )
+                        subprocess.run(
+                            ["git", "-C", "/app/repo", "pull", "--rebase", "recon", "main"],
+                            check=True,
+                            capture_output=True
+                        )
+                        pop_result = subprocess.run(
+                            ["git", "-C", "/app/repo", "stash", "pop"],
+                            check=False,
+                            capture_output=True,
+                            text=True
+                        )
+                        if pop_result.returncode != 0 and "No stash entries" not in (pop_result.stderr or ""):
+                            print(f"  ⚠ Stash pop encountered an issue: {pop_result.stderr.strip()}")
+                    except subprocess.CalledProcessError as e:
+                        print(f"  ⚠ Failed to sync repo before resume: {e}")
+
                 # Push initial code to the repository
                 try:
                     subprocess.run(
