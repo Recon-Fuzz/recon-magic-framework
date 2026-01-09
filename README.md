@@ -66,6 +66,59 @@ ANTHROPIC_API_KEY=your_api_key_here
 
 - Staging dispatcher credentials are stored in AWS Secrets Manager at `recon-magic-framework/dispatcher`.
 
+### Mock Backend for ECS POC
+
+Run a minimal backend that serves job payloads and logs callbacks:
+
+```bash
+python tools/mock_backend/mock_backend.py --host 0.0.0.0 --port 8080
+```
+
+Edit `tools/mock_backend/sample_jobs.json` to customize repo/workflow values.
+If you need the worker to fetch jobs at `GET /<job_id>` (not just `/jobs/<job_id>`),
+use the bundled mock backend which supports both.
+
+### ECS POC via .env
+
+Store credentials and runtime configuration in `.env` (never commit this file).
+The runner script sources `.env` and launches the ECS task using the staging
+Terraform outputs.
+
+Required `.env` entries:
+
+```bash
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_DEFAULT_REGION=us-east-1
+WORKER_API_URL=http://<public-ip>:8080
+WORKER_BEARER_TOKEN=mock-token
+WORKER_JOB_ID=job-coverage
+GITHUB_TOKEN=...
+ANTHROPIC_API_KEY=...
+```
+
+Steps:
+
+```bash
+# 1) Start the mock backend
+python tools/mock_backend/mock_backend.py --host 0.0.0.0 --port 8080
+
+# 2) Ensure your firewall/security group exposes port 8080
+
+# 3) Launch the ECS task
+bash tools/ecs/run_task_poc.sh
+```
+
+Notes:
+
+- Set `WORKER_JOB_ID=job-coverage` to use the sample payload for
+  `workflow-fuzzing-coverage`.
+- You can also set `WORKER_JOB_PAYLOAD` to bypass the GET call if needed.
+
+```bash
+bash tools/ecs/run_task_poc.sh
+```
+
 ## Workflow Structure
 
 Workflows are JSON files that define a sequence of steps to execute. Each step can be a task (execute a prompt) or a decision (conditional branching).

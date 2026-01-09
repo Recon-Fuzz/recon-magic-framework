@@ -1,0 +1,56 @@
+{
+  "job-scouting": {
+    "data": {
+      "job": {
+        "ref": "main",
+        "claudeRef": "main",
+        "workflowName": "workflow-fuzzing-scouting",
+        "additionalData": {
+          "jobType": "workflowName"
+        }
+      },
+      "repoAccessData": {
+        "url": "https://github.com/transmissions11/solmate"
+      },
+      "claudeAccessData": {
+        "url": "https://github.com/Recon-Fuzz/ai-agent-primers"
+      }
+    }
+  },
+  "job-setup": {
+    "data": {
+      "job": {
+        "ref": "main",
+        "claudeRef": "main",
+        "workflowName": "workflow-fuzzing-setup",
+        "additionalData": {
+          "jobType": "workflowName"
+        }
+      },
+      "repoAccessData": {
+        "url": "https://github.com/transmissions11/solmate"
+      },
+      "claudeAccessData": {
+        "url": "https://github.com/Recon-Fuzz/ai-agent-primers"
+      }
+    }
+  },
+  "job-coverage": {
+    "data": {
+      "job": {
+        "ref": "main",
+        "claudeRef": "main",
+        "workflowName": "workflow-fuzzing-coverage",
+        "additionalData": {
+          "jobType": "workflowName"
+        }
+      },
+      "repoAccessData": {
+        "url": "https://github.com/transmissions11/solmate"
+      },
+      "claudeAccessData": {
+        "url": "https://github.com/Recon-Fuzz/ai-agent-primers"
+      }
+    }
+  }
+}
