@@ -62,6 +62,10 @@ Create a `.env` file in the framework root directory for any required environmen
 ANTHROPIC_API_KEY=your_api_key_here
 ```
 
+### CI/CD Infra Notes
+
+- Staging dispatcher credentials are stored in AWS Secrets Manager at `recon-magic-framework/dispatcher`.
+
 ## Workflow Structure
 
 Workflows are JSON files that define a sequence of steps to execute. Each step can be a task (execute a prompt) or a decision (conditional branching).
