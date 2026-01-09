@@ -73,9 +73,14 @@ class MockBackendHandler(BaseHTTPRequestHandler):
             with self.log_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"label": label, "payload": payload}) + "\n")
 
+    def _log_request(self, label: str, details: dict[str, Any]) -> None:
+        payload = {"path": self.path, **details}
+        self._log_payload(label, payload)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/health":
+            self._log_request("get", {})
             self._send_json({"status": "ok"})
             return
 
@@ -83,8 +88,10 @@ class MockBackendHandler(BaseHTTPRequestHandler):
             job_id = parsed.path.lstrip("/")
             job = self.store.get_job(job_id)
             if not job:
+                self._log_request("get", {"jobId": job_id, "status": "not_found"})
                 self._send_json({"error": "job not found"}, status=HTTPStatus.NOT_FOUND)
                 return
+            self._log_request("get", {"jobId": job_id, "status": "ok"})
             self._send_json(job)
             return
 
@@ -92,11 +99,14 @@ class MockBackendHandler(BaseHTTPRequestHandler):
             job_id = parsed.path.split("/", 2)[2]
             job = self.store.get_job(job_id)
             if not job:
+                self._log_request("get", {"jobId": job_id, "status": "not_found"})
                 self._send_json({"error": "job not found"}, status=HTTPStatus.NOT_FOUND)
                 return
+            self._log_request("get", {"jobId": job_id, "status": "ok"})
             self._send_json(job)
             return
 
+        self._log_request("get", {"status": "not_found"})
         self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
     def do_PUT(self) -> None:
@@ -104,16 +114,19 @@ class MockBackendHandler(BaseHTTPRequestHandler):
         payload = self._read_json()
         if parsed.path == "/data":
             self.store.record_data(payload)
+            self._log_request("put", {"status": "ok", "type": "data"})
             self._log_payload("data", payload)
             self._send_json({"status": "ok"})
             return
 
         if parsed.path == "/end":
             self.store.record_end(payload)
+            self._log_request("put", {"status": "ok", "type": "end"})
             self._log_payload("end", payload)
             self._send_json({"status": "ok"})
             return
 
+        self._log_request("put", {"status": "not_found"})
         self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
     def log_message(self, format: str, *args: object) -> None:
@@ -138,7 +151,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=Path(__file__).with_name("sample_jobs.json"),
         help="Path to JSON file keyed by job id",
     )
-    parser.add_argument("--log-file", type=Path, default=Path("mock_backend.log"))
+    parser.add_argument("--log-file", type=Path, default=Path("/tmp/mock_backend.log"))
     return parser
 
 
@@ -155,6 +168,9 @@ def main() -> int:
     MockBackendHandler.store = store
     MockBackendHandler.logger = logger
     MockBackendHandler.log_path = args.log_file
+
+    args.log_file.parent.mkdir(parents=True, exist_ok=True)
+    args.log_file.touch(exist_ok=True)
 
     server = ThreadingHTTPServer((args.host, args.port), MockBackendHandler)
     logger.info("Mock backend listening on %s:%s", args.host, args.port)

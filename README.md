@@ -71,10 +71,11 @@ ANTHROPIC_API_KEY=your_api_key_here
 Run a minimal backend that serves job payloads and logs callbacks:
 
 ```bash
-python tools/mock_backend/mock_backend.py --host 0.0.0.0 --port 8080
+python tools/mock_backend/mock_backend.py --host 0.0.0.0 --port 8080 --log-file /tmp/mock_backend.log
 ```
 
 Edit `tools/mock_backend/sample_jobs.json` to customize repo/workflow values.
+Requests are appended to `/tmp/mock_backend.log`.
 If you need the worker to fetch jobs at `GET /<job_id>` (not just `/jobs/<job_id>`),
 use the bundled mock backend which supports both.
 
