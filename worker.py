@@ -891,7 +891,25 @@ def start_job_listener(
 
                 # Generate appropriate summary based on success/failure/stopped
                 if workflow_failed:
-                    if failure_info:
+                    # Check for pre-generated failure report first
+                    failure_report_paths = [
+                        "/app/repo/magic/WORKFLOW_FAILURE_REPORT.md",
+                        f"/app/repo/{foundry_root}/magic/WORKFLOW_FAILURE_REPORT.md" if foundry_root != "/app/repo" else None
+                    ]
+                    failure_report_content = None
+                    for report_path in failure_report_paths:
+                        if report_path and os.path.exists(report_path):
+                            try:
+                                with open(report_path, 'r') as f:
+                                    failure_report_content = f.read().strip()
+                                print(f"  ✓ Using failure report from {report_path}")
+                                break
+                            except Exception as e:
+                                print(f"  ⚠ Failed to read {report_path}: {e}")
+                    
+                    if failure_report_content:
+                        summary = failure_report_content
+                    elif failure_info:
                         # Generate failure-aware summary with step info
                         summary = generate_failure_summary_with_claude(
                             failed_step_name=failure_info['step_name'],
