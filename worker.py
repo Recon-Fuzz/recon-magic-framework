@@ -206,7 +206,7 @@ def update_job_step_data(api_url: str, bearer_token: str, job_id: str, step_data
         return False
 
 
-def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num: int, step_name: str) -> bool:
+def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num: int, step_name: str, step=None, step_id: str | None = None) -> bool:
     """
     Update the current phase in the backend.
 
@@ -216,6 +216,8 @@ def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num:
         job_id: Job ID
         step_num: Current step number
         step_name: Current step name
+        step: Optional step object for additional metadata
+        step_id: Optional internal step ID (e.g., "audit:3")
 
     Returns:
         bool: True if successful
@@ -226,13 +228,34 @@ def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num:
             "Content-Type": "application/json"
         }
 
+        # Derive model category from step
+        model_category = "infra"
+        can_skip = False
+        if step:
+            model_type = step.model.type if hasattr(step, 'model') and step.model else None
+            if model_type == "PROGRAM":
+                model_category = "tool"
+            elif model_type in ("OPENCODE", "CLAUDE_CODE"):
+                model_category = "ai"
+            elif model_type == "DISPATCH_FUZZING_JOB":
+                model_category = "infra"
+            elif model_type == "INHERIT":
+                model_category = "infra"  # INHERIT resolves at runtime
+            can_skip = getattr(step, 'canSkip', False)
+
+        current_phase = {
+            "step_num": step_num,
+            "step_name": step_name,
+            "model_category": model_category,
+            "can_skip": can_skip,
+            "internal_id": step_id
+        }
+
         payload = {
             "jobId": job_id,
             "resultData": {
-                "currentPhase": {
-                    "step_num": step_num,
-                    "step_name": step_name
-                }
+                "currentPhase": current_phase,
+                "liveProgress": None  # Clear old progress when phase changes
             }
         }
 
@@ -243,14 +266,110 @@ def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num:
         )
 
         response.raise_for_status()
-        print(f"  ✓ Current phase updated: Step {step_num} - {step_name}")
+        print(f"  ✓ Current phase updated: Step {step_num} - {step_name} (category={model_category}, canSkip={can_skip})")
         return True
     except Exception as e:
         print(f"  ⚠ Failed to update current phase: {e}")
         return False
 
+def check_skip_requested(api_url: str, bearer_token: str, job_id: str, current_step_id: str) -> bool:
+    """
+    Check if a skip was requested for the current step.
 
-def worker_before_step_hook(step, step_num: int) -> None:
+    Args:
+        api_url: Base API URL
+        bearer_token: Authentication token
+        job_id: Job ID
+        current_step_id: The internal ID of the current step (e.g., "audit:3")
+
+    Returns:
+        bool: True if skip was requested for this step
+    """
+    try:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        response = requests.get(f"{api_url}/{job_id}", headers=headers)
+        response.raise_for_status()
+
+        data = response.json().get("data", {})
+        job_info = data.get("job", {})
+        additional_data = job_info.get("additionalData", {})
+
+        skip_step_id = additional_data.get("skipStepId")
+        if skip_step_id:
+            print(f"  🔍 Skip check: skipStepId='{skip_step_id}' vs current='{current_step_id}' -> match={skip_step_id == current_step_id}")
+        return skip_step_id == current_step_id
+    except Exception as e:
+        print(f"  ⚠ Skip check error: {e}")
+        return False
+
+
+def clear_skip_request() -> bool:
+    """
+    Clear the skipStepId from additionalData after processing the skip.
+    This prevents the skip from being triggered again.
+
+    Returns:
+        bool: True if successful
+    """
+    api_url = os.environ.get('WORKER_API_URL')
+    bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+    job_id = os.environ.get('WORKER_JOB_ID')
+
+    if not all([api_url, bearer_token, job_id]):
+        return False
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {bearer_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Clear skipStepId by setting it to None
+        payload = {
+            "jobId": job_id,
+            "skipStepId": None
+        }
+
+        response = requests.put(
+            f"{api_url}/data",
+            headers=headers,
+            json=payload
+        )
+
+        response.raise_for_status()
+        print(f"  ✓ Cleared skipStepId from job")
+        return True
+    except Exception as e:
+        print(f"  ⚠ Failed to clear skipStepId: {e}")
+        return False
+
+
+def send_live_progress(progress: str) -> None:
+    """
+    Send live progress data to the backend (overwrites previous, not appended to steps).
+
+    Args:
+        progress_data: Live progress data (e.g., {"log_extract": "coverage: 85%", "timestamp": ...})
+    """
+    if all([
+        os.environ.get('WORKER_API_URL'),
+        os.environ.get('WORKER_BEARER_TOKEN'),
+        os.environ.get('WORKER_JOB_ID')
+    ]):
+        try:
+            update_job_data(
+                api_url=os.environ.get('WORKER_API_URL', ''),
+                bearer_token=os.environ.get('WORKER_BEARER_TOKEN', ''),
+                job_id=os.environ.get('WORKER_JOB_ID', ''),
+                data={"liveProgress": {
+                    "logExtract": progress,
+                    "timestamp": int(time.time())
+                }}
+            )
+        except Exception:
+            pass  # Silent fail for progress reporting
+
+def worker_before_step_hook(step, step_num: int, step_id: str | None = None) -> None:
     """
     Worker-specific hook that runs before step execution.
     Updates the backend with the current phase.
@@ -258,12 +377,17 @@ def worker_before_step_hook(step, step_num: int) -> None:
     Args:
         step: The workflow step being executed
         step_num: The step number (1-indexed)
+        step_id: The internal step ID (e.g., "audit:3") for skip checking
     """
     print(f"[Worker] Before step {step_num}: {step.name}")
     print(f"Type: {step.type}")
     if hasattr(step, 'model') and step.model:
         print(f"Model: {step.model.type}")
     print(f"Description: {step.description or 'N/A'}")
+    if hasattr(step, 'canSkip') and step.canSkip:
+        print(f"Can Skip: {step.canSkip}")
+    if step_id:
+        print(f"Step ID: {step_id}")
 
     # Update current phase in backend
     api_url = os.environ.get('WORKER_API_URL')
@@ -271,7 +395,7 @@ def worker_before_step_hook(step, step_num: int) -> None:
     job_id = os.environ.get('WORKER_JOB_ID')
 
     if all([api_url, bearer_token, job_id]):
-        update_current_phase(api_url, bearer_token, job_id, step_num, step.name)
+        update_current_phase(api_url, bearer_token, job_id, step_num, step.name, step, step_id)
 
 
 def worker_after_step_hook(step, step_num: int, return_code: int, action: str, step_result: dict | None = None) -> None:
@@ -307,12 +431,22 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
         print("  ⚠ Missing API credentials, skipping backend update")
         return
 
+    # Derive model category
+    model_type = step.model.type if hasattr(step, 'model') and step.model else None
+    if model_type == "PROGRAM":
+        model_category = "tool"
+    elif model_type in ("OPENCODE", "CLAUDE_CODE"):
+        model_category = "ai"
+    else:
+        model_category = "infra"
+
     # Build step data for backend
     step_data = {
         "step_num": step_num,
         "step_name": step.name,
         "return_code": return_code,
         "action": action,
+        "model_category": model_category,
     }
 
     # Add step_result data if available
@@ -330,6 +464,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
             step_data["failed"] = step_result["failed"]
         if step_result.get("stopped"):
             step_data["stopped"] = step_result["stopped"]
+        if step_result.get("skipped"):
+            step_data["skipped"] = step_result["skipped"]
 
     # Send to backend
     update_job_step_data(api_url, bearer_token, job_id, step_data)

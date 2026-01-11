@@ -140,6 +140,10 @@
         "model": "inherit"
       },
       "allowFailure": true,
+      "canSkip": true,
+      "logFile": "echidna-output.log",
+      "logInterval": 10,
+      "logRegex": "cov: \\d+, corpus: \\d+",
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
@@ -287,7 +291,7 @@
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 32: Workflow Complete",
+          "destinationStep": "Step 33: Workflow Complete",
           "NOTE": "Full coverage achieved, skip to completion"
         }
       ],
@@ -339,6 +343,10 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "canSkip": true,
+      "logFile": "echidna-output.log",
+      "logInterval": 10,
+      "logRegex": "cov: \\d+, corpus: \\d+",
       "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true

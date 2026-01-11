@@ -4,12 +4,15 @@ Task execution module for workflow steps.
 
 import json
 import os
+import re
 import shlex
+import signal
 import subprocess
-import tempfile
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +21,8 @@ from core.path_utils import resolve_file_path
 # Exit codes
 SUCCESS = 0
 FAILURE = 1
+SKIPPED = 3  # Step was skipped via user request
+STALE = 200  # AI process went stale (no log activity)
 
 
 class ModelType:
@@ -63,6 +68,535 @@ class TaskStep(BaseModel):
     allowFailure: bool = Field(default=False, alias="allowFailure")
     dispatchConfig: DispatchConfig | None = Field(default=None, alias="dispatchConfig")
     preconditions: list[str] | None = Field(default=None, alias="preconditions")
+    # Skip/interrupt support
+    canSkip: bool = Field(default=False, alias="canSkip")
+    # Live log monitoring (for long-running steps like echidna)
+    logFile: str | None = Field(default=None, alias="logFile")
+    logInterval: int = Field(default=10, alias="logInterval")  # seconds
+    logRegex: str | None = Field(default=None, alias="logRegex")
+
+
+# Global reference to currently running subprocess (for skip/interrupt)
+_current_process: subprocess.Popen | None = None
+_current_process_lock = threading.Lock()
+
+
+def get_current_process() -> subprocess.Popen | None:
+    """Get the currently running subprocess (if any)."""
+    with _current_process_lock:
+        return _current_process
+
+
+def set_current_process(proc: subprocess.Popen | None):
+    """Set the currently running subprocess reference."""
+    global _current_process
+    with _current_process_lock:
+        _current_process = proc
+
+
+def interrupt_current_process() -> bool:
+    """
+    Send SIGINT (Ctrl+C) to interrupt the current subprocess and its children.
+    
+    Since we use start_new_session=True, the process runs in its own process group.
+    We send SIGINT to the entire process group so that child processes (like echidna
+    spawned by bash -c) also receive the signal.
+    
+    Returns True if signal was sent, False if no process running.
+    """
+    proc = get_current_process()
+    if not proc or proc.poll() is not None:
+        print(f"  ⚠ No current process to interrupt (proc={proc}, poll={proc.poll() if proc else 'N/A'})")
+        return False
+    
+    try:
+        # Send SIGINT to the entire process group (proc.pid is the group leader)
+        os.killpg(proc.pid, signal.SIGINT)
+        print(f"  ⏭️  Sent SIGINT (Ctrl+C) to process group {proc.pid}")
+        return True
+    except Exception as e:
+        print(f"  ⚠ Failed to send SIGINT: {e}")
+        return False
+
+
+class LogMonitor:
+    """
+    Background thread that monitors a log file and extracts data via regex.
+    Sends extracted data to the backend at regular intervals.
+    """
+
+    def __init__(
+        self,
+        log_file: str,
+        interval: int,
+        regex_pattern: str | None,
+        progress_callback: callable
+    ):
+        self.log_file = log_file
+        self.interval = interval
+        self.regex_pattern = re.compile(regex_pattern) if regex_pattern else None
+        self.progress_callback = progress_callback
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_position = 0
+
+    def start(self):
+        """Start the monitoring thread."""
+        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Stop the monitoring thread."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def _monitor_loop(self):
+        """Main monitoring loop."""
+        while not self._stop_event.is_set():
+            try:
+                self._check_log_file()
+            except Exception as e:
+                print(f"  ⚠ Log monitor error: {e}")
+
+            # Wait for interval or until stopped
+            self._stop_event.wait(timeout=self.interval)
+
+    def _check_log_file(self):
+        """Read new content from log file and extract matches."""
+        if not os.path.exists(self.log_file):
+            return
+
+        try:
+            with open(self.log_file, 'r') as f:
+                f.seek(self._last_position)
+                new_content = f.read()
+                self._last_position = f.tell()
+
+            if not new_content:
+                return
+
+            # Extract matches using regex
+            extracted = None
+            if self.regex_pattern:
+                matches = self.regex_pattern.findall(new_content)
+                if matches:
+                    # Keep the last match
+                    extracted = matches[-1] if isinstance(matches[-1], str) else str(matches[-1])
+            else:
+                # No regex - send last few lines
+                lines = new_content.strip().split('\n')
+                extracted = '\n'.join(lines[-5:]) if lines else None
+
+            if extracted:
+                self.progress_callback(extracted)
+        except Exception as e:
+            print(f"  ⚠ Error reading log file: {e}")
+
+
+class OpenCodeLogMonitor:
+    """
+    Background thread that monitors OPENCODE JSON log output and extracts progress.
+    OPENCODE outputs JSON lines, and we parse:
+    - todowrite tool events to extract todo progress
+    - write tool events to extract file write activity
+    
+    Also tracks staleness - if no log updates for stale_timeout seconds, 
+    the process is considered stale.
+    """
+
+    def __init__(
+        self,
+        log_file: str,
+        interval: int = 5,
+        progress_callback: Callable[[dict], None] | None = None,
+        stale_timeout: int = 300  # 5 minutes default
+    ):
+        self.log_file = log_file
+        self.interval = interval
+        self.progress_callback = progress_callback
+        self.stale_timeout = stale_timeout
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_position = 0
+        self._last_progress: str | None = None
+        self._last_update_time: float = time.time()  # Track when we last saw log activity
+        self._is_stale = False
+
+    @property
+    def is_stale(self) -> bool:
+        """Check if the log has been stale (no updates) for stale_timeout seconds."""
+        return self._is_stale
+
+    def _check_staleness(self):
+        """Check if logs are stale and update the stale flag."""
+        elapsed = time.time() - self._last_update_time
+        if elapsed >= self.stale_timeout:
+            if not self._is_stale:
+                print(f"  ⚠️ AI process appears stale - no log updates for {int(elapsed)}s")
+                self._is_stale = True
+
+    def start(self):
+        """Start the monitor thread."""
+        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Stop the monitor thread."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def _extract_progress(self, json_line: str) -> str | None:
+        """
+        Extract progress from a JSON line.
+        Returns format: 
+        - "✅ todos X/Y: {in_progress todo content}" for todowrite
+        - "✏️ Write: {filename}" for write
+        """
+        try:
+            import json
+            data = json.loads(json_line)
+            
+            # Check if this is a tool_use event
+            if data.get("type") != "tool_use":
+                return None
+            
+            part = data.get("part", {})
+            tool = part.get("tool")
+            
+            if tool == "todowrite":
+                return self._extract_todo_progress(part)
+            elif tool == "write":
+                return self._extract_write_progress(part)
+            
+            return None
+                
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
+
+    def _extract_todo_progress(self, part: dict) -> str | None:
+        """Extract todo progress from a todowrite tool event."""
+        try:
+            state = part.get("state", {})
+            input_data = state.get("input", {})
+            todos = input_data.get("todos", [])
+            
+            if not todos:
+                return None
+            
+            # Calculate progress
+            total = len(todos)
+            pending_count = sum(1 for t in todos if t.get("status") == "pending")
+            completed_count = total - pending_count
+            
+            # Find in_progress todo content
+            in_progress_todo = next(
+                (t for t in todos if t.get("status") == "in_progress"),
+                None
+            )
+            
+            if in_progress_todo:
+                content = in_progress_todo.get("content", "")
+                # Truncate long content
+                if len(content) > 60:
+                    content = content[:57] + "..."
+                return f"✅ todos {completed_count}/{total}: {content}"
+            else:
+                return f"✅ todos {completed_count}/{total}"
+        except (KeyError, TypeError):
+            return None
+
+    def _extract_write_progress(self, part: dict) -> str | None:
+        """Extract file write progress from a write tool event."""
+        try:
+            state = part.get("state", {})
+            input_data = state.get("input", {})
+            file_path = input_data.get("filePath", "")
+            
+            if not file_path:
+                return None
+            
+            # Extract just the filename from the path
+            filename = os.path.basename(file_path)
+            return f"✏️ Write: {filename}"
+        except (KeyError, TypeError):
+            return None
+
+    def _monitor_loop(self):
+        """Main monitoring loop that reads new JSON lines and extracts progress."""
+        while not self._stop_event.is_set():
+            self._read_and_report()
+            self._stop_event.wait(timeout=self.interval)
+
+    def _read_and_report(self):
+        """Read new content from log file and report progress."""
+        try:
+            if not os.path.exists(self.log_file):
+                return
+
+            with open(self.log_file, 'r') as f:
+                f.seek(self._last_position)
+                new_content = f.read()
+                self._last_position = f.tell()
+
+            if not new_content:
+                # No new content - check staleness
+                self._check_staleness()
+                return
+
+            # Got new content - reset staleness tracking
+            self._last_update_time = time.time()
+            self._is_stale = False
+
+            # Process each JSON line
+            for line in new_content.strip().split('\n'):
+                if not line.strip():
+                    continue
+                progress = self._extract_progress(line)
+                if progress and progress != self._last_progress:
+                    self._last_progress = progress
+                    if self.progress_callback:
+                        self.progress_callback(progress)
+        except Exception as e:
+            pass  # Silent fail for monitoring
+
+
+class SkipChecker:
+    """
+    Background thread that polls for skip requests and interrupts the subprocess.
+    """
+
+    def __init__(self, step_id: str, check_interval: int = 5):
+        self.step_id = step_id
+        self.check_interval = check_interval
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._skipped = False
+
+    @property
+    def was_skipped(self) -> bool:
+        return self._skipped
+
+    def start(self):
+        """Start the skip checker thread."""
+        self._thread = threading.Thread(target=self._check_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Stop the skip checker thread."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def _check_loop(self):
+        """Main checking loop."""
+        # Import here to avoid circular dependency
+        from worker import check_skip_requested
+
+        api_url = os.environ.get('WORKER_API_URL')
+        bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+        job_id = os.environ.get('WORKER_JOB_ID')
+
+        if not all([api_url, bearer_token, job_id]):
+            return
+
+        while not self._stop_event.is_set():
+            try:
+                if check_skip_requested(api_url, bearer_token, job_id, self.step_id):
+                    print(f"  ⏭️  Skip requested for step {self.step_id}")
+                    self._skipped = True
+                    interrupt_current_process()  # Sends SIGINT to the process
+                    # Clear the skipStepId so it doesn't trigger again
+                    from worker import clear_skip_request
+                    clear_skip_request()
+                    return
+            except Exception as e:
+                print(f"  ⚠ Skip check error: {e}")
+
+            self._stop_event.wait(timeout=self.check_interval)
+
+
+def run_ai_command_with_progress(
+    cmd: str,
+    log_file: Path,
+    model_type: str,
+    env: dict,
+    step: TaskStep | None = None,
+    step_id: str | None = None,
+    stale_timeout: int = 600,  # 10 minutes default
+) -> int:
+    """
+    Run an AI command (OPENCODE/CLAUDE_CODE) with automatic progress monitoring.
+
+    Args:
+        cmd: Command to execute
+        log_file: Path to the log file being written by tee
+        model_type: "OPENCODE" or "CLAUDE_CODE"
+        env: Environment variables
+        step: Optional TaskStep for skip checking
+        step_id: Optional step ID for skip checking
+        stale_timeout: Seconds without log updates before considering process stale
+
+    Returns:
+        int: Return code from the command (STALE=200 if process went stale)
+    """
+    skip_checker = None
+    log_monitor = None
+
+    try:
+        # Start skip checker if step is skippable
+        if step and step.canSkip and step_id:
+            skip_checker = SkipChecker(step_id, check_interval=5)
+            skip_checker.start()
+            print(f"  ⏭️  Skip checking enabled for step {step_id}")
+
+        # Start log monitor for AI progress (always enabled for AI steps)
+        # OPENCODE uses JSON output, needs special parser for todowrite events
+        # CLAUDE_CODE uses stream-json, can use regex on parsed output
+        if model_type == "OPENCODE":
+            from worker import send_live_progress
+            log_monitor = OpenCodeLogMonitor(
+                log_file=str(log_file),
+                interval=5,
+                progress_callback=send_live_progress,
+                stale_timeout=stale_timeout
+            )
+            log_monitor.start()
+            print(f"  📊 AI progress monitoring enabled (every 5s, stale timeout: {stale_timeout}s)")
+        # CLAUDE_CODE - TODO: add progress monitoring if needed
+
+        # Run the command with Popen for interruptibility
+        process = subprocess.Popen(
+            cmd,
+            shell=True,
+            env=env,
+            text=True,
+            start_new_session=True
+        )
+        set_current_process(process)
+
+        # Poll for completion while checking for staleness
+        while True:
+            return_code = process.poll()
+            if return_code is not None:
+                break
+            
+            # Check if process went stale (no log output for stale_timeout)
+            if log_monitor and log_monitor.is_stale:
+                print(f"  🔄 Killing stale AI process (no activity for {stale_timeout}s)")
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=10)  # Give it time to die
+                return STALE
+            
+            time.sleep(1)  # Check every second
+
+        # Check if we were skipped
+        if skip_checker and skip_checker.was_skipped:
+            print(f"  ⏭️  Step was skipped by user request")
+            return SKIPPED
+
+        return return_code
+
+    finally:
+        set_current_process(None)
+        if skip_checker:
+            skip_checker.stop()
+        if log_monitor:
+            log_monitor.stop()
+
+
+def run_with_monitoring(
+    cmd: str,
+    step: TaskStep,
+    step_id: str | None,
+    env: dict,
+    shell: bool = True,
+    text: bool = True,
+    capture_output: bool = False
+) -> tuple[int, bool, str | None, str | None]:
+    """
+    Run a command with optional skip checking and log monitoring.
+    Works identically to subprocess.run but with monitoring/skip support.
+
+    Args:
+        cmd: Command to execute
+        step: TaskStep with canSkip, logFile, logInterval, logRegex settings
+        step_id: Internal step ID (for skip checking)
+        env: Environment variables
+        shell: Run as shell command
+        text: Text mode for output
+        capture_output: Whether to capture stdout/stderr
+
+    Returns:
+        tuple[int, bool, str | None, str | None]: (return_code, was_skipped, stdout, stderr)
+    """
+    skip_checker = None
+    log_monitor = None
+    was_skipped = False
+    stdout_data = None
+    stderr_data = None
+
+    try:
+        # Start skip checker if step is skippable
+        if step.canSkip and step_id:
+            skip_checker = SkipChecker(step_id, check_interval=5)
+            skip_checker.start()
+            print(f"  ⏭️  Skip checking enabled for step {step_id}")
+
+        # Start log monitor if configured
+        if step.logFile:
+            # Resolve log file path relative to foundry root
+            foundry_root = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH', '.')
+            log_path = os.path.join(foundry_root, step.logFile)
+
+            from worker import send_live_progress
+
+            log_monitor = LogMonitor(
+                log_file=log_path,
+                interval=step.logInterval,
+                regex_pattern=step.logRegex,
+                progress_callback=send_live_progress
+            )
+            log_monitor.start()
+            print(f"  📊 Log monitoring enabled: {step.logFile} (every {step.logInterval}s)")
+
+        # Run the command with Popen for interruptibility
+        process = subprocess.Popen(
+            cmd,
+            shell=shell,
+            env=env,
+            text=text,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.PIPE if capture_output else None,
+            start_new_session=True  # Create new process group for clean signal handling
+        )
+        set_current_process(process)
+
+        # Wait for completion and capture output if requested
+        if capture_output:
+            stdout_data, stderr_data = process.communicate()
+            return_code = process.returncode
+        else:
+            return_code = process.wait()
+
+        # Check if we were skipped
+        if skip_checker and skip_checker.was_skipped:
+            was_skipped = True
+            # Return code might be non-zero due to SIGINT, but we treat it as success
+            return_code = SKIPPED
+
+        return (return_code, was_skipped, stdout_data, stderr_data)
+
+    finally:
+        set_current_process(None)
+        if skip_checker:
+            skip_checker.stop()
+        if log_monitor:
+            log_monitor.stop()
 
 
 def resolve_model_string(model_type: str, model_string: str) -> str:
@@ -115,9 +649,6 @@ def resolve_path_template(path_template: str, step_num: int, tool_data: dict | N
     Returns:
         Resolved Path object
     """
-    from datetime import datetime
-    import re
-
     path = path_template
 
     # Replace {timestamp} from tool_data
@@ -158,9 +689,14 @@ def resolve_path_template(path_template: str, step_num: int, tool_data: dict | N
     return Path(path)
 
 
-def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | None]:
+def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None) -> tuple[int, str, str | None]:
     """
     Execute a task step based on its model type.
+
+    Args:
+        step: The task step to execute
+        step_num: Step number for logging
+        step_id: Optional internal step ID (e.g., "audit:3") for skip checking
 
     Returns:
         tuple[int, str, str | None]: (return_code, action, destination_step_name)
@@ -187,51 +723,47 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
         # Check if we need to capture output
         capture_output = step.output and step.output.capture
 
-        # Run the program
-        result = subprocess.run(
-            command,
-            shell=True,
-            env=os.environ.copy(),
-            capture_output=capture_output,
-            text=True if capture_output else False
-        )
+        # Execute command - use monitoring if step has skip/log config, otherwise simple subprocess
+        if step.canSkip or step.logFile:
+            return_code, was_skipped, stdout, stderr = run_with_monitoring(
+                command, step, step_id, env=os.environ.copy(),
+                shell=True, text=True, capture_output=capture_output
+            )
+            if was_skipped:
+                print(f"  ⏭️  Step was skipped by user request")
+                return (SUCCESS, "SKIPPED", None)
+        else:
+            result = subprocess.run(
+                command, shell=True, env=os.environ.copy(),
+                capture_output=capture_output, text=True if capture_output else False
+            )
+            return_code = result.returncode
+            stdout = result.stdout if capture_output else None
+            stderr = result.stderr if capture_output else None
 
-        # Check if the command failed
-        if result.returncode != 0:
-            error_msg = f"  ❌ Command failed with exit code {result.returncode}"
-            print(error_msg)
+        # Unified error handling
+        if return_code != 0:
+            print(f"  ❌ Command failed with exit code {return_code}")
             if capture_output:
-                if result.stdout:
-                    print(f"  📤 stdout:\n{result.stdout}")
-                if result.stderr:
-                    print(f"  📤 stderr:\n{result.stderr}")
+                if stdout:
+                    print(f"  📤 stdout:\n{stdout}")
+                if stderr:
+                    print(f"  📤 stderr:\n{stderr}")
 
-            # If allowFailure is set, continue despite the failure
             if hasattr(step, 'allowFailure') and step.allowFailure:
                 print(f"  ⚠️  Continuing despite failure (allowFailure is enabled)")
                 return (SUCCESS, "CONTINUE", None)
-
             return (FAILURE, "CONTINUE", None)
 
-        # Handle output if configured
+        # Unified output handling
         if capture_output and step.output and step.output.save_to:
             try:
-                # Parse JSON output from stdout
-                output_data = json.loads(result.stdout)
-
-                # Resolve the save path using tool output data for placeholders
+                output_data = json.loads(stdout)
                 save_path = resolve_path_template(step.output.save_to, step_num, output_data)
-
-                # Make save_path absolute using consistent path resolution
-                # This ensures files are saved in the correct location (handles monorepos)
                 save_path = resolve_file_path(save_path)
-
-                # Ensure directory exists
                 save_path.parent.mkdir(parents=True, exist_ok=True)
 
-                # Write the output
                 with open(save_path, 'w') as f:
-                    # If output has a 'data' field, write that; otherwise write everything
                     if isinstance(output_data, dict) and 'data' in output_data:
                         json.dump(output_data['data'], f, indent=2)
                     else:
@@ -241,8 +773,8 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
             except json.JSONDecodeError as e:
                 print(f"  ❌ Error: Failed to parse JSON output: {e}")
-                if result.stdout:
-                    print(f"  📤 stdout received:\n{result.stdout}")
+                if stdout:
+                    print(f"  📤 stdout received:\n{stdout}")
                 return (FAILURE, "CONTINUE", None)
             except Exception as e:
                 print(f"  ❌ Error: Failed to save output: {e}")
@@ -270,7 +802,6 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
     # Generate log filename with timestamp and step name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     # Sanitize step name: remove/replace all special characters
-    import re
     safe_step_name = re.sub(r'[^a-z0-9_-]', '_', step.name.lower().replace(" ", "_"))
     log_file = logs_dir / f"{timestamp}_step{step_num}_{safe_step_name}.log"
 
@@ -288,7 +819,7 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
-        import re
+
         agent_file_match = re.search(r'\./(\.opencode|\.claude)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Try /app first (worker/Docker), fall back to framework_root (local dev)
@@ -324,16 +855,35 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         print(f"📝 Logging to: {log_file}\n")
 
-        # Execute the command
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            env=env,
-            text=True
-        )
+        # Retry loop for stale AI processes
+        max_retries = 3
+        for attempt in range(max_retries):
+            if attempt > 0:
+                print(f"\n  🔄 Retrying stale AI step (attempt {attempt + 1}/{max_retries})")
 
-        if result.returncode != 0:
-            print(f"  ❌ Claude Code execution failed with exit code {result.returncode}")
+            # Always use AI progress monitoring for Claude Code steps
+            return_code = run_ai_command_with_progress(
+                cmd=cmd,
+                log_file=log_file,
+                model_type="CLAUDE_CODE",
+                env=env,
+                step=step,
+                step_id=step_id
+            )
+
+            if return_code == STALE and attempt < max_retries - 1:
+                print(f"  ⚠️  AI process went stale, will retry...")
+                continue
+
+            break  # Exit retry loop on success, skip, failure, or final attempt
+
+        if return_code == SKIPPED:
+            return (SUCCESS, "SKIPPED", None)
+        if return_code == STALE:
+            print(f"  ❌ Claude Code execution went stale after {max_retries} retries")
+            return (FAILURE, "CONTINUE", None)
+        if return_code != 0:
+            print(f"  ❌ Claude Code execution failed with exit code {return_code}")
             return (FAILURE, "CONTINUE", None)
 
         return (SUCCESS, "CONTINUE", None)
@@ -346,7 +896,6 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
-        import re
         agent_file_match = re.search(r'\./(\.opencode|\.claude)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Try /app first (worker/Docker), fall back to framework_root (local dev)
@@ -384,15 +933,35 @@ def execute_task_step(step: TaskStep, step_num: int) -> tuple[int, str, str | No
 
         print(f"📝 Logging to: {log_file}\n")
 
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            env=env,
-            text=True
-        )
+        # Retry loop for stale AI processes
+        max_retries = 3
+        for attempt in range(max_retries):
+            if attempt > 0:
+                print(f"\n  🔄 Retrying stale AI step (attempt {attempt + 1}/{max_retries})")
 
-        if result.returncode != 0:
-            print(f"  ❌ OpenCode execution failed with exit code {result.returncode}")
+            # Always use AI progress monitoring for OpenCode steps
+            return_code = run_ai_command_with_progress(
+                cmd=cmd,
+                log_file=log_file,
+                model_type="OPENCODE",
+                env=env,
+                step=step,
+                step_id=step_id
+            )
+
+            if return_code == STALE and attempt < max_retries - 1:
+                print(f"  ⚠️  AI process went stale, will retry...")
+                continue
+
+            break  # Exit retry loop on success, skip, failure, or final attempt
+
+        if return_code == SKIPPED:
+            return (SUCCESS, "SKIPPED", None)
+        if return_code == STALE:
+            print(f"  ❌ OpenCode execution went stale after {max_retries} retries")
+            return (FAILURE, "CONTINUE", None)
+        if return_code != 0:
+            print(f"  ❌ OpenCode execution failed with exit code {return_code}")
             return (FAILURE, "CONTINUE", None)
 
         return (SUCCESS, "CONTINUE", None)

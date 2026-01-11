@@ -81,6 +81,7 @@ def generate_failure_summary_with_claude(
                 f"Summarize what was accomplished since commit {since_commit} before the failure "
                 "in 2-3 sentences in markdown format. Then briefly mention that the workflow "
                 f"stopped at step {failed_step_num} ('{failed_step_name}'). "
+                "If magic/WORKFLOW_FAILURE_REPORT.md exists, read it and add a short 1-2 line fix suggestion. "
                 "Return exclusively the summary, no other text. Talk as if you performed the tasks."
             )
         else:
@@ -88,6 +89,7 @@ def generate_failure_summary_with_claude(
                 f"The workflow failed at step {failed_step_num}: '{failed_step_name}'. "
                 "Summarize what changes were made before the failure in 2-3 sentences in markdown format. "
                 f"Then briefly mention that the workflow stopped at step {failed_step_num} ('{failed_step_name}'). "
+                "If magic/WORKFLOW_FAILURE_REPORT.md exists, read it and add a short 1-2 line fix suggestion. "
                 "Return exclusively the summary, no other text. Talk as if you performed the tasks."
             )
 

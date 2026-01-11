@@ -8,7 +8,7 @@
         "name": "Forge Build Check",
         "type": "task",
         "description": "Run forge build and check for errors",
-        "prompt": "mkdir -p magic; rm -f magic/BUILD_FAILED.txt; forge build -o out --build-info > magic/build-output.log 2>&1; status=$?; cat magic/build-output.log; if [ $status -ne 0 ]; then echo BUILD_FAILED > magic/BUILD_FAILED.txt; fi",
+        "prompt": "mkdir -p magic; rm -f magic/BUILD_FAILED.txt magic/WORKFLOW_FAILURE_REPORT.md; forge build -o out --build-info > magic/build-output.log 2>&1; status=$?; cat magic/build-output.log; if [ $status -ne 0 ]; then echo BUILD_FAILED > magic/BUILD_FAILED.txt; fi",
         "model": {
           "type": "PROGRAM",
           "model": "inherit"
@@ -56,7 +56,7 @@
         "name": "Run Echidna",
         "type": "task",
         "description": "Run Echidna to test the fuzzing setup and save logs",
-        "prompt": "rm -rf echidna/*.txt 2>/dev/null; (echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration 2>&1 | tee magic/echidna-output.log) || true; mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true)",
+        "prompt": "rm -rf echidna/*.txt magic/WORKFLOW_FAILURE_REPORT.md 2>/dev/null; (echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration 2>&1 | tee magic/echidna-output.log) || true; mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true)",
         "model": {
           "type": "PROGRAM",
           "model": "inherit"

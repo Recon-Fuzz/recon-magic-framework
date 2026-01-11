@@ -268,7 +268,7 @@ def load_workflow(filepath: str) -> Workflow:
 
     return Workflow(**data)
 
-def default_before_step_execution(step: Step, step_num: int) -> None:
+def default_before_step_execution(step: Step, step_num: int, step_id: str | None = None) -> None:
     """
     Default hook that runs before step execution.
     Can be overridden by passing a custom before_hook to run_workflow().
@@ -320,8 +320,7 @@ def check_gate_condition(gate: dict) -> bool:
 
 def execute_gate(
     gate_name: str,
-    step_num: int,
-    workflow: 'Workflow'
+    step_num: int
 ) -> tuple[bool, str | None]:
     """
     Execute a gate's check and fix cycle.
@@ -342,6 +341,7 @@ def execute_gate(
             - error_message: Description of failure if gate failed
     """
     global _workflow_gates
+    from worker import send_live_progress
 
     if gate_name not in _workflow_gates:
         print(f"  ⚠️  Gate '{gate_name}' not found in workflow-gates.json")
@@ -352,6 +352,9 @@ def execute_gate(
 
     print(f"\n🔒 Executing gate: {gate_name}")
     print(f"   Max retries: {max_retries}")
+
+    # Send gate checking status via liveProgress
+    send_live_progress("🔐 Gate checking...")
 
     # Gate sub-step counter for unique log naming
     gate_sub_step = 0
@@ -376,12 +379,14 @@ def execute_gate(
         # Evaluate success condition
         if check_gate_condition(gate):
             print(f"   ✅ Gate '{gate_name}' PASSED")
+            send_live_progress("✅ Gate passed")
             return (True, None)
 
         print(f"   ❌ Gate condition not met")
 
         # If we have retries left, run the fix step
         if attempt < max_retries:
+            send_live_progress(f"🔧 Gate fixing (attempt {attempt + 1}/{max_retries})...")
             fix_step_data = gate.get("fix", {})
             if fix_step_data:
                 gate_sub_step += 1
@@ -401,6 +406,7 @@ def execute_gate(
                         push_changes(int(gate_step_num * 10))
         else:
             print(f"   ❌ Max retries ({max_retries}) exceeded for gate '{gate_name}'")
+            send_live_progress("❌ Gate failed")
             
             # Execute onFailure handler if defined (e.g., generate failure report)
             on_failure_data = gate.get("onFailure", {})
@@ -430,7 +436,8 @@ def execute_step(
     step_num: int,
     execution_count: int,
     loop_hardcap: int = DEFAULT_LOOP_HARDCAP,
-    before_hook: Callable[[Step, int], None] | None = None,
+    before_hook: Callable[[Step, int, str | None], None] | None = None,
+    step_id: str | None = None,
 ) -> tuple[int, str, str | None]:
     """
     Execute a workflow step based on its step type.
@@ -440,7 +447,8 @@ def execute_step(
         step_num: The step number for logging
         execution_count: Number of times this step has been executed
         loop_hardcap: Maximum number of times a decision step can loop
-        before_hook: Optional callback to run before step execution
+        before_hook: Optional callback to run before step execution (receives step, step_num, step_id)
+        step_id: Optional internal step ID (e.g., "audit:3") for skip checking
 
     Returns:
         tuple[int, str, str | None]: (Return code, Action, Destination step name)
@@ -448,7 +456,7 @@ def execute_step(
     # Use provided hooks or default ones
     _before_hook = before_hook or default_before_step_execution
 
-    _before_hook(step, step_num)
+    _before_hook(step, step_num, step_id)
 
     return_code, action, destination = None, None, None
 
@@ -459,7 +467,7 @@ def execute_step(
     else:
         # Switch on step.type first
         if isinstance(step, TaskStep):
-            return_code, action, destination = execute_task_step(step, step_num)
+            return_code, action, destination = execute_task_step(step, step_num, step_id)
         elif isinstance(step, DecisionStep):
             return_code, action, destination = execute_decision_step(step, step_num)
         else:
@@ -690,7 +698,7 @@ def run_workflow(
     loop_hardcap: int = DEFAULT_LOOP_HARDCAP,
     logs_dir: str | None = None,
     repo_path: str | None = None,
-    before_hook: Callable[[Step, int], None] | None = None,
+    before_hook: Callable[[Step, int, str | None], None] | None = None,
     after_hook: Callable[[Step, int, int, str, dict | None], None] | None = None,
     stop_checker: Callable[[], bool] | None = None,
     resume_from_step_id: str | None = None
@@ -794,16 +802,23 @@ def run_workflow(
             step_execution_count[i] = 0
         step_execution_count[i] += 1
 
+        # Get step_id early - needed for phase update and skip checking
+        step_id = _step_metadata.get(i, {}).get("internal_id") if _step_metadata else None
+
         print(f"\n[Step {i}/{len(workflow.steps)}] {step.name} (execution #{step_execution_count[i]})")
         print(f"Type: {step.type}")
         if hasattr(step, 'model') and step.model:
             print(f"Model: {step.model.type}")
 
+        # Update current phase BEFORE running gates (so UI shows correct step)
+        if before_hook:
+            before_hook(step, i, step_id)
+
         # Check preconditions (gates) if any are defined
         if hasattr(step, 'preconditions') and step.preconditions:
             print(f"\n🔐 Checking preconditions: {step.preconditions}")
             for gate_name in step.preconditions:
-                gate_passed, error_msg = execute_gate(gate_name, i, workflow)
+                gate_passed, error_msg = execute_gate(gate_name, i)
                 if not gate_passed:
                     print(f"\n❌ Gate '{gate_name}' failed for step {i}")
                     print(f"   {error_msg}")
@@ -816,9 +831,9 @@ def run_workflow(
                         after_hook(step, i, FAILURE, "GATE_FAILED", step_result)
                     return FAILURE
 
-        # Execute the step
+        # Execute the step (before_hook already called above, pass None to avoid duplicate)
         return_code, action, destination_step_name = execute_step(
-            step, i, step_execution_count[i], loop_hardcap, before_hook
+            step, i, step_execution_count[i], loop_hardcap, None, step_id
         )
 
         if return_code != SUCCESS:
@@ -843,6 +858,10 @@ def run_workflow(
         # Add internal_id for resume functionality
         if i in _step_metadata:
             step_result["internal_id"] = _step_metadata[i].get("internal_id")
+
+        # Mark if step was skipped
+        if action == "SKIPPED":
+            step_result["skipped"] = True
 
         # Check if we should create a summary
         if step.shouldCreateSummary:
@@ -869,6 +888,9 @@ def run_workflow(
             print(f"\n🛑 STOP action triggered by step {i}")
             print("Halting workflow execution early.")
             return SUCCESS
+        elif action == "SKIPPED":
+            print(f"\n⏭️  Step {i} was skipped by user request")
+            # Continue to next step (don't treat as failure)
         elif action == "JUMP_TO_STEP":
             if not destination_step_name:
                 print(f"\n❌ JUMP_TO_STEP action requires destinationStep, but none was provided")
