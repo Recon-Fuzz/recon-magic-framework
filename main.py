@@ -843,6 +843,7 @@ def run_workflow(
             print("Stopping workflow execution.")
 
             # Call after_hook on failure so worker can track failed step
+            # Pass through the actual action from execute_step (e.g., STALE_FAILED, FAILED)
             if after_hook:
                 step_result = {"step_name": step.name, "step_num": i, "failed": True}
                 # Add internal_id for resume functionality
@@ -851,7 +852,9 @@ def run_workflow(
                 # Add failure_tail for PROGRAM steps (last 10 lines of output)
                 if failure_tail:
                     step_result["failure_tail"] = failure_tail
-                after_hook(step, i, return_code, "FAILED", step_result)
+                # Use actual action if it indicates failure type, otherwise use FAILED
+                failure_action = action if action in ("STALE_FAILED", "GATE_FAILED") else "FAILED"
+                after_hook(step, i, return_code, failure_action, step_result)
 
             return return_code
 
