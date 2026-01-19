@@ -63,7 +63,8 @@ def generate_summary_with_claude(since_commit: str | None = None) -> str:
 def generate_failure_summary_with_claude(
     failed_step_name: str,
     failed_step_num: int,
-    since_commit: str | None = None
+    since_commit: str | None = None,
+    failure_tail: str | None = None
 ) -> str:
     """
     Generate a summary when workflow fails, explaining what was accomplished
@@ -73,22 +74,36 @@ def generate_failure_summary_with_claude(
         failed_step_name: Name of the step that failed
         failed_step_num: Step number that failed
         since_commit: If provided, summarize changes since this commit
+        failure_tail: If provided, the last 10 lines of output from the failed PROGRAM step
     """
     try:
+        # Build the base prompt
         if since_commit:
-            prompt = (
+            base_prompt = (
                 f"The workflow failed at step {failed_step_num}: '{failed_step_name}'. "
                 f"Summarize what was accomplished since commit {since_commit} before the failure "
                 "in 2-3 sentences in markdown format. Then briefly mention that the workflow "
                 f"stopped at step {failed_step_num} ('{failed_step_name}'). "
-                "If magic/WORKFLOW_FAILURE_REPORT.md exists, read it and add a short 1-2 line fix suggestion. "
+            )
+        else:
+            base_prompt = (
+                f"The workflow failed at step {failed_step_num}: '{failed_step_name}'. "
+                "Summarize what changes were made before the failure in 2-3 sentences in markdown format. "
+                f"Then briefly mention that the workflow stopped at step {failed_step_num} ('{failed_step_name}'). "
+            )
+
+        # If we have failure_tail, add it to the prompt for better diagnosis
+        if failure_tail:
+            prompt = (
+                base_prompt +
+                f"\n\nHere is the last 10 lines of output from the failed step:\n```\n{failure_tail}\n```\n\n"
+                "Based on this output, provide a brief explanation of what went wrong and suggest a fix. "
+                "If magic/WORKFLOW_FAILURE_REPORT.md exists, also read it for additional context. "
                 "Return exclusively the summary, no other text. Talk as if you performed the tasks."
             )
         else:
             prompt = (
-                f"The workflow failed at step {failed_step_num}: '{failed_step_name}'. "
-                "Summarize what changes were made before the failure in 2-3 sentences in markdown format. "
-                f"Then briefly mention that the workflow stopped at step {failed_step_num} ('{failed_step_name}'). "
+                base_prompt +
                 "If magic/WORKFLOW_FAILURE_REPORT.md exists, read it and add a short 1-2 line fix suggestion. "
                 "Return exclusively the summary, no other text. Talk as if you performed the tasks."
             )

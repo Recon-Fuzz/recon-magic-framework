@@ -371,7 +371,7 @@ def execute_gate(
             
             check_step = TaskStep(**check_step_data)
             print(f"   Running check: {check_step.name}")
-            return_code, _, _ = execute_task_step(check_step, int(gate_step_num * 10))
+            return_code, _, _, _ = execute_task_step(check_step, int(gate_step_num * 10))
 
             if return_code != SUCCESS and not check_step.allowFailure:
                 print(f"   ❌ Check step failed")
@@ -394,7 +394,7 @@ def execute_gate(
                 
                 fix_step = TaskStep(**fix_step_data)
                 print(f"   🔧 Running fix: {fix_step.name}")
-                return_code, _, _ = execute_task_step(fix_step, int(gate_step_num * 10))
+                return_code, _, _, _ = execute_task_step(fix_step, int(gate_step_num * 10))
 
                 # Handle artifacts exactly like regular workflow steps
                 if fix_step.shouldCreateSummary:
@@ -416,7 +416,7 @@ def execute_gate(
                 
                 on_failure_step = TaskStep(**on_failure_data)
                 print(f"\n   📋 Running failure handler: {on_failure_step.name}")
-                execute_task_step(on_failure_step, int(gate_step_num * 10))
+                _, _, _, _ = execute_task_step(on_failure_step, int(gate_step_num * 10))
                 
                 # Handle artifacts exactly like regular workflow steps
                 if on_failure_step.shouldCreateSummary:
@@ -438,7 +438,7 @@ def execute_step(
     loop_hardcap: int = DEFAULT_LOOP_HARDCAP,
     before_hook: Callable[[Step, int, str | None], None] | None = None,
     step_id: str | None = None,
-) -> tuple[int, str, str | None]:
+) -> tuple[int, str, str | None, str | None]:
     """
     Execute a workflow step based on its step type.
 
@@ -451,30 +451,32 @@ def execute_step(
         step_id: Optional internal step ID (e.g., "audit:3") for skip checking
 
     Returns:
-        tuple[int, str, str | None]: (Return code, Action, Destination step name)
+        tuple[int, str, str | None, str | None]: (Return code, Action, Destination step name, Failure tail)
+            - failure_tail contains last 10 lines of output for failed PROGRAM steps, None otherwise
     """
     # Use provided hooks or default ones
     _before_hook = before_hook or default_before_step_execution
 
     _before_hook(step, step_num, step_id)
 
-    return_code, action, destination = None, None, None
+    return_code, action, destination, failure_tail = None, None, None, None
 
     # Check if we've hit the loop hardcap for decision steps
     if isinstance(step, DecisionStep) and execution_count >= loop_hardcap:
         print(f"⚠️  Loop hardcap ({loop_hardcap}) reached for step {step_num}, forcing CONTINUE")
-        return_code, action, destination = (SUCCESS, "CONTINUE", None)
+        return_code, action, destination, failure_tail = (SUCCESS, "CONTINUE", None, None)
     else:
         # Switch on step.type first
         if isinstance(step, TaskStep):
-            return_code, action, destination = execute_task_step(step, step_num, step_id)
+            return_code, action, destination, failure_tail = execute_task_step(step, step_num, step_id)
         elif isinstance(step, DecisionStep):
             return_code, action, destination = execute_decision_step(step, step_num)
+            failure_tail = None  # Decision steps don't have failure tails
         else:
             print(f"❌ Unknown step type: {type(step)}")
-            return_code, action, destination = (FAILURE, "CONTINUE", None)
+            return_code, action, destination, failure_tail = (FAILURE, "CONTINUE", None, None)
 
-    return (return_code, action, destination)
+    return (return_code, action, destination, failure_tail)
 
 
 ## TODO: Separate File
@@ -832,7 +834,7 @@ def run_workflow(
                     return FAILURE
 
         # Execute the step (before_hook already called above, pass None to avoid duplicate)
-        return_code, action, destination_step_name = execute_step(
+        return_code, action, destination_step_name, failure_tail = execute_step(
             step, i, step_execution_count[i], loop_hardcap, None, step_id
         )
 
@@ -846,6 +848,9 @@ def run_workflow(
                 # Add internal_id for resume functionality
                 if i in _step_metadata:
                     step_result["internal_id"] = _step_metadata[i].get("internal_id")
+                # Add failure_tail for PROGRAM steps (last 10 lines of output)
+                if failure_tail:
+                    step_result["failure_tail"] = failure_tail
                 after_hook(step, i, return_code, "FAILED", step_result)
 
             return return_code

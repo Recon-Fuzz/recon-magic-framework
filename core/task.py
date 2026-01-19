@@ -689,7 +689,7 @@ def resolve_path_template(path_template: str, step_num: int, tool_data: dict | N
     return Path(path)
 
 
-def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None) -> tuple[int, str, str | None]:
+def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None) -> tuple[int, str, str | None, str | None]:
     """
     Execute a task step based on its model type.
 
@@ -699,8 +699,9 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         step_id: Optional internal step ID (e.g., "audit:3") for skip checking
 
     Returns:
-        tuple[int, str, str | None]: (return_code, action, destination_step_name)
+        tuple[int, str, str | None, str | None]: (return_code, action, destination_step_name, failure_tail)
             - For task steps, destination_step_name is always None
+            - failure_tail contains last 10 lines of output for failed PROGRAM steps, None otherwise
     """
 
     ## NOTE: Use ${RECON_FRAMEWORK_ROOT} to reference framework programs
@@ -720,8 +721,9 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         if foundry_root:
             command = f"cd {foundry_root} && {command}"
 
-        # Check if we need to capture output
-        capture_output = step.output and step.output.capture
+        # Always capture output for PROGRAM steps to get failure tail
+        # Also respect explicit capture config for saving output
+        capture_output = True
 
         # Execute command - use monitoring if step has skip/log config, otherwise simple subprocess
         if step.canSkip or step.logFile:
@@ -731,32 +733,42 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             )
             if was_skipped:
                 print(f"  ⏭️  Step was skipped by user request")
-                return (SUCCESS, "SKIPPED", None)
+                return (SUCCESS, "SKIPPED", None, None)
         else:
             result = subprocess.run(
                 command, shell=True, env=os.environ.copy(),
-                capture_output=capture_output, text=True if capture_output else False
+                capture_output=capture_output, text=True
             )
             return_code = result.returncode
-            stdout = result.stdout if capture_output else None
-            stderr = result.stderr if capture_output else None
+            stdout = result.stdout
+            stderr = result.stderr
 
         # Unified error handling
         if return_code != 0:
             print(f"  ❌ Command failed with exit code {return_code}")
-            if capture_output:
-                if stdout:
-                    print(f"  📤 stdout:\n{stdout}")
-                if stderr:
-                    print(f"  📤 stderr:\n{stderr}")
+            if stdout:
+                print(f"  📤 stdout:\n{stdout}")
+            if stderr:
+                print(f"  📤 stderr:\n{stderr}")
+
+            # Build failure tail from last 10 lines of combined output
+            failure_tail = None
+            combined_output = ""
+            if stdout:
+                combined_output += stdout
+            if stderr:
+                combined_output += "\n" + stderr if combined_output else stderr
+            if combined_output:
+                lines = combined_output.strip().split('\n')
+                failure_tail = '\n'.join(lines[-10:])
 
             if hasattr(step, 'allowFailure') and step.allowFailure:
                 print(f"  ⚠️  Continuing despite failure (allowFailure is enabled)")
-                return (SUCCESS, "CONTINUE", None)
-            return (FAILURE, "CONTINUE", None)
+                return (SUCCESS, "CONTINUE", None, None)
+            return (FAILURE, "CONTINUE", None, failure_tail)
 
         # Unified output handling
-        if capture_output and step.output and step.output.save_to:
+        if step.output and step.output.capture and step.output.save_to:
             try:
                 output_data = json.loads(stdout)
                 save_path = resolve_path_template(step.output.save_to, step_num, output_data)
@@ -775,12 +787,12 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
                 print(f"  ❌ Error: Failed to parse JSON output: {e}")
                 if stdout:
                     print(f"  📤 stdout received:\n{stdout}")
-                return (FAILURE, "CONTINUE", None)
+                return (FAILURE, "CONTINUE", None, None)
             except Exception as e:
                 print(f"  ❌ Error: Failed to save output: {e}")
-                return (FAILURE, "CONTINUE", None)
+                return (FAILURE, "CONTINUE", None, None)
 
-        return (SUCCESS, "CONTINUE", None)
+        return (SUCCESS, "CONTINUE", None, None)
 
     ## AI Models
     # Get framework root for later use
@@ -878,15 +890,15 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             break  # Exit retry loop on success, skip, failure, or final attempt
 
         if return_code == SKIPPED:
-            return (SUCCESS, "SKIPPED", None)
+            return (SUCCESS, "SKIPPED", None, None)
         if return_code == STALE:
             print(f"  ❌ Claude Code execution went stale after {max_retries} retries")
-            return (FAILURE, "CONTINUE", None)
+            return (FAILURE, "CONTINUE", None, None)
         if return_code != 0:
             print(f"  ❌ Claude Code execution failed with exit code {return_code}")
-            return (FAILURE, "CONTINUE", None)
+            return (FAILURE, "CONTINUE", None, None)
 
-        return (SUCCESS, "CONTINUE", None)
+        return (SUCCESS, "CONTINUE", None, None)
 
     if step.model.type == ModelType.OPENCODE:
         # Resolve the model string (handle "inherit")
@@ -956,15 +968,15 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             break  # Exit retry loop on success, skip, failure, or final attempt
 
         if return_code == SKIPPED:
-            return (SUCCESS, "SKIPPED", None)
+            return (SUCCESS, "SKIPPED", None, None)
         if return_code == STALE:
             print(f"  ❌ OpenCode execution went stale after {max_retries} retries")
-            return (FAILURE, "CONTINUE", None)
+            return (FAILURE, "CONTINUE", None, None)
         if return_code != 0:
             print(f"  ❌ OpenCode execution failed with exit code {return_code}")
-            return (FAILURE, "CONTINUE", None)
+            return (FAILURE, "CONTINUE", None, None)
 
-        return (SUCCESS, "CONTINUE", None)
+        return (SUCCESS, "CONTINUE", None, None)
 
     if step.model.type == ModelType.DISPATCH_FUZZING_JOB:
         """
@@ -981,7 +993,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         if not all([api_url, bearer_token, job_id]):
             print("  ❌ Missing worker context (WORKER_API_URL, WORKER_BEARER_TOKEN, WORKER_JOB_ID)")
             print("     This step only works when running inside a ClaudeJob worker.")
-            return (FAILURE, "CONTINUE", None)
+            return (FAILURE, "CONTINUE", None, None)
 
         # Build dispatch config from step config or defaults
         config = step.dispatchConfig or DispatchConfig()
@@ -1040,7 +1052,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             print(f"     Status: {data.get('status')}")
             print(f"     Fuzzer: {data.get('fuzzer')}")
 
-            return (SUCCESS, "CONTINUE", None)
+            return (SUCCESS, "CONTINUE", None, None)
 
         except requests.exceptions.HTTPError as e:
             error_body = ""
@@ -1049,11 +1061,11 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             except:
                 error_body = str(e)
             print(f"  ❌ Failed to dispatch fuzzing job: {error_body}")
-            return (FAILURE, "CONTINUE", None)
+            return (FAILURE, "CONTINUE", None, None)
         except Exception as e:
             print(f"  ❌ Error dispatching fuzzing job: {e}")
-            return (FAILURE, "CONTINUE", None)
+            return (FAILURE, "CONTINUE", None, None)
 
     else:
         print(f"Skipping {step.name}: Model type {step.model.type} not supported yet")
-        return (SUCCESS, "CONTINUE", None)
+        return (SUCCESS, "CONTINUE", None, None)
