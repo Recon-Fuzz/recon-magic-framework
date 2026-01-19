@@ -92,13 +92,14 @@ def reset_workflow_failure_info():
     _workflow_failure_info = None
 
 
-def set_workflow_failure_info(step_name: str, step_num: int, reason: str = "step_failure"):
+def set_workflow_failure_info(step_name: str, step_num: int, reason: str = "step_failure", failure_tail: str | None = None):
     """Set failure info when workflow fails."""
     global _workflow_failure_info
     _workflow_failure_info = {
         "step_name": step_name,
         "step_num": step_num,
-        "reason": reason  # "step_failure", "stop_action", "exception"
+        "reason": reason,  # "step_failure", "stop_action", "exception"
+        "failure_tail": failure_tail  # Last 10 lines of output for PROGRAM steps
     }
 
 
@@ -415,8 +416,10 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
     print(f"Return code: {return_code}, Action: {action}")
 
     # Track failure/stop info for later use in error handling
+    # Extract failure_tail from step_result if available
+    failure_tail = step_result.get("failure_tail") if step_result else None
     if action == "FAILED" or return_code == 1:
-        set_workflow_failure_info(step.name, step_num, "step_failure")
+        set_workflow_failure_info(step.name, step_num, "step_failure", failure_tail)
     elif action == "STOP":
         set_workflow_failure_info(step.name, step_num, "stop_action")
     elif action == "GRACEFUL_STOP" or return_code == 2:
@@ -466,6 +469,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
             step_data["stopped"] = step_result["stopped"]
         if step_result.get("skipped"):
             step_data["skipped"] = step_result["skipped"]
+        if step_result.get("failure_tail"):
+            step_data["failure_tail"] = step_result["failure_tail"]
 
     # Send to backend
     update_job_step_data(api_url, bearer_token, job_id, step_data)
@@ -910,11 +915,12 @@ def start_job_listener(
                     if failure_report_content:
                         summary = failure_report_content
                     elif failure_info:
-                        # Generate failure-aware summary with step info
+                        # Generate failure-aware summary with step info and failure tail
                         summary = generate_failure_summary_with_claude(
                             failed_step_name=failure_info['step_name'],
                             failed_step_num=failure_info['step_num'],
-                            since_commit=initial_commit_hash
+                            since_commit=initial_commit_hash,
+                            failure_tail=failure_info.get('failure_tail')
                         )
                     else:
                         # Workflow failed before any step ran (e.g., invalid resume step ID)
