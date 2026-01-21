@@ -40,17 +40,52 @@ def setup_workspace(workspace_root: str = "/app") -> bool:
         return False
 
 
+def fix_submodule_ssh_urls(repo_path: str) -> None:
+    """Rewrite .gitmodules SSH URLs to HTTPS after clone"""
+    gitmodules = os.path.join(repo_path, ".gitmodules")
+    if not os.path.exists(gitmodules):
+        print("No .gitmodules found")
+        return
+    
+    print("Fixing SSH URLs in .gitmodules...")
+    with open(gitmodules, 'r') as f:
+        content = f.read()
+    
+    # Convert SSH and git:// to HTTPS
+    updated = content.replace('git@github.com:', 'https://github.com/')
+    updated = updated.replace('git://github.com/', 'https://github.com/')
+    
+    if updated != content:
+        with open(gitmodules, 'w') as f:
+            f.write(updated)
+        print(".gitmodules updated")
+    else:
+        print("No SSH URLs found in .gitmodules")
+
+
+def init_submodules(repo_path: str) -> None:
+    """Initialize git submodules after fixing URLs"""
+    print("🔄 Initializing submodules...")
+    try:
+        subprocess.run(['git', 'submodule', 'sync', '--recursive'], cwd=repo_path, check=True)
+        subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'], cwd=repo_path, check=True)
+        print("Submodules initialized")
+    except subprocess.CalledProcessError as e:
+        print(f"Submodule init failed (continuing): {e}")
+
+
 def clone_repository(repo_url: str, repo_ref: str = "main", target_dir: str = "/app/repo") -> bool:
     """
     Clone a git repository with submodules.
-    - Clone with --recurse-submodules
+    - Clone without --recurse-submodules initially
+    - Fix SSH URLs in .gitmodules
+    - Initialize submodules with HTTPS
     - Checkout specific branch/ref
     - Clone to target directory (default: /app/repo)
     """
     try:
         cmd = [
             "git", "clone",
-            "--recurse-submodules",
             "-b", repo_ref,
             "--single-branch",
             repo_url,
@@ -61,6 +96,10 @@ def clone_repository(repo_url: str, repo_ref: str = "main", target_dir: str = "/
         if result.returncode != 0:
             print(f"Error cloning repository: {result.stderr}")
             return False
+
+        # Fix SSH URLs and initialize submodules
+        fix_submodule_ssh_urls(target_dir)
+        init_submodules(target_dir)
 
         return True
     except Exception as e:
