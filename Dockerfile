@@ -82,7 +82,10 @@ USER reconuser
 
 # Configure git for reconuser
 RUN git config --global user.email "recon@worker.local" && \
-    git config --global user.name "Recon Worker"
+    git config --global user.name "Recon Worker" && \
+    git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    git config --global url."https://github.com/".insteadOf "git://github.com/"
+
 
 # Set working directory to /tmp for user operations
 WORKDIR /tmp
