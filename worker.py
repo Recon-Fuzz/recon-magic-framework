@@ -250,7 +250,6 @@ def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num:
             "model_category": model_category,
             "can_skip": can_skip,
             "internal_id": step_id,
-            "preconditions": getattr(step, 'preconditions', None) or None,
         }
 
         payload = {
