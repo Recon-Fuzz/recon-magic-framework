@@ -418,13 +418,13 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
     # Track failure/stop info for later use in error handling
     # Extract failure_tail from step_result if available
     failure_tail = step_result.get("failure_tail") if step_result else None
-    if action == "FAILED" or return_code == 1:
+    if action == "GATE_FAILED":
+        gate_name = step_result.get("gate_failed", "unknown") if step_result else "unknown"
+        set_workflow_failure_info(step.name, step_num, "gate_failure:" + gate_name, failure_tail)
+    elif action == "FAILED" or return_code == 1:
         set_workflow_failure_info(step.name, step_num, "step_failure", failure_tail)
     elif action == "STOP":
         set_workflow_failure_info(step.name, step_num, "stop_action")
-    elif action == "GATE_FAILED":
-        gate_name = step_result.get("gate_failed", "unknown") if step_result else "unknown"
-        set_workflow_failure_info(step.name, step_num, "gate_failure:" + gate_name, failure_tail)
     elif action == "GRACEFUL_STOP" or return_code == 2:
         set_workflow_failure_info(step.name, step_num, "graceful_stop")
 
@@ -576,12 +576,15 @@ def start_job_listener(
                 additional_data = job_info.get("additionalData", {})
                 job_type = additional_data.get("jobType", "directPrompt")
                 resume_from_step_id = additional_data.get("resumeFromStepId")
+                selected_gates = additional_data.get("selectedGates")  # None | [] | ["gate-name"]
 
                 print(f"Job Type: {job_type}")
                 print(f"Repo URL: {repo_url}")
                 print(f"Claude URL: {claude_url}")
                 if resume_from_step_id:
                     print(f"Resume from step ID: {resume_from_step_id}")
+                if selected_gates is not None:
+                    print(f"Selected gates override: {selected_gates}")
 
                 # Setup workspace in /app
                 if not setup_workspace("/app"):
@@ -839,7 +842,8 @@ def start_job_listener(
                     before_hook=worker_before_step_hook,
                     after_hook=worker_after_step_hook,
                     stop_checker=create_stop_checker(),
-                    resume_from_step_id=resume_from_step_id
+                    resume_from_step_id=resume_from_step_id,
+                    override_gates=selected_gates
                 )
 
                 # Check workflow result: 0 = success, 1 = failure, 2 = stopped
