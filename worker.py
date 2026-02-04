@@ -425,7 +425,7 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
         set_workflow_failure_info(step.name, step_num, "stop_action")
     elif action == "GATE_FAILED":
         gate_name = step_result.get("gate_failed", "unknown") if step_result else "unknown"
-        set_workflow_failure_info(step.name, step_num, f"gate_failure:{gate_name}", failure_tail)
+        set_workflow_failure_info(step.name, step_num, "gate_failure:" + gate_name, failure_tail)
     elif action == "GRACEFUL_STOP" or return_code == 2:
         set_workflow_failure_info(step.name, step_num, "graceful_stop")
 
