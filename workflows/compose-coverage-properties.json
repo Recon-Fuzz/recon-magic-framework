@@ -1,0 +1,13 @@
+{
+  "name": "Coverage + Properties Pipeline",
+  "steps": [
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-properties-full-opus.json"
+    },
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-coverage.json"
+    }
+  ]
+}
