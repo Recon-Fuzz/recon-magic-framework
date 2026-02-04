@@ -249,7 +249,7 @@ def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num:
             "step_name": step_name,
             "model_category": model_category,
             "can_skip": can_skip,
-            "internal_id": step_id,
+            "internal_id": step_id
         }
 
         payload = {
