@@ -354,7 +354,7 @@ def execute_gate(
     print(f"   Max retries: {max_retries}")
 
     # Send gate checking status via liveProgress
-    send_live_progress("🔐 Gate checking...")
+    send_live_progress(f"🔐 Gate: {gate_name} checking...")
 
     # Gate sub-step counter for unique log naming
     gate_sub_step = 0
@@ -379,14 +379,14 @@ def execute_gate(
         # Evaluate success condition
         if check_gate_condition(gate):
             print(f"   ✅ Gate '{gate_name}' PASSED")
-            send_live_progress("✅ Gate passed")
+            send_live_progress(f"✅ Gate: {gate_name} passed")
             return (True, None)
 
         print(f"   ❌ Gate condition not met")
 
         # If we have retries left, run the fix step
         if attempt < max_retries:
-            send_live_progress(f"🔧 Gate fixing (attempt {attempt + 1}/{max_retries})...")
+            send_live_progress(f"🔧 Gate: {gate_name} fixing (attempt {attempt + 1}/{max_retries})...")
             fix_step_data = gate.get("fix", {})
             if fix_step_data:
                 gate_sub_step += 1
@@ -406,7 +406,7 @@ def execute_gate(
                         push_changes(int(gate_step_num * 10))
         else:
             print(f"   ❌ Max retries ({max_retries}) exceeded for gate '{gate_name}'")
-            send_live_progress("❌ Gate failed")
+            send_live_progress(f"❌ Gate: {gate_name} failed")
             
             # Execute onFailure handler if defined (e.g., generate failure report)
             on_failure_data = gate.get("onFailure", {})

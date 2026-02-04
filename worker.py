@@ -249,7 +249,8 @@ def update_current_phase(api_url: str, bearer_token: str, job_id: str, step_num:
             "step_name": step_name,
             "model_category": model_category,
             "can_skip": can_skip,
-            "internal_id": step_id
+            "internal_id": step_id,
+            "preconditions": getattr(step, 'preconditions', None) or None,
         }
 
         payload = {
@@ -422,6 +423,9 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
         set_workflow_failure_info(step.name, step_num, "step_failure", failure_tail)
     elif action == "STOP":
         set_workflow_failure_info(step.name, step_num, "stop_action")
+    elif action == "GATE_FAILED":
+        gate_name = step_result.get("gate_failed", "unknown") if step_result else "unknown"
+        set_workflow_failure_info(step.name, step_num, f"gate_failure:{gate_name}", failure_tail)
     elif action == "GRACEFUL_STOP" or return_code == 2:
         set_workflow_failure_info(step.name, step_num, "graceful_stop")
 
@@ -471,6 +475,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
             step_data["skipped"] = step_result["skipped"]
         if step_result.get("failure_tail"):
             step_data["failure_tail"] = step_result["failure_tail"]
+        if step_result.get("gate_failed"):
+            step_data["gate_failed"] = step_result["gate_failed"]
 
     # Send to backend
     update_job_step_data(api_url, bearer_token, job_id, step_data)
