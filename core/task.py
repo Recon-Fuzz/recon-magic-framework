@@ -893,7 +893,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             return (SUCCESS, "SKIPPED", None, None)
         if return_code == STALE:
             print(f"  ❌ Claude Code execution went stale after {max_retries} retries")
-            return (FAILURE, "CONTINUE", None, None)
+            return (FAILURE, "STALE_FAILED", None, None)
         if return_code != 0:
             print(f"  ❌ Claude Code execution failed with exit code {return_code}")
             return (FAILURE, "CONTINUE", None, None)
@@ -971,7 +971,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             return (SUCCESS, "SKIPPED", None, None)
         if return_code == STALE:
             print(f"  ❌ OpenCode execution went stale after {max_retries} retries")
-            return (FAILURE, "CONTINUE", None, None)
+            return (FAILURE, "STALE_FAILED", None, None)
         if return_code != 0:
             print(f"  ❌ OpenCode execution failed with exit code {return_code}")
             return (FAILURE, "CONTINUE", None, None)

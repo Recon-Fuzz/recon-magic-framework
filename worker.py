@@ -418,7 +418,9 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
     # Track failure/stop info for later use in error handling
     # Extract failure_tail from step_result if available
     failure_tail = step_result.get("failure_tail") if step_result else None
-    if action == "FAILED" or return_code == 1:
+    if action == "STALE_FAILED":
+        set_workflow_failure_info(step.name, step_num, "stale_failed", failure_tail)
+    elif action == "FAILED" or return_code == 1:
         set_workflow_failure_info(step.name, step_num, "step_failure", failure_tail)
     elif action == "STOP":
         set_workflow_failure_info(step.name, step_num, "stop_action")
@@ -914,6 +916,9 @@ def start_job_listener(
                     
                     if failure_report_content:
                         summary = failure_report_content
+                    elif failure_info and failure_info.get('reason') == 'stale_failed':
+                        # Static message for AI staleness - don't call AI again
+                        summary = f"AI became unresponsive during step {failure_info['step_num']} ({failure_info['step_name']}) and could not recover after 3 retries. This may be due to network issues, API rate limits, or the AI model being overloaded. Please try again later."
                     elif failure_info:
                         # Generate failure-aware summary with step info and failure tail
                         summary = generate_failure_summary_with_claude(
