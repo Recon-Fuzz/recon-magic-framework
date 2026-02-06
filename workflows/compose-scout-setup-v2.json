@@ -1,0 +1,13 @@
+{
+  "name": "Scout V2 → Setup V2 Pipeline",
+  "steps": [
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-scouting-v2.json"
+    },
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-setup-v2.json"
+    }
+  ]
+}
