@@ -21,6 +21,7 @@ from core.path_utils import resolve_file_path
 # Exit codes
 SUCCESS = 0
 FAILURE = 1
+STOPPED = 2  # Graceful stop requested
 SKIPPED = 3  # Step was skipped via user request
 STALE = 200  # AI process went stale (no log activity)
 
@@ -417,6 +418,58 @@ class SkipChecker:
             self._stop_event.wait(timeout=self.check_interval)
 
 
+class StopChecker:
+    """
+    Background thread that polls the backend for stop requests and interrupts the subprocess.
+    Unlike SkipChecker (which is per-step), this checks the job-level stopRequested flag.
+    This ensures long-running steps (like Echidna) get killed when the user clicks Stop.
+    """
+
+    def __init__(self, check_interval: int = 10):
+        self.check_interval = check_interval
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._was_stopped = False
+
+    @property
+    def was_stopped(self) -> bool:
+        return self._was_stopped
+
+    def start(self):
+        """Start the stop checker thread."""
+        self._thread = threading.Thread(target=self._check_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Stop the checker thread."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def _check_loop(self):
+        """Poll the backend for stopRequested."""
+        from server.jobs import check_stop_requested
+
+        api_url = os.environ.get('WORKER_API_URL')
+        bearer_token = os.environ.get('WORKER_BEARER_TOKEN')
+        job_id = os.environ.get('WORKER_JOB_ID')
+
+        if not all([api_url, bearer_token, job_id]):
+            return
+
+        while not self._stop_event.is_set():
+            try:
+                if check_stop_requested(api_url, bearer_token, job_id):
+                    print(f"  ⏹️  Stop requested — killing running process")
+                    self._was_stopped = True
+                    interrupt_current_process()
+                    return
+            except Exception as e:
+                print(f"  ⚠ Stop check error: {e}")
+
+            self._stop_event.wait(timeout=self.check_interval)
+
+
 def run_ai_command_with_progress(
     cmd: str,
     log_file: Path,
@@ -442,9 +495,14 @@ def run_ai_command_with_progress(
         int: Return code from the command (STALE=200 if process went stale)
     """
     skip_checker = None
+    stop_checker = None
     log_monitor = None
 
     try:
+        # Always start stop checker so long-running AI steps can be killed
+        stop_checker = StopChecker(check_interval=10)
+        stop_checker.start()
+
         # Start skip checker if step is skippable
         if step and step.canSkip and step_id:
             skip_checker = SkipChecker(step_id, check_interval=5)
@@ -481,7 +539,7 @@ def run_ai_command_with_progress(
             return_code = process.poll()
             if return_code is not None:
                 break
-            
+
             # Check if process went stale (no log output for stale_timeout)
             if log_monitor and log_monitor.is_stale:
                 print(f"  🔄 Killing stale AI process (no activity for {stale_timeout}s)")
@@ -491,8 +549,13 @@ def run_ai_command_with_progress(
                     pass
                 process.wait(timeout=10)  # Give it time to die
                 return STALE
-            
+
             time.sleep(1)  # Check every second
+
+        # Check if we were stopped (takes priority)
+        if stop_checker and stop_checker.was_stopped:
+            print(f"  ⏹️  Step was stopped by user request")
+            return STOPPED
 
         # Check if we were skipped
         if skip_checker and skip_checker.was_skipped:
@@ -503,6 +566,8 @@ def run_ai_command_with_progress(
 
     finally:
         set_current_process(None)
+        if stop_checker:
+            stop_checker.stop()
         if skip_checker:
             skip_checker.stop()
         if log_monitor:
@@ -517,10 +582,10 @@ def run_with_monitoring(
     shell: bool = True,
     text: bool = True,
     capture_output: bool = False
-) -> tuple[int, bool, str | None, str | None]:
+) -> tuple[int, bool, bool, str | None, str | None]:
     """
-    Run a command with optional skip checking and log monitoring.
-    Works identically to subprocess.run but with monitoring/skip support.
+    Run a command with optional skip checking, stop checking, and log monitoring.
+    Works identically to subprocess.run but with monitoring/skip/stop support.
 
     Args:
         cmd: Command to execute
@@ -532,15 +597,21 @@ def run_with_monitoring(
         capture_output: Whether to capture stdout/stderr
 
     Returns:
-        tuple[int, bool, str | None, str | None]: (return_code, was_skipped, stdout, stderr)
+        tuple[int, bool, bool, str | None, str | None]: (return_code, was_skipped, was_stopped, stdout, stderr)
     """
     skip_checker = None
+    stop_checker = None
     log_monitor = None
     was_skipped = False
+    was_stopped = False
     stdout_data = None
     stderr_data = None
 
     try:
+        # Always start stop checker so long-running steps (like Echidna) can be killed
+        stop_checker = StopChecker(check_interval=10)
+        stop_checker.start()
+
         # Start skip checker if step is skippable
         if step.canSkip and step_id:
             skip_checker = SkipChecker(step_id, check_interval=5)
@@ -583,16 +654,23 @@ def run_with_monitoring(
         else:
             return_code = process.wait()
 
+        # Check if we were stopped (takes priority over skip)
+        if stop_checker and stop_checker.was_stopped:
+            was_stopped = True
+            return_code = STOPPED
+
         # Check if we were skipped
-        if skip_checker and skip_checker.was_skipped:
+        elif skip_checker and skip_checker.was_skipped:
             was_skipped = True
             # Return code might be non-zero due to SIGINT, but we treat it as success
             return_code = SKIPPED
 
-        return (return_code, was_skipped, stdout_data, stderr_data)
+        return (return_code, was_skipped, was_stopped, stdout_data, stderr_data)
 
     finally:
         set_current_process(None)
+        if stop_checker:
+            stop_checker.stop()
         if skip_checker:
             skip_checker.stop()
         if log_monitor:
@@ -725,23 +803,17 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         # Also respect explicit capture config for saving output
         capture_output = True
 
-        # Execute command - use monitoring if step has skip/log config, otherwise simple subprocess
-        if step.canSkip or step.logFile:
-            return_code, was_skipped, stdout, stderr = run_with_monitoring(
-                command, step, step_id, env=os.environ.copy(),
-                shell=True, text=True, capture_output=capture_output
-            )
-            if was_skipped:
-                print(f"  ⏭️  Step was skipped by user request")
-                return (SUCCESS, "SKIPPED", None, None)
-        else:
-            result = subprocess.run(
-                command, shell=True, env=os.environ.copy(),
-                capture_output=capture_output, text=True
-            )
-            return_code = result.returncode
-            stdout = result.stdout
-            stderr = result.stderr
+        # Always use run_with_monitoring so stop checker can kill long-running processes (e.g. Echidna)
+        return_code, was_skipped, was_stopped, stdout, stderr = run_with_monitoring(
+            command, step, step_id, env=os.environ.copy(),
+            shell=True, text=True, capture_output=capture_output
+        )
+        if was_stopped:
+            print(f"  ⏹️  Step was stopped by user request")
+            return (STOPPED, "STOPPED", None, None)
+        if was_skipped:
+            print(f"  ⏭️  Step was skipped by user request")
+            return (SUCCESS, "SKIPPED", None, None)
 
         # Unified error handling
         if return_code != 0:
@@ -889,11 +961,13 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
 
             break  # Exit retry loop on success, skip, failure, or final attempt
 
+        if return_code == STOPPED:
+            return (STOPPED, "STOPPED", None, None)
         if return_code == SKIPPED:
             return (SUCCESS, "SKIPPED", None, None)
         if return_code == STALE:
             print(f"  ❌ Claude Code execution went stale after {max_retries} retries")
-            return (FAILURE, "CONTINUE", None, None)
+            return (FAILURE, "STALE_FAILED", None, None)
         if return_code != 0:
             print(f"  ❌ Claude Code execution failed with exit code {return_code}")
             return (FAILURE, "CONTINUE", None, None)
@@ -967,11 +1041,13 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
 
             break  # Exit retry loop on success, skip, failure, or final attempt
 
+        if return_code == STOPPED:
+            return (STOPPED, "STOPPED", None, None)
         if return_code == SKIPPED:
             return (SUCCESS, "SKIPPED", None, None)
         if return_code == STALE:
             print(f"  ❌ OpenCode execution went stale after {max_retries} retries")
-            return (FAILURE, "CONTINUE", None, None)
+            return (FAILURE, "STALE_FAILED", None, None)
         if return_code != 0:
             print(f"  ❌ OpenCode execution failed with exit code {return_code}")
             return (FAILURE, "CONTINUE", None, None)
