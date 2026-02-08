@@ -838,6 +838,19 @@ def run_workflow(
             step, i, step_execution_count[i], loop_hardcap, None, step_id
         )
 
+        # Handle mid-step stop (e.g. Echidna killed by StopChecker)
+        if return_code == STOPPED or action == "STOPPED":
+            print(f"\n⏹️  Step {i} was stopped by user request")
+            print("Stopping workflow execution gracefully.")
+
+            if after_hook:
+                step_result = {"step_name": step.name, "step_num": i, "stopped": True}
+                if i in _step_metadata:
+                    step_result["internal_id"] = _step_metadata[i].get("internal_id")
+                after_hook(step, i, STOPPED, "GRACEFUL_STOP", step_result)
+
+            return STOPPED
+
         if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")
             print("Stopping workflow execution.")
