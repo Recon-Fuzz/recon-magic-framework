@@ -119,7 +119,7 @@ Workflows can be run from any directory.
     os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
 
     # Set prompts directory (where agent reference documents live)
-    os.environ['PROMPTS_DIR'] = str(framework_root / '.opencode')
+    os.environ['PROMPTS_DIR'] = str(framework_root / 'prompts')
 
     # Determine workflow file
     if args.prompt:

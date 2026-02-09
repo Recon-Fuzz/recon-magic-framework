@@ -954,7 +954,7 @@ if __name__ == "__main__":
     os.environ['RECON_FRAMEWORK_ROOT'] = str(Path(__file__).parent.resolve())
 
     # Set prompts directory (where agent reference documents live)
-    os.environ['PROMPTS_DIR'] = str(Path(__file__).parent.resolve() / '.opencode')
+    os.environ['PROMPTS_DIR'] = str(Path(__file__).parent.resolve() / 'prompts')
 
     # Parse single positional argument
     if len(sys.argv) < 2:
