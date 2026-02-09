@@ -832,11 +832,11 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
 
-        agent_file_match = re.search(r'\./(\.opencode|\.claude|prompts)/(agents?)/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./prompts/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Resolve agent file from PROMPTS_DIR
             prompts_dir = os.environ.get('PROMPTS_DIR', str(Path(framework_root) / 'prompts'))
-            agent_file_path = Path(prompts_dir) / agent_file_match.group(2) / f"{agent_file_match.group(3)}.md"
+            agent_file_path = Path(prompts_dir) / agent_file_match.group(1) / f"{agent_file_match.group(2)}.md"
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
@@ -905,11 +905,11 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
 
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
-        agent_file_match = re.search(r'\./(\.opencode|\.claude|prompts)/(agents?)/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./prompts/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Resolve agent file from PROMPTS_DIR
             prompts_dir = os.environ.get('PROMPTS_DIR', str(Path(framework_root) / 'prompts'))
-            agent_file_path = Path(prompts_dir) / agent_file_match.group(2) / f"{agent_file_match.group(3)}.md"
+            agent_file_path = Path(prompts_dir) / agent_file_match.group(1) / f"{agent_file_match.group(2)}.md"
             if agent_file_path.exists():
                 print(f"  Loading agent definition from: {agent_file_path}")
                 agent_content = agent_file_path.read_text()
