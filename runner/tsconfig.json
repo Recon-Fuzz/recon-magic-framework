@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2015",
+    "module": "CommonJS",
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "out",
+    "moduleResolution": "node",
+    "baseUrl": "./",
+    "paths": {
+      "@database": ["./node_modules/@recon-fuzz/database/node_modules/@prisma/client"]
+    }
+  },
+  "include": ["src/**/*"]
+}
