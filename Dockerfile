@@ -1,95 +1,256 @@
-# docker build -t recon-magic-framework .
-# docker run -it recon-magic-framework /bin/bash
+# =============================================================================
+# MERGED Dockerfile: runner + recon-magic-framework
+# Base: runner's Ubuntu 24.04 (more comprehensive than framework's python:3.12-slim)
+#
+# Runs as root. Claude Code's --dangerously-skip-permissions root restriction
+# is bypassed via IS_SANDBOX=1 (official escape hatch).
+# =============================================================================
+# OPTIMIZATION: Consider multi-stage build to reduce final image size
+# OPTIMIZATION: Combine apt-get layers to reduce image layers
 
-# docker run -it -v .:/source:ro recon-magic-framework bash -c "cp -r /source /workspace && /bin/bash"
-FROM python:3.12-slim
+FROM ubuntu:24.04
 
-# Create non-root user early
-RUN useradd -m -s /bin/bash reconuser
+RUN set -eux
 
-# Install Node.js and Go
-RUN apt-get update && apt-get install -y curl git wget ripgrep sudo jq && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz && \
-    rm go1.21.5.linux-amd64.tar.gz && \
-    rm -rf /var/lib/apt/lists/*
+ENV DEBIAN_FRONTEND=noninteractive
 
-ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/opt/go"
-ENV PATH="${GOPATH}/bin:${PATH}"
+WORKDIR /home/ubuntu
 
-# Install Homebrew
-RUN useradd -m -s /bin/bash linuxbrew && \
-    echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-USER linuxbrew
-RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
-RUN brew install echidna
-USER root
+# =============================================================================
+# [RUNNER] OS libraries
+# =============================================================================
+RUN echo "Install OS libraries"
 
-# Make linuxbrew home directory traversable for other users (needed for echidna access)
-RUN chmod 755 /home/linuxbrew
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+    curl gcc make python3-pip python3-venv unzip jq wget tar software-properties-common \
+    git build-essential autoconf libffi-dev cmake ninja-build zlib1g-dev \
+    libboost-all-dev flex bison && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install UV
-RUN pip install uv
+# =============================================================================
+# [FRAMEWORK] Additional OS packages not in runner's list
+# =============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ripgrep sudo && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+# OPTIMIZATION: Merge this into the apt-get block above
 
-# Install Node.js packages globally
+# =============================================================================
+# [RUNNER] Ensure git is available
+# =============================================================================
+RUN git --version
+
+# =============================================================================
+# [RUNNER] Install Node.js via NVM (v20.18.0)
+# Framework used nodesource v20 — runner's NVM approach is more explicit, keeping this one
+# =============================================================================
+ENV NODE_VERSION=20.18.0
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash && \
+  export NVM_DIR=/root/.nvm && \
+  . "$NVM_DIR/nvm.sh" && nvm install ${NODE_VERSION} && nvm alias default v${NODE_VERSION} && nvm use default
+ENV NVM_DIR=/root/.nvm
+ENV PATH="$NVM_DIR/versions/node/v${NODE_VERSION}/bin/:${PATH}"
+RUN corepack enable
+
+# =============================================================================
+# [RUNNER] Python venv
+# Framework used python:3.12-slim as base, so python was built-in.
+# On Ubuntu 24.04 we need to set up python ourselves.
+# =============================================================================
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# =============================================================================
+# [RUNNER] Install solc-select + solc 0.8.24
+# =============================================================================
+RUN pip3 install solc-select
+RUN solc-select install 0.8.24 && solc-select use 0.8.24
+
+# =============================================================================
+# [RUNNER] Install slither and hexbytes
+# =============================================================================
+RUN pip3 install hexbytes slither-analyzer && slither --version
+
+# =============================================================================
+# [RUNNER] Install Echidna (custom fork: Recon-Fuzz/echidna-exp)
+# Framework used Homebrew to install echidna — runner's binary is a custom fork,
+# keeping this one. Homebrew install is dropped entirely.
+# =============================================================================
+RUN wget https://github.com/Recon-Fuzz/echidna-exp/releases/download/latest/echidna-HEAD-2404131-x86_64-linux.tar.gz && \
+  tar -xvkf echidna-HEAD-2404131-x86_64-linux.tar.gz && \
+  mv echidna /usr/bin/ && rm echidna-HEAD-2404131-x86_64-linux.tar.gz && \
+  echidna --version
+
+# =============================================================================
+# [RUNNER] Install Foundry
+# Framework also installed foundry with a different approach (copied binaries to /opt/foundry/bin).
+# Runner's approach is simpler — just foundryup + PATH.
+# =============================================================================
+RUN curl -L https://foundry.paradigm.xyz | bash && \
+  export PATH="$PATH:/root/.foundry/bin" && \
+  foundryup
+ENV PATH="$PATH:/root/.foundry/bin"
+
+RUN apt-get update && apt-get install -y glibc-source
+
+# =============================================================================
+# [RUNNER] Install Go 1.22.5
+# Framework used Go 1.21.5 — runner's is newer, keeping this one.
+# =============================================================================
+RUN wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz && \
+    rm go1.22.5.linux-amd64.tar.gz
+ENV PATH="$PATH:/usr/local/go/bin"
+RUN go version
+
+RUN export PATH="$PATH:/usr/local/go/bin"
+ENV PATH="$PATH:/usr/local/go/bin"
+RUN go version
+
+# =============================================================================
+# [RUNNER] Install Medusa v1.4.1 (pinned commit, built from source)
+# Framework used `go install github.com/crytic/medusa@latest` — runner pins a
+# specific commit for reproducibility, keeping this one.
+# =============================================================================
+RUN git clone https://github.com/crytic/medusa && \
+    cd medusa && git config pull.ff false && git checkout 3857153837ab90ed73adc484414b4b43703a54fb && \
+    GOOS=linux GOARCH=amd64 go build && \
+    mv medusa /usr/local/bin/ && chmod +x /usr/local/bin/medusa && \
+    cd .. && rm -rf medusa
+RUN medusa --version
+
+# =============================================================================
+# [RUNNER] Install clang (for Halmos dependencies)
+# =============================================================================
+RUN apt-get update && apt-get install -y clang
+
+# =============================================================================
+# [RUNNER] Install Halmos (via uv tool)
+# This also installs uv, which the framework needs too (see below).
+# =============================================================================
+RUN echo "Install halmos"
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    echo 'export PATH="$PATH:/root/.local/bin"' >> /root/.bashrc && \
+    echo 'export PATH="$PATH:/root/.local/bin"' >> /etc/profile && \
+    export PATH="$PATH:/root/.local/bin" && \
+    uv tool install --python 3.12 halmos && \
+    ln -sf /root/.local/bin/halmos /usr/local/bin/halmos
+
+RUN echo "Halmos installed, version:"
+RUN halmos --version
+
+# =============================================================================
+# [RUNNER] Install AWS CLI
+# =============================================================================
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+  unzip awscliv2.zip && ./aws/install && \
+  rm -rf awscliv2.zip aws && \
+  aws --version
+
+RUN apt-get install -y zip netcat-openbsd glibc-source
+
+# =============================================================================
+# [RUNNER] Install Yices 2.6.4 (SMT solver)
+# =============================================================================
+WORKDIR /yices
+ARG YICES_VERSION=2.6.4
+RUN wget https://github.com/SRI-CSL/yices2/releases/download/Yices-${YICES_VERSION}/yices-${YICES_VERSION}-x86_64-pc-linux-gnu.tar.gz -O yices.tar.gz && \
+    tar -xzvf yices.tar.gz --strip-components=1 && \
+    mv /yices/bin/* /usr/local/bin/ && \
+    mv /yices/lib/* /usr/local/lib/ && \
+    mv /yices/include/* /usr/local/include/ && \
+    rm -rf /yices
+
+# =============================================================================
+# [RUNNER] Install Bitwuzla (SMT solver, built from source)
+# =============================================================================
+RUN pip3 install meson
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libgmp-dev \
+    libmpfr-dev \
+    cmake \
+    ninja-build
+WORKDIR /bitwuzla
+RUN git clone https://github.com/bitwuzla/bitwuzla . && \
+    ./configure.py && \
+    cd build && \
+    ninja install
+
+# =============================================================================
+# [FRAMEWORK] Install uv as pip package (for framework's pyproject.toml usage)
+# Runner already installed uv via install.sh above for halmos — this makes it
+# available as a pip-level tool too.
+# =============================================================================
+RUN pip3 install uv
+# OPTIMIZATION: uv is already installed via astral.sh above (for halmos).
+# Could just symlink or use that one instead of double-installing.
+
+# =============================================================================
+# [FRAMEWORK] Install Node.js packages globally (claude-code, opencode-ai)
+# =============================================================================
 RUN npm install -g @anthropic-ai/claude-code opencode-ai
 
-# Install Medusa fuzzer (to shared location)
-RUN mkdir -p /opt/go && \
-    GOPATH=/opt/go go install github.com/crytic/medusa@latest && \
-    chmod -R 755 /opt/go
-
-# Install Foundry (to shared location)
-ENV FOUNDRY_DIR="/opt/foundry"
-RUN curl -L https://foundry.paradigm.xyz | bash && \
-    . /root/.bashrc && foundryup && \
-    mkdir -p /opt/foundry/bin && \
-    find /root/.foundry -name "forge" -o -name "cast" -o -name "anvil" -o -name "chisel" | xargs -I {} cp {} /opt/foundry/bin/ && \
-    chmod -R 755 /opt/foundry
-ENV PATH="/opt/foundry/bin:${PATH}"
-
-# Set working directory
-WORKDIR /app
-
-# Copy project files
-COPY . .
-
-# Install dependencies and build project
-RUN pip install --break-system-packages -e .
-
-# Install Slither for cyclomatic complexity analysis
-RUN pip install --break-system-packages slither-analyzer
-
-# Setup reconuser permissions
-RUN mkdir -p /tmp && \
-    chown -R reconuser:reconuser /tmp /app && \
-    echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-
-# Setup OpenCode config for non-interactive mode (prevents CLI hangs)
-RUN mkdir -p /home/reconuser/.config/opencode && \
-    cp /app/opencode.json /home/reconuser/.config/opencode/opencode.json && \
-    chown -R reconuser:reconuser /home/reconuser/.config
-
-# Ensure echidna binaries are executable by reconuser (defense-in-depth)
-RUN chmod -R 755 /home/linuxbrew/.linuxbrew/bin
-
-# Switch to non-root user
-USER reconuser
-
-# Configure git for reconuser
+# =============================================================================
+# [RUNNER + FRAMEWORK] Configure git
+# Merged from both: runner's HTTPS rewrite rules + framework's user identity.
+# =============================================================================
 RUN git config --global user.email "recon@worker.local" && \
     git config --global user.name "Recon Worker" && \
     git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "git://github.com/"
 
+WORKDIR /
 
-# Set working directory to /tmp for user operations
-WORKDIR /tmp
+# =============================================================================
+# Copy entire monorepo into /app (single COPY to avoid overwrite issues)
+# =============================================================================
+WORKDIR /app
+COPY . /app/
 
-# Environment variables (override at runtime with -e flag)
+# =============================================================================
+# [RUNNER] Copy halmos helper script to PATH
+# =============================================================================
+RUN cp /app/runner/run_halmos.sh /usr/local/bin/run_halmos.sh && \
+    chmod +x /usr/local/bin/run_halmos.sh
+
+# =============================================================================
+# [FRAMEWORK] Install Python deps
+# =============================================================================
+RUN pip3 install -e .
+
+# =============================================================================
+# [RUNNER] Install Node deps (must be LAST so node_modules/ is not overwritten)
+# =============================================================================
+WORKDIR /app/runner
+
+RUN --mount=type=secret,id=npm_token \
+  echo "//registry.npmjs.org/:_authToken=$(cat /run/secrets/npm_token)" > .npmrc && \
+  yarn install --frozen-lockfile
+
+# =============================================================================
+# Claude Code root workaround
+# Claude Code blocks --dangerously-skip-permissions when running as root.
+# IS_SANDBOX=1 is the official escape hatch (confirmed by Anthropic).
+# =============================================================================
+ENV IS_SANDBOX=1
+
+# =============================================================================
+# [FRAMEWORK] Environment variables
+# =============================================================================
 ENV ANTHROPIC_API_KEY=""
 ENV OPENROUTER_API_KEY=""
+
+# =============================================================================
+# Entrypoint: dispatches based on MODE env var
+# MODE=runner    → yarn start (runner)
+# MODE=framework → python3 cli.py (framework CLI)
+# MODE=worker    → python3 worker.py (framework worker/server)
+# Default: framework
+# =============================================================================
+WORKDIR /app
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

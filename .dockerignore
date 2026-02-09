@@ -1,0 +1,33 @@
+# Git
+.git/
+.gitmodules
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Claude
+.claude/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node artifacts (framework root has none, but just in case)
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+Dockerfile
+Dockerfile.old
+.dockerignore
+
+# macOS
+.DS_Store

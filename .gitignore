@@ -32,7 +32,6 @@ env/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Logs
 logs/
@@ -43,11 +42,11 @@ logs/
 .env.local
 .env.*.local
 
-# TypeScript
+# Node / TypeScript
 node_modules/
 *.tsbuildinfo
-dist/
-*.d.ts
+out/
+.npmrc
 
 # Testing
 .pytest_cache/
@@ -66,6 +65,21 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
-*.swp
 
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Claude
 .claude

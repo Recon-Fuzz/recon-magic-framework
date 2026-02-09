@@ -6,9 +6,11 @@ on:
       - main
     paths:
       - 'Dockerfile'
+      - 'entrypoint.sh'
       - '.github/workflows/docker-build-push.yml'
       - '**/*.py'
       - 'pyproject.toml'
+      - 'runner/**'
 
 jobs:
   build-and-push:
@@ -29,7 +31,12 @@ jobs:
         run: doctl registry login --expiry-seconds 600
 
       - name: Build Docker image
-        run: docker build -t registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:$(echo $GITHUB_SHA | head -c7) .
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            --secret id=npm_token,env=NPM_TOKEN \
+            -t registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:$(echo $GITHUB_SHA | head -c7) .
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Tag as latest
         run: docker tag registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:$(echo $GITHUB_SHA | head -c7) registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}/recon-magic-framework:latest
