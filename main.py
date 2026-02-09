@@ -321,7 +321,7 @@ def check_gate_condition(gate: dict) -> bool:
 def execute_gate(
     gate_name: str,
     step_num: int
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, str | None]:
     """
     Execute a gate's check and fix cycle.
 
@@ -333,19 +333,19 @@ def execute_gate(
     Args:
         gate_name: Name of the gate to execute
         step_num: Current step number (for logging)
-        workflow: The workflow object (for context)
 
     Returns:
-        tuple[bool, str | None]: (success, error_message)
+        tuple[bool, str | None, str | None]: (success, error_message, failure_tail)
             - success: True if gate passed, False if max retries exceeded
             - error_message: Description of failure if gate failed
+            - failure_tail: Last output lines from check step (for error reporting)
     """
     global _workflow_gates
     from worker import send_live_progress
 
     if gate_name not in _workflow_gates:
-        print(f"  ⚠️  Gate '{gate_name}' not found in workflow-gates.json")
-        return (True, None)  # Assume pass if gate not found
+        print(f"  ❌ Gate '{gate_name}' not found in workflow-gates.json")
+        return (False, f"Gate '{gate_name}' not found - check preconditions spelling", None)
 
     gate = _workflow_gates[gate_name]
     max_retries = gate.get("maxRetries", 2)
@@ -354,10 +354,11 @@ def execute_gate(
     print(f"   Max retries: {max_retries}")
 
     # Send gate checking status via liveProgress
-    send_live_progress("🔐 Gate checking...")
+    send_live_progress(f"🔐 Gate: {gate_name} checking...")
 
     # Gate sub-step counter for unique log naming
     gate_sub_step = 0
+    last_failure_tail = None
 
     for attempt in range(max_retries + 1):
         print(f"\n   [Gate attempt {attempt + 1}/{max_retries + 1}]")
@@ -368,10 +369,11 @@ def execute_gate(
             gate_sub_step += 1
             # Use decimal step number for gate sub-steps (e.g., 1.1, 1.2)
             gate_step_num = float(f"{step_num}.{gate_sub_step}")
-            
+
             check_step = TaskStep(**check_step_data)
             print(f"   Running check: {check_step.name}")
-            return_code, _, _, _ = execute_task_step(check_step, int(gate_step_num * 10))
+            return_code, _, _, failure_tail = execute_task_step(check_step, int(gate_step_num * 10))
+            last_failure_tail = failure_tail
 
             if return_code != SUCCESS and not check_step.allowFailure:
                 print(f"   ❌ Check step failed")
@@ -379,19 +381,19 @@ def execute_gate(
         # Evaluate success condition
         if check_gate_condition(gate):
             print(f"   ✅ Gate '{gate_name}' PASSED")
-            send_live_progress("✅ Gate passed")
-            return (True, None)
+            send_live_progress(f"✅ Gate: {gate_name} passed")
+            return (True, None, None)
 
         print(f"   ❌ Gate condition not met")
 
         # If we have retries left, run the fix step
         if attempt < max_retries:
-            send_live_progress(f"🔧 Gate fixing (attempt {attempt + 1}/{max_retries})...")
+            send_live_progress(f"🔧 Gate: {gate_name} fixing (attempt {attempt + 1}/{max_retries})...")
             fix_step_data = gate.get("fix", {})
             if fix_step_data:
                 gate_sub_step += 1
                 gate_step_num = float(f"{step_num}.{gate_sub_step}")
-                
+
                 fix_step = TaskStep(**fix_step_data)
                 print(f"   🔧 Running fix: {fix_step.name}")
                 return_code, _, _, _ = execute_task_step(fix_step, int(gate_step_num * 10))
@@ -399,37 +401,37 @@ def execute_gate(
                 # Handle artifacts exactly like regular workflow steps
                 if fix_step.shouldCreateSummary:
                     create_summary(fix_step, int(gate_step_num * 10))
-                
+
                 if fix_step.shouldCommitChanges:
                     commit_info = commit_changes(fix_step, int(gate_step_num * 10))
                     if commit_info:
                         push_changes(int(gate_step_num * 10))
         else:
             print(f"   ❌ Max retries ({max_retries}) exceeded for gate '{gate_name}'")
-            send_live_progress("❌ Gate failed")
-            
+            send_live_progress(f"❌ Gate: {gate_name} failed")
+
             # Execute onFailure handler if defined (e.g., generate failure report)
             on_failure_data = gate.get("onFailure", {})
             if on_failure_data:
                 gate_sub_step += 1
                 gate_step_num = float(f"{step_num}.{gate_sub_step}")
-                
+
                 on_failure_step = TaskStep(**on_failure_data)
                 print(f"\n   📋 Running failure handler: {on_failure_step.name}")
                 _, _, _, _ = execute_task_step(on_failure_step, int(gate_step_num * 10))
-                
+
                 # Handle artifacts exactly like regular workflow steps
                 if on_failure_step.shouldCreateSummary:
                     create_summary(on_failure_step, int(gate_step_num * 10))
-                
+
                 if on_failure_step.shouldCommitChanges:
                     commit_info = commit_changes(on_failure_step, int(gate_step_num * 10))
                     if commit_info:
                         push_changes(int(gate_step_num * 10))
-            
-            return (False, f"Gate '{gate_name}' failed after {max_retries} retries")
 
-    return (False, f"Gate '{gate_name}' failed")
+            return (False, f"Gate '{gate_name}' failed after {max_retries} retries", last_failure_tail)
+
+    return (False, f"Gate '{gate_name}' failed", last_failure_tail)
 
 def execute_step(
     step: Step,
@@ -703,7 +705,8 @@ def run_workflow(
     before_hook: Callable[[Step, int, str | None], None] | None = None,
     after_hook: Callable[[Step, int, int, str, dict | None], None] | None = None,
     stop_checker: Callable[[], bool] | None = None,
-    resume_from_step_id: str | None = None
+    resume_from_step_id: str | None = None,
+    override_gates: list[str] | None = None
 ) -> int:
     """
     Execute a workflow with explicit parameters.
@@ -722,6 +725,12 @@ def run_workflow(
         stop_checker: Optional callback to check if graceful stop was requested
             - Called before each step
             - Returns True if stop was requested, False otherwise
+        override_gates: Optional list of gate names to run instead of step preconditions
+            - Only applies to the resume step (the step matching resume_from_step_id)
+            - None = use step's own preconditions (default behavior)
+            - [] = skip all gates for the resume step
+            - ["gate-name"] = run only the specified gates for the resume step
+            - Subsequent steps always use their own preconditions
 
     Returns:
         Exit code (0 = success, 1 = failure, 2 = stopped)
@@ -816,17 +825,27 @@ def run_workflow(
         if before_hook:
             before_hook(step, i, step_id)
 
+        # Determine which gates to run for this step
+        if override_gates is not None and resume_from_step and i == resume_from_step:
+            gates_to_run = override_gates  # user override only for the resume step
+        elif hasattr(step, 'preconditions') and step.preconditions:
+            gates_to_run = step.preconditions  # default behavior
+        else:
+            gates_to_run = None
+
         # Check preconditions (gates) if any are defined
-        if hasattr(step, 'preconditions') and step.preconditions:
-            print(f"\n🔐 Checking preconditions: {step.preconditions}")
-            for gate_name in step.preconditions:
-                gate_passed, error_msg = execute_gate(gate_name, i)
+        if gates_to_run:
+            print(f"\n🔐 Checking preconditions: {gates_to_run}")
+            for gate_name in gates_to_run:
+                gate_passed, error_msg, gate_failure_tail = execute_gate(gate_name, i)
                 if not gate_passed:
                     print(f"\n❌ Gate '{gate_name}' failed for step {i}")
                     print(f"   {error_msg}")
                     print("Stopping workflow execution due to gate failure.")
                     if after_hook:
                         step_result = {"step_name": step.name, "step_num": i, "failed": True, "gate_failed": gate_name}
+                        if gate_failure_tail:
+                            step_result["failure_tail"] = gate_failure_tail
                         # Add internal_id for resume functionality
                         if i in _step_metadata:
                             step_result["internal_id"] = _step_metadata[i].get("internal_id")
@@ -837,6 +856,19 @@ def run_workflow(
         return_code, action, destination_step_name, failure_tail = execute_step(
             step, i, step_execution_count[i], loop_hardcap, None, step_id
         )
+
+        # Handle mid-step stop (e.g. Echidna killed by StopChecker)
+        if return_code == STOPPED or action == "STOPPED":
+            print(f"\n⏹️  Step {i} was stopped by user request")
+            print("Stopping workflow execution gracefully.")
+
+            if after_hook:
+                step_result = {"step_name": step.name, "step_num": i, "stopped": True}
+                if i in _step_metadata:
+                    step_result["internal_id"] = _step_metadata[i].get("internal_id")
+                after_hook(step, i, STOPPED, "GRACEFUL_STOP", step_result)
+
+            return STOPPED
 
         if return_code != SUCCESS:
             print(f"\n❌ Step {i} failed with return code {return_code}")
@@ -955,6 +987,9 @@ if __name__ == "__main__":
 
     # Set framework root
     os.environ['RECON_FRAMEWORK_ROOT'] = str(Path(__file__).parent.resolve())
+
+    # Set prompts directory (where agent reference documents live)
+    os.environ['PROMPTS_DIR'] = str(Path(__file__).parent.resolve() / 'prompts')
 
     # Parse single positional argument
     if len(sys.argv) < 2:

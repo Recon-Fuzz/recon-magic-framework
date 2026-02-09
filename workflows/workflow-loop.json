@@ -19,7 +19,7 @@
       "description": "If counter is less than 10, continue, otherwise stop",
       "mode": "READ_FILE",
       "modeInfo": {
-        "fileName": "Counter.MD"
+        "fileName": "Counter.md"
       },
       "decision": [
         {

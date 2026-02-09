@@ -5,11 +5,11 @@
         {
             "name": "Critical Stop Decision Step",
             "type": "decision",
-            "description": "Check if CRITICAL_STOP.MD exists to determine if workflow should stop early",
+            "description": "Check if CRITICAL_STOP.md exists to determine if workflow should stop early",
 
             "mode": "FILE_EXISTS",
             "modeInfo": {
-                "fileName": "CRITICAL_STOP.MD"
+                "fileName": "CRITICAL_STOP.md"
             },
             "decision": [
                 {

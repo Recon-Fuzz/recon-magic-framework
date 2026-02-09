@@ -418,8 +418,9 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
     # Track failure/stop info for later use in error handling
     # Extract failure_tail from step_result if available
     failure_tail = step_result.get("failure_tail") if step_result else None
-    if action == "STALE_FAILED":
-        set_workflow_failure_info(step.name, step_num, "stale_failed", failure_tail)
+    if action == "GATE_FAILED":
+        gate_name = step_result.get("gate_failed", "unknown") if step_result else "unknown"
+        set_workflow_failure_info(step.name, step_num, "gate_failure:" + gate_name, failure_tail)
     elif action == "FAILED" or return_code == 1:
         set_workflow_failure_info(step.name, step_num, "step_failure", failure_tail)
     elif action == "STOP":
@@ -473,6 +474,8 @@ def worker_after_step_hook(step, step_num: int, return_code: int, action: str, s
             step_data["skipped"] = step_result["skipped"]
         if step_result.get("failure_tail"):
             step_data["failure_tail"] = step_result["failure_tail"]
+        if step_result.get("gate_failed"):
+            step_data["gate_failed"] = step_result["gate_failed"]
 
     # Send to backend
     update_job_step_data(api_url, bearer_token, job_id, step_data)
@@ -573,12 +576,15 @@ def start_job_listener(
                 additional_data = job_info.get("additionalData", {})
                 job_type = additional_data.get("jobType", "directPrompt")
                 resume_from_step_id = additional_data.get("resumeFromStepId")
+                selected_gates = additional_data.get("selectedGates")  # None | [] | ["gate-name"]
 
                 print(f"Job Type: {job_type}")
                 print(f"Repo URL: {repo_url}")
                 print(f"Claude URL: {claude_url}")
                 if resume_from_step_id:
                     print(f"Resume from step ID: {resume_from_step_id}")
+                if selected_gates is not None:
+                    print(f"Selected gates override: {selected_gates}")
 
                 # Setup workspace in /app
                 if not setup_workspace("/app"):
@@ -634,6 +640,9 @@ def start_job_listener(
                 # Set environment variable for framework root
                 framework_root = Path(__file__).parent.resolve()
                 os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
+
+                # Set prompts directory (where agent reference documents live)
+                os.environ['PROMPTS_DIR'] = str(framework_root / 'prompts')
 
                 # Set worker context in environment for hooks to use
                 os.environ['WORKER_API_URL'] = api_url
@@ -836,7 +845,8 @@ def start_job_listener(
                     before_hook=worker_before_step_hook,
                     after_hook=worker_after_step_hook,
                     stop_checker=create_stop_checker(),
-                    resume_from_step_id=resume_from_step_id
+                    resume_from_step_id=resume_from_step_id,
+                    override_gates=selected_gates
                 )
 
                 # Check workflow result: 0 = success, 1 = failure, 2 = stopped

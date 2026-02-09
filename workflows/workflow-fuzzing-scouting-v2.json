@@ -1,0 +1,157 @@
+{
+  "name": "Fuzzing Scouting V2 Workflow",
+  "description": "Scout V2: Contract analysis and classification (zero coding)",
+  "steps": [
+    {
+      "name": "Validate Scope File Exists",
+      "type": "decision",
+      "description": "Check that magic/scope.md exists before proceeding",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/scope.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Scope file found, proceed with scouting"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "REQUIRED: Create magic/scope.md with testing goals and target contracts before running"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 0: Contract Discovery and Classification",
+      "type": "task",
+      "description": "Discover all contracts and classify as FULL/MOCK/ABSORB/DISCARD",
+      "prompt": "You are provided an agent definition at ./prompts/agent/scout-v2-phase-0.md. Run exclusively the scout-v2-phase-0 agent using the Task tool. This phase will analyze the codebase and output deployment classification.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Classification File",
+      "type": "decision",
+      "description": "Check if deployment-classification.json was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/deployment-classification.json"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Classification file created, continue to scaffolding spec"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 0: Contract Discovery and Classification",
+          "NOTE": "Classification file not found, retry"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1: Generate Scaffolding Specification",
+      "type": "task",
+      "description": "Generate contracts-to-scaffold.json from classification",
+      "prompt": "You are provided an agent definition at ./prompts/agent/scout-v2-phase-1.md. Run exclusively the scout-v2-phase-1 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Scaffolding Spec File",
+      "type": "decision",
+      "description": "Check if contracts-to-scaffold.json was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/contracts-to-scaffold.json"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Scaffolding spec created, continue to parameter analysis"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 1: Generate Scaffolding Specification",
+          "NOTE": "Scaffolding spec not found, retry"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 2: Deep Parameter Analysis",
+      "type": "task",
+      "description": "Analyze constructor parameters, coverage classes, and deployment order",
+      "prompt": "You are provided an agent definition at ./prompts/agent/scout-v2-phase-2.md. Run exclusively the scout-v2-phase-2 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Setup Config Spec",
+      "type": "decision",
+      "description": "Check if setup-config-spec.json was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/setup-config-spec.json"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Setup config spec created, scouting complete"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 2: Deep Parameter Analysis",
+          "NOTE": "Setup config spec not found, retry"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Scouting V2 Complete",
+      "type": "task",
+      "description": "Scouting workflow completed successfully",
+      "prompt": "echo 'Scout V2 complete. Output files: magic/deployment-classification.json, magic/contracts-to-scaffold.json, magic/setup-config-spec.json'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}
