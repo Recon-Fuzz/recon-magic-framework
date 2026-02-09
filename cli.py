@@ -118,6 +118,9 @@ Workflows can be run from any directory.
     # Set environment variable for framework root so other modules can resolve paths
     os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
 
+    # Set prompts directory (where agent reference documents live)
+    os.environ['PROMPTS_DIR'] = str(framework_root / '.opencode')
+
     # Determine workflow file
     if args.prompt:
         # Direct prompt mode - create dynamic workflow
