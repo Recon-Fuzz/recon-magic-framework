@@ -1,4 +1,0 @@
-[submodule ".opencode"]
-	path = .opencode
-	url = git@github.com:Recon-Fuzz/ai-agent-primers.git
-	branch = exp-new-scout-setup
