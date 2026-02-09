@@ -1,14 +1,14 @@
 """
-Simple counter script that increments a value stored in Counter.MD
+Simple counter script that increments a value stored in Counter.md
 """
 
 import os
 
-COUNTER_FILE = "Counter.MD"
+COUNTER_FILE = "Counter.md"
 
 def increase_counter():
     """
-    Read counter from Counter.MD, increment by 1, and write back.
+    Read counter from Counter.md, increment by 1, and write back.
     Creates the file with value 0 if it doesn't exist.
     """
     # Check if file exists
