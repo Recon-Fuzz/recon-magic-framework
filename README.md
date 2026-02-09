@@ -66,6 +66,9 @@ ANTHROPIC_API_KEY=your_api_key_here
 ### CI/CD Infra Notes
 
 - Staging dispatcher credentials are stored in AWS Secrets Manager at `recon-magic-framework/dispatcher`.
+- GitHub Actions deployments use environment-scoped repo secrets:
+  - Staging: `AWS_ACCESS_KEY_ID_STAGING`, `AWS_SECRET_ACCESS_KEY_STAGING`, `ECR_REPOSITORY_STAGING`, `MAGIC_WORKER_NAMESPACE_STAGING`, `MAGIC_WORKER_VCPU_STAGING`, `MAGIC_WORKER_MEM_STAGING`, `MAGIC_BACKEND_API_URL_STAGING`, `MAGIC_WORKER_PERMISSIONS_STAGING`
+  - Production: `AWS_ACCESS_KEY_ID_PRODUCTION`, `AWS_SECRET_ACCESS_KEY_PRODUCTION`, `ECR_REPOSITORY_PRODUCTION`, `MAGIC_WORKER_NAMESPACE_PRODUCTION`, `MAGIC_WORKER_VCPU_PRODUCTION`, `MAGIC_WORKER_MEM_PRODUCTION`, `MAGIC_BACKEND_API_URL_PRODUCTION`, `MAGIC_WORKER_PERMISSIONS_PRODUCTION`
 
 ### Mock Backend for ECS POC
 
@@ -83,20 +86,25 @@ use the bundled mock backend which supports both.
 ### ECS POC via .env
 
 Store credentials and runtime configuration in `.env` (never commit this file).
-The runner script sources `.env` and launches the ECS task using the staging
-Terraform outputs.
+The runner script sources `.env` and launches an ECS task using Terraform
+outputs for either `staging` (default) or `production`.
 
 Required `.env` entries:
 
 ```bash
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
+AWS_ACCESS_KEY_ID_STAGING=...
+AWS_SECRET_ACCESS_KEY_STAGING=...
+GITHUB_TOKEN_STAGING=...
+ANTHROPIC_API_KEY_STAGING=...
+# Optional: for production runs
+AWS_ACCESS_KEY_ID_PRODUCTION=...
+AWS_SECRET_ACCESS_KEY_PRODUCTION=...
+GITHUB_TOKEN_PRODUCTION=...
+ANTHROPIC_API_KEY_PRODUCTION=...
 AWS_DEFAULT_REGION=us-east-1
 WORKER_API_URL=http://<public-ip>:8080
 WORKER_BEARER_TOKEN=mock-token
 WORKER_JOB_ID=job-coverage
-GITHUB_TOKEN=...
-ANTHROPIC_API_KEY=...
 ```
 
 Steps:
@@ -108,11 +116,13 @@ python tools/mock_backend/mock_backend.py --host 0.0.0.0 --port 8080
 # 2) Ensure your firewall/security group exposes port 8080
 
 # 3) Launch the ECS task
-bash tools/ecs/run_task_poc.sh
+bash tools/ecs/run_task_poc.sh staging
+# or: bash tools/ecs/run_task_poc.sh production
 ```
 
 Notes:
 
+- `tools/ecs/run_task_poc.sh` prefers environment-scoped vars (for example `GITHUB_TOKEN_STAGING`) when present, and falls back to unsuffixed vars (for example `GITHUB_TOKEN`).
 - Set `WORKER_JOB_ID=job-coverage` to use the sample payload for
   `workflow-fuzzing-coverage`.
 - You can also set `WORKER_JOB_PAYLOAD` to bypass the GET call if needed.
@@ -132,7 +142,7 @@ python tools/mock_backend/mock_backend.py --host 0.0.0.0 --port 8080 --log-file 
 curl http://<public-ip>:8080/health
 
 # 3) Launch the ECS task (uses staging Terraform outputs)
-bash tools/ecs/run_task_poc.sh
+bash tools/ecs/run_task_poc.sh staging
 
 # 4) Inspect backend requests
 tail -n 200 /tmp/mock_backend.log
@@ -150,7 +160,7 @@ ECS logs:
 - Stream prefix: `ecs`
 
 ```bash
-bash tools/ecs/run_task_poc.sh
+bash tools/ecs/run_task_poc.sh staging
 ```
 
 ## Workflow Structure

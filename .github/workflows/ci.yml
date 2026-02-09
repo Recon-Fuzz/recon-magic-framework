@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -28,8 +28,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
 
-  docker-build:
-    name: Docker Build and Push
+  docker-build-staging:
+    name: Docker Build and Push (Staging)
     runs-on: ubuntu-latest
     needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -44,13 +44,13 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
           aws-region: us-east-1
 
       - name: Log in to Amazon ECR
         run: |
-          ECR_REPOSITORY="${{ secrets.ECR_REPOSITORY }}"
+          ECR_REPOSITORY="${{ secrets.ECR_REPOSITORY_STAGING }}"
           ECR_REGISTRY="${ECR_REPOSITORY%%/*}"
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
@@ -70,7 +70,7 @@ jobs:
             --cache-from=type=local,src=/tmp/.buildx-cache \
             --cache-to=type=local,dest=/tmp/.buildx-cache-new \
             --platform linux/amd64 \
-            -t ${{ secrets.ECR_REPOSITORY }}:latest . \
+            -t ${{ secrets.ECR_REPOSITORY_STAGING }}:latest . \
             --push
 
       - name: Update Docker Cache
@@ -78,9 +78,60 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-  validate:
-    name: Validate
+  docker-build-production:
+    name: Docker Build and Push (Production)
     runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PRODUCTION }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRODUCTION }}
+          aws-region: us-east-1
+
+      - name: Log in to Amazon ECR
+        run: |
+          ECR_REPOSITORY="${{ secrets.ECR_REPOSITORY_PRODUCTION }}"
+          ECR_REGISTRY="${ECR_REPOSITORY%%/*}"
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build and Push Docker Image
+        timeout-minutes: 40
+        run: |
+          DOCKER_BUILDKIT=1 docker buildx build \
+            --progress=plain \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new \
+            --platform linux/amd64 \
+            -t ${{ secrets.ECR_REPOSITORY_PRODUCTION }}:latest . \
+            --push
+
+      - name: Update Docker Cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  validate-staging:
+    name: Validate (Staging)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v3
         with:
@@ -95,21 +146,50 @@ jobs:
         run: |
           cd infrastructure
           mv backend.staging.tf backend.tf && rm backend.production.tf
-          terraform init
+          terraform init -input=false
           terraform validate
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE }}
-          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU }}
-          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM }}
-          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL }}
-          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE_STAGING }}
+          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU_STAGING }}
+          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM_STAGING }}
+          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL_STAGING }}
+          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS_STAGING }}
 
-  deploy:
-    name: Deploy Staging
+  validate-production:
+    name: Validate (Production)
     runs-on: ubuntu-latest
-    needs: [build-and-test, docker-build, validate]
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.6"
+
+      - name: Validate
+        run: |
+          cd infrastructure
+          mv backend.production.tf backend.tf && rm backend.staging.tf
+          terraform init -input=false
+          terraform validate
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_PRODUCTION }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRODUCTION }}
+          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE_PRODUCTION }}
+          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU_PRODUCTION }}
+          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM_PRODUCTION }}
+          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL_PRODUCTION }}
+          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS_PRODUCTION }}
+
+  deploy-staging:
+    name: Deploy (Staging)
+    runs-on: ubuntu-latest
+    needs: [build-and-test, docker-build-staging, validate-staging]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v3
@@ -125,21 +205,21 @@ jobs:
         run: |
           cd infrastructure
           mv backend.staging.tf backend.tf && rm backend.production.tf
-          terraform init
-          terraform apply -auto-approve
+          terraform init -input=false
+          terraform apply -auto-approve -input=false
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE }}
-          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU }}
-          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM }}
-          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL }}
-          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE_STAGING }}
+          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU_STAGING }}
+          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM_STAGING }}
+          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL_STAGING }}
+          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS_STAGING }}
 
   deploy-production:
     name: Deploy Production
     runs-on: ubuntu-latest
-    needs: [build-and-test, docker-build, validate]
+    needs: [build-and-test, docker-build-production, validate-production]
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v3
@@ -155,13 +235,13 @@ jobs:
         run: |
           cd infrastructure
           mv backend.production.tf backend.tf && rm backend.staging.tf
-          terraform init
-          terraform apply -auto-approve
+          terraform init -input=false
+          terraform apply -auto-approve -input=false
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE }}
-          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU }}
-          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM }}
-          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL }}
-          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_PRODUCTION }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_PRODUCTION }}
+          TF_VAR_namespace: ${{ secrets.MAGIC_WORKER_NAMESPACE_PRODUCTION }}
+          TF_VAR_vCPU: ${{ secrets.MAGIC_WORKER_VCPU_PRODUCTION }}
+          TF_VAR_mem: ${{ secrets.MAGIC_WORKER_MEM_PRODUCTION }}
+          TF_VAR_backend_api_url: ${{ secrets.MAGIC_BACKEND_API_URL_PRODUCTION }}
+          TF_VAR_worker_permissions: ${{ secrets.MAGIC_WORKER_PERMISSIONS_PRODUCTION }}

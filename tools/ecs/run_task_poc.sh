@@ -5,6 +5,16 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INFRA_DIR="${ROOT_DIR}/infrastructure"
 ENV_FILE="${ROOT_DIR}/.env"
 
+ENVIRONMENT="${1:-staging}"
+case "${ENVIRONMENT}" in
+  staging|production) ;;
+  prod) ENVIRONMENT="production" ;;
+  *)
+    echo "Usage: $(basename "$0") [staging|production]" >&2
+    exit 2
+    ;;
+esac
+
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing .env at ${ENV_FILE}" >&2
   exit 1
@@ -13,6 +23,30 @@ fi
 set -a
 source "${ENV_FILE}"
 set +a
+
+# Prefer environment-scoped vars (e.g. AWS_ACCESS_KEY_ID_STAGING) when present.
+env_suffix="$(printf '%s' "${ENVIRONMENT}" | tr '[:lower:]' '[:upper:]')"
+set_env_from_scoped() {
+  local base="$1"
+  local scoped="${base}_${env_suffix}"
+
+  local scoped_val="${!scoped-}"
+  local base_val="${!base-}"
+
+  if [[ -n "${scoped_val}" ]]; then
+    export "${base}=${scoped_val}"
+  else
+    export "${base}=${base_val}"
+  fi
+}
+
+set_env_from_scoped AWS_ACCESS_KEY_ID
+set_env_from_scoped AWS_SECRET_ACCESS_KEY
+set_env_from_scoped WORKER_API_URL
+set_env_from_scoped WORKER_BEARER_TOKEN
+set_env_from_scoped WORKER_PERMISSIONS
+set_env_from_scoped GITHUB_TOKEN
+set_env_from_scoped ANTHROPIC_API_KEY
 
 required_vars=(
   AWS_ACCESS_KEY_ID
@@ -52,7 +86,7 @@ trap cleanup EXIT
 
 mv "${INFRA_DIR}/backend.staging.tf" "${tmp_dir}/backend.staging.tf"
 mv "${INFRA_DIR}/backend.production.tf" "${tmp_dir}/backend.production.tf"
-cp "${tmp_dir}/backend.staging.tf" "${INFRA_DIR}/backend.tf"
+cp "${tmp_dir}/backend.${ENVIRONMENT}.tf" "${INFRA_DIR}/backend.tf"
 terraform init -reconfigure -input=false >/dev/null
 terraform output -json > "${tmp_dir}/terraform_outputs.json"
 popd >/dev/null
