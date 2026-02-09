@@ -6,7 +6,7 @@
       "name": "Phase 0: Foundry Migration",
       "type": "task",
       "description": "Migrate Hardhat project to Foundry and ensure compilation",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-v2-phase-0.md. Run exclusively the setup-v2-phase-0 agent using the Task tool. This phase will migrate the project to Foundry (if needed) and verify compilation.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-0.md. Run exclusively the setup-v2-phase-0 agent using the Task tool. This phase will migrate the project to Foundry (if needed) and verify compilation.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -41,7 +41,7 @@
       "name": "Phase 1: Scaffold and Create Mocks",
       "type": "task",
       "description": "Run recon-generate to scaffold fuzzing suite and create mock contracts",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-v2-phase-1.md. Run exclusively the setup-v2-phase-1 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-1.md. Run exclusively the setup-v2-phase-1 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -53,7 +53,7 @@
       "name": "Phase 2: Implement Setup.sol",
       "type": "task",
       "description": "Implement Setup.sol based on setup-config-spec.json",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-v2-phase-2.md. Run exclusively the setup-v2-phase-2 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-2.md. Run exclusively the setup-v2-phase-2 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -65,7 +65,7 @@
       "name": "Phase 3: Validate Setup",
       "type": "task",
       "description": "Validate setup with forge build, forge test, and echidna",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-v2-phase-3.md. Run exclusively the setup-v2-phase-3 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-3.md. Run exclusively the setup-v2-phase-3 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -107,7 +107,7 @@
       "name": "Phase 5: Identify Prerequisite Functions",
       "type": "task",
       "description": "Analyze each handler and identify prerequisite functions",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-v2-phase-5.md. Run exclusively the setup-v2-phase-5 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-5.md. Run exclusively the setup-v2-phase-5 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -135,7 +135,7 @@
       "name": "Phase 6: Move Admin Functions",
       "type": "task",
       "description": "Identify and move admin functions to AdminTargets",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-v2-phase-6.md. Run exclusively the setup-v2-phase-6 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-6.md. Run exclusively the setup-v2-phase-6 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -147,7 +147,7 @@
       "name": "Phase 7: Write Unit Tests",
       "type": "task",
       "description": "Write unit tests for all handlers to validate setup",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-v2-phase-7.md. Run exclusively the setup-v2-phase-7 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-7.md. Run exclusively the setup-v2-phase-7 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"

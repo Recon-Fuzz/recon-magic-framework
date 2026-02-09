@@ -31,7 +31,7 @@
       "name": "Phase 0: Contract Discovery and Classification",
       "type": "task",
       "description": "Discover all contracts and classify as FULL/MOCK/ABSORB/DISCARD",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/scout-v2-phase-0.md. Run exclusively the scout-v2-phase-0 agent using the Task tool. This phase will analyze the codebase and output deployment classification.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/scout-v2-phase-0.md. Run exclusively the scout-v2-phase-0 agent using the Task tool. This phase will analyze the codebase and output deployment classification.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -69,7 +69,7 @@
       "name": "Phase 1: Generate Scaffolding Specification",
       "type": "task",
       "description": "Generate contracts-to-scaffold.json from classification",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/scout-v2-phase-1.md. Run exclusively the scout-v2-phase-1 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/scout-v2-phase-1.md. Run exclusively the scout-v2-phase-1 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -107,7 +107,7 @@
       "name": "Phase 2: Deep Parameter Analysis",
       "type": "task",
       "description": "Analyze constructor parameters, coverage classes, and deployment order",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/scout-v2-phase-2.md. Run exclusively the scout-v2-phase-2 agent using the Task tool.",
+      "prompt": "You are provided an agent definition at ./prompts/agent/scout-v2-phase-2.md. Run exclusively the scout-v2-phase-2 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"

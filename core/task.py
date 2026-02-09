@@ -832,7 +832,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
 
-        agent_file_match = re.search(r'\./prompts/(agents?)/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./(?:\.opencode|prompts)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Resolve agent file from PROMPTS_DIR
             prompts_dir = os.environ.get('PROMPTS_DIR', str(Path(framework_root) / 'prompts'))
@@ -905,7 +905,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
 
         # Process prompt - if it references an agent file, read and inject its content
         prompt = step.prompt
-        agent_file_match = re.search(r'\./prompts/(agents?)/([^.\s]+)\.md', prompt)
+        agent_file_match = re.search(r'\./(?:\.opencode|prompts)/(agents?)/([^.\s]+)\.md', prompt)
         if agent_file_match:
             # Resolve agent file from PROMPTS_DIR
             prompts_dir = os.environ.get('PROMPTS_DIR', str(Path(framework_root) / 'prompts'))
