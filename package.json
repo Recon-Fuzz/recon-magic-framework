@@ -1,0 +1,32 @@
+{
+  "name": "runner",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "repository": "git@github.com:Recon-Fuzz/runner.git",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "postinstall": "npx prisma generate --schema prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "@sentry/node": "^7.101.0",
+    "@types/node": "^20.11.0",
+    "@types/yargs": "^17.0.32",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.3.3",
+    "prisma": "5.18.0"
+  },
+  "dependencies": {
+    "@prisma/client": "5.18.0",
+    "@recon-fuzz/log-parser": "^0.0.38",
+    "ethers": "^6.13.2",
+    "yargs": "^17.7.2"
+  },
+  "_moduleAlias": {
+    "@database": [
+      "./node_modules/@prisma/client"
+    ]
+  }
+}

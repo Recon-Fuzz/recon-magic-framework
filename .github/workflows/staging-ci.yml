@@ -1,0 +1,195 @@
+name: Staging CI
+
+on:
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - staging
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest-m
+    strategy:
+      fail-fast: true
+    steps:
+      # 1. Checkout repository with submodules
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      # 2. Set up Node.js environment with Yarn caching
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18.18'
+          cache: 'yarn'
+
+      # 3. Authenticate with private NPM registry
+      - name: Authenticate NPM
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      # 4. Install dependencies and build TypeScript project
+      - name: Install and Build
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL_STAGING }}
+          BACKEND_JWT: ${{ secrets.BACKEND_JWT_STAGING }}
+
+  docker-build:
+    name: Docker Build and Push
+    runs-on: ubuntu-latest-m
+    needs: build-and-test
+    steps:
+      # 1. Checkout repository with submodules
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      # 2. Set up Docker Buildx for advanced caching and multi-platform builds
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+          aws-region: us-east-1
+
+      # 4. Log in to Amazon ECR
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      # 5. Cache Docker layers to speed up builds
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile', '**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      # Check Disk Usage Before Build
+      - name: Check Disk Usage Before Build
+        run: df -h
+
+      # 6. Build and push Docker image using BuildKit secrets
+      - name: Build and Push Docker Image
+        timeout-minutes: 40
+        run: |
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
+          echo "S3_BUCKET=${{ secrets.S3_BUCKET_STAGING }}" >> .env
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}" >> .env
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}" >> .env
+          echo "BACKEND_URL=${{secrets.BACKEND_URL_STAGING}}" >> .env
+          echo "BACKEND_JWT=${{secrets.BACKEND_JWT_STAGING}}" >> .env
+          DOCKER_BUILDKIT=1 docker buildx build \
+            --progress=plain \
+            --debug \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new \
+            --secret id=npm_token,env=NPM_TOKEN \
+            --platform linux/amd64 \
+            -t ${{ secrets.ECR_REPOSITORY_STAGING }}:latest . \
+            --push
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          ECR_REPOSITORY_STAGING: ${{ secrets.ECR_REPOSITORY_STAGING }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL_STAGING }}
+          BACKEND_JWT: ${{ secrets.BACKEND_JWT_STAGING }}
+
+      # Check Disk Usage After Build
+      - name: Check Disk Usage After Build
+        run: df -h
+
+      # 7. Update Docker cache
+      - name: Update Docker Cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  validate:
+    strategy:
+      fail-fast: true
+
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Authenticate with private NPM package
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      - name: Install Terraform 1.3.x
+        run: |
+          wget https://releases.hashicorp.com/terraform/1.3.10/terraform_1.3.10_linux_amd64.zip
+          unzip terraform_1.3.10_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Validate
+        run: |
+          cd infrastructure
+          mv backend.staging.tf backend.tf && rm backend.production.tf
+          terraform init
+          terraform validate
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+
+  deploy:
+    needs: [build-and-test,docker-build, validate]
+    if: github.ref == 'refs/heads/staging'
+    strategy:
+      fail-fast: true
+
+    name: Deploy
+    runs-on: ubuntu-latest-m
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Authenticate with private NPM package
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+
+      # Add Terraform installation before deployment
+      - name: Install Terraform 1.3.x
+        run: |
+          wget https://releases.hashicorp.com/terraform/1.3.10/terraform_1.3.10_linux_amd64.zip
+          unzip terraform_1.3.10_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+
+      - uses: actions/setup-node@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Deploy
+        run: |
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
+          echo "S3_BUCKET=${{ secrets.S3_BUCKET_STAGING }}" >> .env
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}" >> .env
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}" >> .env
+          echo "BACKEND_URL=${{secrets.BACKEND_URL_STAGING}}" >> .env
+          echo "BACKEND_JWT=${{secrets.BACKEND_JWT_STAGING}}" >> .env
+          yarn
+          cd infrastructure
+          mv backend.staging.tf backend.tf && rm backend.production.tf
+          terraform init
+          terraform apply -auto-approve -var="npm_token=${{ secrets.NPM_TOKEN }}" -var="namespace=staging-runner" -var="vCPU=8192" -var="mem=16384"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL_STAGING }}
+          BACKEND_JWT: ${{ secrets.BACKEND_JWT_STAGING }}
