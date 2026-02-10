@@ -641,6 +641,9 @@ def start_job_listener(
                 framework_root = Path(__file__).parent.resolve()
                 os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
 
+                # Set prompts directory (where agent reference documents live)
+                os.environ['PROMPTS_DIR'] = str(framework_root / 'prompts')
+
                 # Set worker context in environment for hooks to use
                 os.environ['WORKER_API_URL'] = api_url
                 os.environ['WORKER_BEARER_TOKEN'] = bearer_token

@@ -1,0 +1,184 @@
+{
+  "name": "Fuzzing Setup V2 Workflow",
+  "description": "Setup V2: Migration, scaffolding, implementation, and validation",
+  "steps": [
+    {
+      "name": "Phase 0: Foundry Migration",
+      "type": "task",
+      "description": "Migrate Hardhat project to Foundry and ensure compilation",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-0.md. Run exclusively the setup-v2-phase-0 agent using the Task tool. This phase will migrate the project to Foundry (if needed) and verify compilation.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Compilation Check",
+      "type": "decision",
+      "description": "Check if compilation failed",
+      "mode": "READ_FILE",
+      "modeInfo": {
+        "fileName": "COMPILATION_FAILED.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "STOP"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1: Scaffold and Create Mocks",
+      "type": "task",
+      "description": "Run recon-generate to scaffold fuzzing suite and create mock contracts",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-1.md. Run exclusively the setup-v2-phase-1 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 2: Implement Setup.sol",
+      "type": "task",
+      "description": "Implement Setup.sol based on setup-config-spec.json",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-2.md. Run exclusively the setup-v2-phase-2 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 3: Validate Setup",
+      "type": "task",
+      "description": "Validate setup with forge build, forge test, and echidna",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-3.md. Run exclusively the setup-v2-phase-3 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Auto-Link Libraries",
+      "type": "task",
+      "description": "Auto link libraries using recon-generate",
+      "preconditions": ["forge-build-gate"],
+      "prompt": "npx -y recon-generate@latest link2",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Extract Target Functions",
+      "type": "task",
+      "description": "Extract all target handler functions from scaffolded code",
+      "preconditions": ["forge-build-gate"],
+      "prompt": "extract-target-functions --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/target-functions.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 5: Identify Prerequisite Functions",
+      "type": "task",
+      "description": "Analyze each handler and identify prerequisite functions",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-5.md. Run exclusively the setup-v2-phase-5 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Order Prerequisite Functions",
+      "type": "task",
+      "description": "Sort functions by prerequisite count for testing order",
+      "prompt": "order-prerequisite-func ./magic/function-sequences.json --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/function-sequences-sorted.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 6: Move Admin Functions",
+      "type": "task",
+      "description": "Identify and move admin functions to AdminTargets",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-6.md. Run exclusively the setup-v2-phase-6 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 7: Write Unit Tests",
+      "type": "task",
+      "description": "Write unit tests for all handlers to validate setup",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-7.md. Run exclusively the setup-v2-phase-7 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Final Echidna Validation",
+      "type": "task",
+      "description": "Run Echidna to validate complete setup",
+      "prompt": "(set -o pipefail; echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 10000 2>&1 | tee magic/echidna-output.txt; echo \"ECHIDNA_EXIT_CODE=$?\" > magic/echidna-exit-code.txt) || true",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "allowFailure": true,
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Setup V2 Completion Summary",
+      "type": "task",
+      "description": "Generate final summary of setup completion",
+      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all phases\n2. List key artifacts: Setup.sol, target-functions.json, function-sequences.json, admin-functions.json\n3. Confirm forge build compiles successfully\n4. Confirm forge test runs without reverts\n5. Confirm echidna runs without setup crashes\n6. Next steps: proceed to Coverage workflow",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    }
+  ]
+}
