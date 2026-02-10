@@ -832,6 +832,24 @@ def start_job_listener(
                 os.environ['RECON_FOUNDRY_ROOT'] = foundry_root
                 print(f"  ✓ Foundry root set to: {foundry_root}")
 
+                # Write scope.md if provided in additionalData
+                scope_text = additional_data.get("scope")
+                if scope_text:
+                    scope_dir = os.path.join(effective_repo_path, "magic")
+                    os.makedirs(scope_dir, exist_ok=True)
+                    scope_path = os.path.join(scope_dir, "scope.md")
+                    with open(scope_path, "w") as f:
+                        f.write(scope_text)
+                    print(f"  ✓ Wrote magic/scope.md ({len(scope_text)} chars)")
+                elif not os.path.exists(os.path.join(effective_repo_path, "magic", "scope.md")):
+                    # Write default scope if none exists
+                    scope_dir = os.path.join(effective_repo_path, "magic")
+                    os.makedirs(scope_dir, exist_ok=True)
+                    default_scope = "# Testing Scope\n\nTest all contracts in the repository. Use mocks only when strictly necessary.\n"
+                    with open(os.path.join(scope_dir, "scope.md"), "w") as f:
+                        f.write(default_scope)
+                    print(f"  ✓ Wrote default magic/scope.md")
+
                 # Reset failure tracker before running workflow
                 reset_workflow_failure_info()
 
