@@ -10,8 +10,6 @@
 
 FROM ubuntu:24.04
 
-RUN set -eux
-
 ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /home/ubuntu

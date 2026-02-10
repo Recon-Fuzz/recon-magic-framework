@@ -2,7 +2,7 @@
   "name": "runner",
   "version": "1.0.0",
   "main": "src/index.ts",
-  "repository": "git@github.com:Recon-Fuzz/runner.git",
+  "repository": "git@github.com:Recon-Fuzz/recon-magic-framework.git",
   "license": "UNLICENSED",
   "scripts": {
     "start": "ts-node src/index.ts",
