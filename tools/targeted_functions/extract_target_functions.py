@@ -228,7 +228,8 @@ def find_recon_directory(quiet: bool = False) -> Path:
         # Filter to only directories and limit recursive search depth
         valid_matches = [
             m for m in matches
-            if m.is_dir() and len(m.relative_to(current_dir).parts) <= 3
+            if m.is_dir() and len(m.relative_to(current_dir).parts) <= 5
+            and (m / "Setup.sol").exists()
         ]
 
         if valid_matches:
