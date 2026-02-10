@@ -38,9 +38,22 @@
       "shouldCommitChanges": false
     },
     {
-      "name": "Phase 1: Scaffold and Create Mocks",
+      "name": "Generate Recon Scaffolding",
       "type": "task",
-      "description": "Run recon-generate to scaffold fuzzing suite and create mock contracts",
+      "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",
+      "preconditions": ["forge-build-gate"],
+      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); MOCK_NAMES=$(jq -r 'if .mocked_contracts | length > 0 then .mocked_contracts | join(\",\") else empty end' $SCAFFOLD_FILE); npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' $SCAFFOLD_FILE)\" ${MOCK_NAMES:+--mock \"$MOCK_NAMES\"} --coverage --force",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 1: Install Dependencies and Create Mocks",
+      "type": "task",
+      "description": "Install chimera, create remaining mock contracts, and verify compilation",
       "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-1.md. Run exclusively the setup-v2-phase-1 agent using the Task tool.",
       "model": {
         "type": "OPENCODE",
