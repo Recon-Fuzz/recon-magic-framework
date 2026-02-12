@@ -97,7 +97,7 @@ If you need to track some change before and after a certain function, you MUST:
 - Make sure that all operations in `updateGhosts` cannot revert due to code introduced in `updateGhosts`.
 
 
-- Each target function has a `trackOp` modifier that sets `currentOperation` before `__before()` and `__after()` run.
+- Each target function has a `trackOp` modifier that sets `currentOperation` before `__before()` and `__after()` run, then resets `currentOperation` to `bytes4(0)` after `__after()` to prevent stale operation leaking into standalone property calls.
 
 - Capture snapshots in `BeforeAfter.sol`, then filter by `currentOperation` in `Properties.sol`. Look up the constant names in `SelectorStorage.sol`:
 
