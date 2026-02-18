@@ -1,7 +1,7 @@
 {
-  "name": "ts-node-express",
+  "name": "recon-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Recon platform API server",
   "main": "dist/index.js",
   "scripts": {
     "build": "npx tsc",
@@ -12,15 +12,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/c99rahul/ts-node-express.git"
+    "url": "git+https://github.com/Recon-Fuzz/recon-magic-framework.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/c99rahul/ts-node-express/issues"
-  },
-  "homepage": "https://github.com/c99rahul/ts-node-express#readme",
   "dependencies": {
     "@aws-sdk/client-ecs": "^3.629.0",
     "@aws-sdk/cloudfront-signer": "^3.496.0",
