@@ -1,0 +1,3 @@
+- Missing input sanitization in general
+- missing return statement on most of the functions
+- avoid delete and prefer soft delete for the future

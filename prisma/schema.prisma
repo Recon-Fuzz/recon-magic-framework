@@ -1,0 +1,619 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["omitApi"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NOTE: We can't track events
+// NOTE: I think logging externally would save time rather than maintaining it ourselves
+model OrgInvite {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  createdAt      DateTime     @default(now())
+}
+
+// Magic invite codes for free orgs to get magic job credits
+model MagicInviteCode {
+  id              String        @id @default(uuid())
+  code            String        @unique // UUID by default, or custom memorable string
+  createdAt       DateTime      @default(now())
+  createdBy       String        // Super admin GitHub ID who created it
+
+  // Redemption tracking (one org can redeem one code ever)
+  redeemedAt      DateTime?
+  redeemedByOrgId String?       @unique
+  redeemedByOrg   Organization? @relation(fields: [redeemedByOrgId], references: [id])
+}
+
+// NOTE: These are listeners that allow automatic triggering of jobs
+model Listener {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  createdAt      DateTime     @default(now())
+  enabled        Boolean
+}
+
+model ApiKey {
+  id             String       @id @default(uuid())
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  createdAt      DateTime     @default(now())
+  enabled        Boolean
+  canWrite       Boolean @default(false)
+  label String @default("")
+}
+
+model GovernanceFuzzing {
+  id             String       @id @default(uuid())
+  createdAt      DateTime     @default(now())
+  enabled        Boolean      @default(true)
+  eventDefinition String
+  topic          String
+  recipeId       String
+  address        String
+  chainId        Int
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  jobs           Job[]
+  recipes        Recipe[]
+  wsListenerId   String?
+  wsListenerActive Boolean @default(false)
+  lastCheckedBlock Int?
+  lastCheckedAt DateTime?
+}
+
+//** == Organization ** == //
+enum BILLING_STATUS {
+  UNPAID
+  PAID
+  REVOKED // In case we need to ban people or smth
+  TRIAL
+}
+
+model Organization {
+  id   String @id @default(uuid())
+  name String
+
+  // TODO: We prob would want to attach some abiJobs and abiData Here
+  // But also to User
+  // The ones here are for everyone
+  // The one for User are for User
+  // By default we add here
+  // Then for Legendary accounts
+  // We can allow the User Option
+
+  users User[]
+  jobs  Job[]
+  shares Share[]
+  webhookJobs WebhookJob[]
+  recipes Recipe[]
+  campaigns Campaign[]
+  recurringJobs RecurringJob[]
+  liveMonitoring LiveMonitoring[]
+  listeners Listener[]
+  claudeJobs ClaudeJob[]
+
+  // Magic credit system (for free orgs)
+  magicCredits         Int              @default(0)
+  redeemedInviteCode   MagicInviteCode?
+
+  // NOTE: Projects are temporarily removed
+  // projects  Project[]
+
+  abiJobs   AbiJob[]
+  abiData   ABIData[]
+  invites   OrgInvite[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @default(now()) @updatedAt
+
+  // Billing
+  billingStatus    BILLING_STATUS @default(UNPAID)
+  billingUpdateAt DateTime @default(now())
+  totalMinutesLeft Int @default(60) // Secret one extra hour
+  governanceFuzzing GovernanceFuzzing[]
+}
+
+model Alert {
+  id                String @id @default(uuid())
+  active            Boolean @default(true)
+  threshold         Int // From how many broken props I want to be informed
+  webhookUrl        String
+  recurringJob      RecurringJob? @relation(fields: [recurringJobId], references: [id])
+  recurringJobId    String?
+  recipe            Recipe? @relation(fields: [recipeId], references: [id])
+  recipeId          String?
+  telegramHandle    String?
+  telegramChatId    Int?
+}
+
+// BILLING = AUTOMATED TOP
+
+model User {
+  id                       String       @id
+  organization             Organization @relation(fields: [organizationId], references: [id])
+  organizationId           String
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @default(now()) @updatedAt
+
+  apiKey ApiKey[]
+}
+
+//** == Project ** == //
+// TODO: Decide if we need it
+// model Project {
+//   id             String       @id @default(uuid())
+//   name           String
+//   url            String
+//   organization   Organization @relation(fields: [organizationId], references: [id])
+//   organizationId String
+//   jobs           Job[]
+//   createdAt      DateTime     @default(now())
+//   updatedAt      DateTime     @default(now()) @updatedAt
+// }
+
+enum JobStatus {
+  QUEUED // when the user creates a job, for example through the UI
+  STARTED // when the `runner-starter` starts a new ECS task
+  RUNNING // when the `runner` starts the fuzzer
+  SUCCESS // when the fuzzer finishes succesfully
+  ERROR // when the fuzzer finds an error
+  STOPPED // when the user manually stops a job
+}
+
+//** == FUZZING ** == //
+enum FUZZER {
+  ECHIDNA
+  MEDUSA
+  FOUNDRY
+  HALMOS
+  KONTROL
+}
+
+model Experiment {
+  id String @id @default(uuid())
+
+  jobs Job[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Job {
+  id String @id @default(uuid())
+
+  orgName  String
+  repoName String
+  ref      String
+
+  // Processing args
+  fuzzer      FUZZER
+  // CD / Path to Preprocess and Fuzzer
+  directory   String @default(".")
+
+  // Preprocess Command | NOTE: RCE Risk
+  preprocess  String?
+
+  // NOTE: Currently unused / Used inconsistenly
+  // This should be standardized to use the command Antonio showed
+  duration Int? // NOTE: Will be used differently by medusa and echidna | TOOD: Standardize
+
+  /// == Fuzzer Commands == ///
+  // This allows the runner to do w/e, so it must only be set via Recipe or by an Admin
+  // If `arbitraryCommand` is set, `fuzzerArgs` are ignored, see `runner.getFuzzerCommand`
+  arbitraryCommand  String? // NOTE: If this is used, all other commands are ignored
+  // NOTE: These are custom for each fuzzer
+  fuzzerArgs Json?
+
+  // Status Info
+  taskArn     String?
+  corpusUrl   String?
+  coverageUrl String?
+  logsUrl     String?
+  status      JobStatus @default(QUEUED)
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+
+  experiment   Experiment? @relation(fields: [experimentId], references: [id])
+  experimentId String?
+
+  // NOTE: Projects are temporarily removed
+  // project     Project   @relation(fields: [projectId], references: [id])
+  // projectId   String
+
+
+  // Sharing
+  shares Share[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  recurringJob RecurringJob? @relation(fields: [recurringJobId], references: [id])
+  recurringJobId String?
+
+  // Indicator that once done it should do a post-execution hook and send data to this issue ID
+  // NOTE: For now this is unused
+  pullRequestID String?
+
+  label String @default("")
+
+  // Metadata can provide extra information on jobs, like who/what started them and the commit hash used
+  metadata Json?
+
+  brokenProperties BrokenProperty[]
+  testsDuration String?
+  testsCoverage Int?
+  testsFailed Int?
+  testsPassed Int?
+  numberOfTests Int?
+
+  // Coverage snapshots over time: Array of {timestamp, coveragePercent, perFile}
+  coverageData Json?
+
+  githubData GithubData[]
+
+  // Track if the job was created from a recipe -- used for Alerts
+  recipe Recipe? @relation(fields: [recipeId], references: [id])
+  recipeId String?
+
+  governanceFuzzing GovernanceFuzzing[]
+
+  // Original repo for access control (optional)
+  originalOrgName   String?
+  originalRepoName  String?
+
+  // Polymorphic provenance (can reference Job or ClaudeJob)
+  forkedFromId     String?
+  forkedFromType   String?  // "Job" | "ClaudeJob"
+}
+
+//** == ABI ** == //
+// Once abiJob is done
+// Save the ABI to a ORG
+enum ABIJOB_STATUS {
+  CREATED
+  RUNNING
+  ERRORED
+  COMPLETED
+}
+
+model AbiJob {
+  id             String        @id @default(uuid())
+  orgName        String
+  repoName       String
+  branch         String
+  directory      String @default(".")
+  out            String @default("out")
+  status         ABIJOB_STATUS
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  organizationId String // NOTE: By using this ref, we can add the AbiData to an org once the job has processed
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
+}
+
+// NOTE: Because this can be built in many ways
+// This could be generated by more than one user
+// And require no specific setting
+model ABIData {
+  id             String       @id @default(uuid()) // Used for Updates
+  identifier     String // orgName_repoName_branch // Real identifier
+  commit         String
+  abiData        Json
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
+}
+
+// One share has an ID (implies link)
+// One share belongs to an ORG
+// One share belongs to a Job
+// Open Share -> Open Share
+model Share {
+  id             String       @id @default(uuid()) // Used for Updates
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  job   Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId String
+}
+
+// Specific Share
+// GH Ids must be added as well
+
+
+enum WEBHOOK_TYPE {
+  PR_CREATION // New PR
+  PR_UPDATE // Update to PR
+  COMMIT // Push
+  RUNNER_END_RUN // Runner has ended a run
+  BROKEN_PROPERTY_ALERT // Alert on broken property
+  COVERAGE_SNAPSHOT // Coverage progress snapshot from runner
+}
+
+model WebhookJob {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+
+  type WEBHOOK_TYPE
+
+  orgName  String
+  repoName String
+  ref      String
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
+}
+
+
+/// NOTE: More functionality is an idea, but we don't have sufficient request to justify that
+enum PREVIOUS_JOB_POLICY {
+  IGNORE // Ignore the previous job, always run the new job | // This may bankrupt us :(
+  // NOTE: We will currently always use IGNORE
+
+  END_PREVIOUS // End the previous
+  END_PREVIOUS_REUSE_CORPUS // End the Previous, re-use the corpus
+  SKIP // Do not run a new job if some other job is running
+}
+
+enum STRING_MATCH_POLICY {
+  IGNORE // We don't use the feature
+  MATCH_EXACT // Must be the exact in the list
+  // NOTE: WE will currently always use MATCH_EXACT
+
+  MATCH_FUZZY // Must contain the value
+}
+
+model Campaign {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+
+  displayName String?
+
+  // NOTE: Commits will always just create a job
+  // PR Pushes or creations will also add a comment on the PR page
+  type WEBHOOK_TYPE // NOTE: Webooks are the same for Webhooks and Campaigns
+
+  policy PREVIOUS_JOB_POLICY @default(IGNORE)
+
+  // NOTE: IGNORED
+  checkInitiator Boolean @default(false)
+  initiatorIds Int[] // Only checked if checkInitiator, uses GH Ids
+
+  // TODO: Need to add optional filtering / Selectors
+  // NOTE: Getting this right makes UX better and cost lower
+  checkOrgName STRING_MATCH_POLICY @default(MATCH_EXACT)
+  orgNames String[]
+
+  checkRepoName STRING_MATCH_POLICY @default(MATCH_EXACT)
+  repoNames String[]
+
+  checkBranchName STRING_MATCH_POLICY @default(MATCH_EXACT)
+  branchNames String[]
+
+  // NOTE: The OrgName, repoName and Branch will be overwritten by default
+  recipes Recipe[] // Given a campaign we want to run multiple templates
+
+  //Track opened GH Issues
+  githubData GithubData[]
+
+  comments Boolean @default(true) // If true, we will comment on the PR
+
+  // MUST have
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model GithubData {
+  id String @id @default(uuid())
+  issueId Int? // Unknow to start -- could be actually prId as well
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId String
+  job Job @relation(fields: [jobId], references: [id])
+  jobId String
+  orgName String
+  repoName String
+  branchName String
+  installationId Int?
+  @@unique([orgName, repoName, branchName, issueId, installationId, campaignId, jobId])
+}
+
+// Recipe
+model Recipe {
+  id String @id @default(uuid())
+
+  // NOTE: Just for convenience
+  displayName String
+
+  // Campaigns using this recipe
+  campaigns Campaign[]
+
+  // GH
+  orgName  String?
+  repoName String?
+  ref      String?
+  // Processing args
+  fuzzer      FUZZER?
+  // CD / Path to Preprocess and Fuzzer
+  directory   String @default(".")
+  // Preprocess Command | NOTE: RCE Risk
+  preprocess  String?
+  // NOTE: Currently unused / Used inconsistenly
+  // This should be standardized to use the command Antonio showed
+  duration Int? // NOTE: Will be used differently by medusa and echidna | TOOD: Standardize
+  /// == Fuzzer Commands == ///
+  // This allows the runner to do w/e, so it must only be set via Recipe or by an Admin
+  // If `arbitraryCommand` is set, `fuzzerArgs` are ignored, see `runner.getFuzzerCommand`
+  arbitraryCommand  String? // NOTE: If this is used, all other commands are ignored
+  // NOTE: These are custom for each fuzzer
+  fuzzerArgs Json?
+  // Tied
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  // Convenience
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  recurringJobs RecurringJob[]
+
+  jobs Job[]
+
+  // Alerts
+  alerts Alert[]
+
+  governanceFuzzing GovernanceFuzzing[]
+}
+
+model RecurringJob {
+  id String @id @default(uuid())
+
+  label String
+
+  // This allows us to toggle the job while still displaying it in the UI
+  enabled Boolean @default(true)
+
+  // Tied
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+
+  // NOTE: Could skip recipe
+  recipe Recipe  @relation(fields: [recipeId], references: [id])
+  recipeId String
+
+  // Needs to be modulo the frequency of the check | TODO NUANCE / TEST
+  lastRun DateTime @default(now()) // NOT real time, must be at cadence of cron, else you'd skip some eventually
+  frequencyInSeconds Int
+
+  jobs Job[] // The real usage would be to grab latest, so we can show live logs in the Recurring Job page
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Alerts for broken properties
+  alerts Alert[]
+}
+
+// NOTE: DO NOT EVER LEAK THIS!!!
+model Service {
+  id String @id @default(uuid())
+
+  name String
+  url String
+
+  // The secret we send to authenticate ourselves to the service
+  authorizationSecret String?
+
+  monitorings LiveMonitoring[] @relation()
+}
+
+// NOTE: Could extend this to be re-usable for other usages as some sort of modular system
+model LiveMonitoring {
+  id String @id @default(uuid())
+
+  // NOTE: Cascade, deleting a service deletes all the Live Monitoring tied to it
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  name String?
+  description String?
+
+  service Service @relation(fields: [serviceId], references: [id])
+  serviceId String
+  serviceParams Json? // Optional extra data to send to the service
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+}
+
+model BrokenProperty {
+  id String @id @default(uuid())
+
+  brokenProperty String
+  traces String
+
+  job Job @relation(fields: [jobId], references: [id])
+  jobId String
+  createdAt DateTime @default(now())
+}
+
+
+enum CLAUDE_JOB_STATUS {
+  QUEUED
+  WIP
+  DONE
+  ERROR
+  STOPPED
+}
+//** == Claude Jobs ** == //
+model ClaudeJob {
+  id             String       @id @default(uuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
+  enabled        Boolean      @default(true)
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+
+  claudeJobStatus    CLAUDE_JOB_STATUS @default(QUEUED)
+
+  // Necessary for cloning
+  orgName  String
+  repoName String
+  ref      String
+
+  workflowName String @default("Recon Magic")
+
+  // Necessary for the process to work properly
+  // Unless we commit to only using 1 for now
+  fuzzerName      String
+
+  // CD / Path to Preprocess and Fuzzer
+  directory   String @default(".")
+
+  // Preprocess Command (Necessary for installing deps)
+  preprocess  String?
+
+  // Repo from which to get the Agent Workflow
+  // NOTE: This also needs an access token
+  claudeOrgName String
+  claudeRepoName String
+  claudeRef String
+
+  // Claude Prompt Command
+  claudePromptCommand String // TODO: Figure this out
+  // TODO: Add "digested prompt" so user knows what we are doing for this job.
+
+  resultData Json? // TODO: Neat formatting of some sort, but we put all of the results on GH
+  // So we can have arbitrary data but also avoid needing too much complexity
+
+  additionalData Json? // TODO: Add this so we can add extra fields
+
+  // Graceful stop support
+  stopRequested Boolean @default(false)
+
+  // Original repo for access control (optional)
+  originalOrgName   String?
+  originalRepoName  String?
+
+  // Polymorphic provenance (can reference Job or ClaudeJob)
+  forkedFromId     String?
+  forkedFromType   String?  // "Job" | "ClaudeJob"
+}
+
+//** == System Settings ** == //
+// Key-value store for global system configuration (e.g., pause magic jobs)
+model SystemSettings {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
