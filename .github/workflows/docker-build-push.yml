@@ -11,6 +11,8 @@ on:
       - '**/*.py'
       - 'pyproject.toml'
       - 'runner/**'
+      - 'backend/**'
+      - 'prisma/**'
 
 jobs:
   build-and-push:
