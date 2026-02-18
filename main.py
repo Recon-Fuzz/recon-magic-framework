@@ -953,6 +953,9 @@ if __name__ == "__main__":
     # Set framework root
     os.environ['RECON_FRAMEWORK_ROOT'] = str(Path(__file__).parent.resolve())
 
+    # Set prompts directory (where agent reference documents live)
+    os.environ['PROMPTS_DIR'] = str(Path(__file__).parent.resolve() / 'prompts')
+
     # Parse single positional argument
     if len(sys.argv) < 2:
         print("Usage: python main.py <workflow_file>")
