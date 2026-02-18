@@ -7,7 +7,7 @@
   "scripts": {
     "start": "ts-node src/index.ts",
     "build": "tsc",
-    "postinstall": "npx prisma generate --schema prisma/schema.prisma"
+    "postinstall": "npx prisma generate --schema ../prisma/schema.prisma"
   },
   "devDependencies": {
     "@sentry/node": "^7.101.0",
@@ -16,10 +16,10 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.3.3",
-    "prisma": "5.18.0"
+    "prisma": "5.22.0"
   },
   "dependencies": {
-    "@prisma/client": "5.18.0",
+    "@prisma/client": "5.22.0",
     "@recon-fuzz/log-parser": "^0.0.38",
     "ethers": "^6.13.2",
     "yargs": "^17.7.2"
