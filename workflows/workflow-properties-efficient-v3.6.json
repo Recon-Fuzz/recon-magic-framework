@@ -1,0 +1,485 @@
+{
+  "name": "Efficient Properties Specification Workflow v3.6",
+  "version": "3.6.0",
+  "description": "Builds on v3.5 with economic-aware fuzzing intelligence.\n\nKey additions in v3.6:\n- Phase 0: New Step 4d — Protocol Type Classification (AMM/LENDING/VAULT/ERC20/GOVERNANCE/STAKING detection with strong-evidence signals)\n- Phase 0: New Step 6 — Economic Oracle Identification (8 vulnerability classes: AMM_INVARIANT, SLIPPAGE, ORACLE, FLASH_LOAN, COLLATERAL, SHARE_INFLATION, FEE, GOVERNANCE)\n- Phase 1A: New Tier 0 — PROFIT Oracle Properties (mandatory economic extraction detection for all DeFi)\n- Phase 1A: Protocol-Type Mandatory Templates (domain-specific properties injected into existing tiers)\n- Phase 1A: Economic Oracle Integration (vulnerability-class-to-tier mapping with PATTERNS 22-24)\n- Phase 2: Tier 0 PROFIT in MUST KEEP list and coverage summary\n- Phase 3A: PROFIT property implementation guidance with _initialBalances infrastructure\n- Workflow: New validation steps for economic-oracles.md and PROTOCOL_TYPE detection\n\nMotivation: Research shows hardcoded economic-aware oracles outperform sophisticated analysis. The pipeline was strong on structural properties but weak on economic attack detection. v3.6 adds universal profit oracles (Tier 0), protocol-type-specific templates, and economic vulnerability class mapping.\n\nChanges from v3.5:\n- Phase 0 agent: v3.5 -> v3.6 (added Steps 4d, 6)\n- Phase 1A agent: v3.4 -> v3.5 (added Tier 0 PROFIT, protocol-type templates, economic oracle integration)\n- Phase 2 agent: v3.4 -> v3.5 (added Tier 0 to MUST KEEP and coverage summary)\n- Phase 3A agent: v3.5 -> v3.6 (added PROFIT implementation guidance)\n- Workflow: added economic-oracles.md and PROTOCOL_TYPE validation steps\n- Phases 1B, 3B: unchanged (still v3.4)",
+  "steps": [
+    {
+      "name": "Phase 0: Dependency + Reachability + Wiring Analysis",
+      "type": "task",
+      "description": "Analyze contracts for dependencies, review priority, reachability of guarded branches, protocol type classification, economic oracle identification, and Setup.sol wiring issues",
+      "preconditions": ["forge-build-gate"],
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-0-v3.6.md. Run exclusively the properties-phase-0 agent using the Task tool. This phase will analyze all contracts, create a dependency list, generate a review priority order, perform a reachability analysis to identify hard-to-reach branches that need shortcut target functions, classify the protocol type (AMM/LENDING/VAULT/ERC20/GOVERNANCE/STAKING), identify economic vulnerability oracles, and analyze Setup.sol for wiring issues (constructor params, proxy patterns, access control, funding).",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Dependency List",
+      "type": "decision",
+      "description": "Check if magic/contracts-dependency-list.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/contracts-dependency-list.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Dependency list created, continue to next validation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 0 failed to create magic/contracts-dependency-list.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Review Priority",
+      "type": "decision",
+      "description": "Check if magic/properties-review-priority.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/properties-review-priority.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Review priority created, continue to reachability validation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 0 failed to create magic/properties-review-priority.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Reachability Analysis",
+      "type": "decision",
+      "description": "Check if magic/reachability-analysis.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/reachability-analysis.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Reachability analysis created, continue to wiring analysis validation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Reachability analysis not created. Phase 1A will proceed without it, but CANARY/DOOM coverage may be weaker."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Setup Wiring Analysis",
+      "type": "decision",
+      "description": "Check if magic/setup-wiring-analysis.md was created by Phase 0 Step 5",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/setup-wiring-analysis.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Setup wiring analysis created. Phase 3A will use it to fix Setup.sol before property implementation."
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Setup wiring analysis not created. Phase 3A will attempt to detect wiring issues independently, but may miss some."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Economic Oracles",
+      "type": "decision",
+      "description": "Check if magic/economic-oracles.md was created by Phase 0 Step 6",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/economic-oracles.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Economic oracles analysis created. Phase 1A will use it to generate economic vulnerability properties."
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Economic oracles analysis not created. Phase 1A will proceed without economic vulnerability mapping. Standard tier generation and protocol-type templates still provide adequate coverage."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Protocol Type Detection",
+      "type": "decision",
+      "description": "Check if PROTOCOL_TYPE classification was added to the dependency list by Phase 0 Step 4d",
+      "mode": "FILE_CONTAINS",
+      "modeInfo": {
+        "fileName": "magic/contracts-dependency-list.md",
+        "searchString": "PROTOCOL_TYPE:"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Protocol type detected. Phase 1A will inject protocol-specific property templates."
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Protocol type not detected. Phase 1A will skip protocol-specific templates. Standard tier generation still applies."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Ghost Infrastructure",
+      "type": "decision",
+      "description": "Check if updateGhosts modifier is applied to target functions. Prerequisite for INLINE properties.",
+      "mode": "GREP",
+      "modeInfo": {
+        "pattern": "updateGhosts",
+        "file": "**/TargetFunctions.sol"
+      },
+      "decision": [
+        {
+          "operator": "gte",
+          "value": 3,
+          "action": "CONTINUE",
+          "NOTE": "updateGhosts found on target functions, INLINE properties will work"
+        },
+        {
+          "operator": "lt",
+          "value": 3,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "updateGhosts may be missing from target functions. Phase 1A will document this as INFRASTRUCTURE_REQUIRED. Phase 3A will fix it."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1A: Tiered Property Identification (Tiers 0-10)",
+      "type": "task",
+      "description": "Generate high-priority security-relevant properties for Tiers 0-10 (PROFIT through DOOM) using inline mandatory patterns, protocol-type templates, economic oracle integration, condensed anti-patterns, and reachability integration",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-1a-v3.5.md. Run exclusively the properties-phase-1a agent using the Task tool. This phase will generate properties for Tiers 0-10 (PROFIT oracle, CANARY, solvency, health factor, liquidation, monotonicity, math, variable transitions, exchange rate, fees, doomsday) organized by financial impact priority, with architectural prefixes, attack scenarios, protocol-type templates, and economic oracle integration.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate First Pass Properties",
+      "type": "decision",
+      "description": "Check if magic/properties-efficient-first-pass.md was created by Phase 1A",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/properties-efficient-first-pass.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "First pass properties created by Phase 1A, continue to Phase 1B"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 1A failed to create magic/properties-efficient-first-pass.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1B: Low-Priority Tiers + Free-Form Discovery",
+      "type": "task",
+      "description": "Generate properties for Tiers 11-15 and perform free-form discovery pass with fresh context. Reads Phase 1A output to avoid duplicates and fill gaps.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-1b-v3.4.md. Run exclusively the properties-phase-1b agent using the Task tool. This phase will generate properties for Tiers 11-15 (state transition, valid state, peripheral, dust, bitmap) and perform a free-form line-by-line review of top contracts to catch protocol-specific edge cases. It reads Phase 1A's output to avoid duplicates.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate First Pass Appendix",
+      "type": "decision",
+      "description": "Check that Phase 1B appended its properties to the first pass file",
+      "mode": "FILE_CONTAINS",
+      "modeInfo": {
+        "fileName": "magic/properties-efficient-first-pass.md",
+        "searchString": "## PHASE 1B"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Phase 1B content found in first pass file. Continue to Phase 2."
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Phase 1B header not found in first pass file. Phase 2 will proceed with Phase 1A properties only. Low-priority tiers and free-form discoveries may be missing."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 2: Review, Ghost Classification, and Stale-Op Analysis",
+      "type": "task",
+      "description": "Review properties, classify ghost infrastructure (trackOp/A-delegate/updateGhosts/none), flag STALE_OP_RISK, filter invalid properties",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-2-v3.5.md. Run exclusively the properties-phase-2 agent using the Task tool. This phase will review and filter properties (including Tier 0 PROFIT), classify all target functions by ghost modifier category, flag stale-operation risks, and create the refined properties list with an INFRASTRUCTURE STATUS header.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Second Pass Properties",
+      "type": "decision",
+      "description": "Check if magic/properties-efficient-second-pass.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/properties-efficient-second-pass.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Second pass properties created, continue to infrastructure validation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 2 failed to create magic/properties-efficient-second-pass.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Infrastructure Status",
+      "type": "decision",
+      "description": "Check that INFRASTRUCTURE STATUS section was written into second-pass file",
+      "mode": "FILE_CONTAINS",
+      "modeInfo": {
+        "fileName": "magic/properties-efficient-second-pass.md",
+        "searchString": "## INFRASTRUCTURE STATUS"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "INFRASTRUCTURE STATUS found. Phase 3A can use it for ghost classification and stale-op guards."
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 2 created second-pass but MISSING INFRASTRUCTURE STATUS section. Re-run Phase 2."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Stale-Op Classification",
+      "type": "decision",
+      "description": "Check that target function classification table was included",
+      "mode": "FILE_CONTAINS",
+      "modeInfo": {
+        "fileName": "magic/properties-efficient-second-pass.md",
+        "searchString": "### Target Function Classification"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Target function classification found. Phase 3A can determine if Category B functions exist."
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Target function classification missing. Phase 3A will re-derive it from TargetFunctions.sol directly."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Check Recon Setup Exists",
+      "type": "decision",
+      "description": "Check if recon/Setup.sol exists before proceeding to property implementation",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "**/recon/Setup.sol"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Recon Setup found, continue to Phase 3A implementation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Recon Setup not found - run recon-generate first to create scaffolding"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 3A: Wiring + Infrastructure + SIMPLE/CANARY Implementation",
+      "type": "task",
+      "description": "Fix Setup.sol wiring (Step -1), ghost infrastructure (Step 0), and implement SIMPLE + CANARY properties. Verifies compilation before Phase 3B.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-3a-v3.6.md. Run exclusively the properties-phase-3a agent using the Task tool. This phase will first fix Setup.sol wiring (constructor params, proxy implementations, modifier selection, funding, protocol config), then fix ghost infrastructure (updateGhosts on target functions, reset fix for Category B), implement PROFIT oracle infrastructure (_initialBalances tracking), implement all SIMPLE properties (PROFIT, SOL, MON, MATH, ER, VS) and CANARY properties, then run forge build and forge test to verify compilation and setUp().",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Phase 3A Compilation",
+      "type": "decision",
+      "description": "Verify Phase 3A code compiles before proceeding to Phase 3B",
+      "mode": "SHELL",
+      "modeInfo": {
+        "command": "forge build"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE",
+          "NOTE": "Phase 3A compilation succeeded. SIMPLE + CANARY properties compile cleanly. Continue to Phase 3B."
+        },
+        {
+          "operator": "neq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 3A compilation failed. Fix compilation errors before proceeding to Phase 3B."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Phase 3A setUp",
+      "type": "decision",
+      "description": "Verify setUp() doesn't revert after Phase 3A wiring changes",
+      "mode": "SHELL",
+      "modeInfo": {
+        "command": "forge test --match-contract CryticToFoundry -vvv 2>&1 | grep -c 'PASS\\|FAIL'"
+      },
+      "decision": [
+        {
+          "operator": "gte",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Tests ran (setUp didn't revert). Continue to Phase 3B."
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Could not verify setUp(). Phase 3B will proceed but may encounter runtime errors."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 3B: INLINE + NEGATIVE + DOOM Implementation",
+      "type": "task",
+      "description": "Implement INLINE, NEGATIVE, and DOOMSDAY properties building on Phase 3A's verified infrastructure.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-3b-v3.4.md. Run exclusively the properties-phase-3b agent using the Task tool. This phase will implement INLINE properties (VT, FEE, ST, PERIPH), NEGATIVE properties (HF, LIQ, VT-NEG), and DOOMSDAY properties (DOOM) using the verified infrastructure from Phase 3A.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Phase 3B Compilation",
+      "type": "decision",
+      "description": "Verify final compilation after all properties are implemented",
+      "mode": "SHELL",
+      "modeInfo": {
+        "command": "forge build"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE",
+          "NOTE": "Full property suite compiles. All phases complete."
+        },
+        {
+          "operator": "neq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 3B compilation failed. Check magic/properties-blocker.md for unresolvable issues."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}
