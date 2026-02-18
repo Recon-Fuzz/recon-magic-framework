@@ -228,6 +228,33 @@ RUN --mount=type=secret,id=npm_token \
   yarn install --frozen-lockfile
 
 # =============================================================================
+# [BACKEND] Install pnpm (needed by build_project.sh for user project builds)
+# =============================================================================
+RUN npm install -g pnpm only-allow@1.2.1
+
+# =============================================================================
+# [BACKEND] Install deps and compile TypeScript
+# =============================================================================
+WORKDIR /app/backend
+RUN --mount=type=secret,id=npm_token \
+  echo "//registry.npmjs.org/:_authToken=$(cat /run/secrets/npm_token)" > .npmrc && \
+  yarn install --frozen-lockfile && \
+  npx tsc
+WORKDIR /app
+
+# =============================================================================
+# [SHARED] Prisma symlinks — both runner/ and backend/ resolve prisma/ to root
+# =============================================================================
+RUN ln -sf /app/prisma /app/backend/prisma && \
+    ln -sf /app/prisma /app/runner/prisma
+
+# =============================================================================
+# [BACKEND] Make build_project.sh available globally
+# =============================================================================
+RUN cp /app/backend/build_project.sh /usr/local/bin/build_project.sh && \
+    chmod +x /usr/local/bin/build_project.sh
+
+# =============================================================================
 # Claude Code root workaround
 # Claude Code blocks --dangerously-skip-permissions when running as root.
 # IS_SANDBOX=1 is the official escape hatch (confirmed by Anthropic).
@@ -243,6 +270,7 @@ ENV OPENROUTER_API_KEY=""
 # =============================================================================
 # Entrypoint: dispatches based on MODE env var
 # MODE=runner    → yarn start (runner)
+# MODE=api       → prisma db push + node dist/index.js (backend API)
 # MODE=framework → python3 cli.py (framework CLI)
 # MODE=worker    → python3 worker.py (framework worker/server)
 # Default: framework

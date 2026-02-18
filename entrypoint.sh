@@ -9,6 +9,12 @@ case "$MODE" in
     cd /app/runner
     exec yarn start "$@"
     ;;
+  api)
+    echo "Starting API server..."
+    cd /app/backend
+    npx prisma db push && npx prisma generate
+    exec node dist/index.js "$@"
+    ;;
   framework)
     echo "Starting framework..."
     cd /app
@@ -21,7 +27,7 @@ case "$MODE" in
     ;;
   *)
     echo "Unknown MODE: $MODE"
-    echo "Valid modes: runner, framework, worker"
+    echo "Valid modes: runner, api, framework, worker"
     echo "Falling back to bash..."
     exec /bin/bash "$@"
     ;;
