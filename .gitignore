@@ -46,6 +46,7 @@ logs/
 node_modules/
 *.tsbuildinfo
 out/
+backend/dist/
 .npmrc
 
 # Testing
