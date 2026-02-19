@@ -107,12 +107,12 @@ ENV PATH="$PATH:/usr/local/go/bin"
 RUN go version
 
 # =============================================================================
-# [RUNNER] Install Medusa v1.4.1 (pinned commit, built from source)
-# Framework used `go install github.com/crytic/medusa@latest` — runner pins a
-# specific commit for reproducibility, keeping this one.
+# [RUNNER] Install Medusa v1.4.1 (multi-arch)
 # =============================================================================
-ENV GOOS=linux
-ENV GOARCH=arm64
+ARG TARGETARCH
+ARG TARGETOS=linux
+ENV GOOS=${TARGETOS}
+ENV GOARCH=${TARGETARCH}
 ENV CGO_ENABLED=1
 
 RUN git clone https://github.com/crytic/medusa && \
@@ -147,10 +147,11 @@ RUN halmos --version
 # =============================================================================
 # [RUNNER] Install AWS CLI
 # =============================================================================
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
-  unzip awscliv2.zip && ./aws/install && \
-  rm -rf awscliv2.zip aws && \
-  aws --version
+ARG TARGETARCH
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-${TARGETARCH}.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && ./aws/install && \
+    rm -rf awscliv2.zip aws && \
+    aws --version
 
 RUN apt-get install -y zip netcat-openbsd glibc-source
 
