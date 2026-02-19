@@ -118,9 +118,10 @@ ENV CGO_ENABLED=1
 RUN git clone https://github.com/crytic/medusa && \
     cd medusa && git config pull.ff false && \
     git checkout 3857153837ab90ed73adc484414b4b43703a54fb && \
-    go build ./cmd/medusa && \
+    go build -trimpath -o medusa && \
     mv medusa /usr/local/bin/ && chmod +x /usr/local/bin/medusa && \
     cd .. && rm -rf medusa
+
 RUN medusa --version
 
 # =============================================================================
