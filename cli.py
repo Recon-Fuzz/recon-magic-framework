@@ -154,6 +154,9 @@ Workflows can be run from any directory.
 
         # If it's just a name (no path separators), look in framework workflows/
         if os.sep not in workflow_file and '/' not in workflow_file:
+            # Strip .json if user included it, we add it back
+            if workflow_file.endswith('.json'):
+                workflow_file = workflow_file[:-5]
             # Look in framework's workflows directory
             framework_workflow = framework_root / 'workflows' / f"{workflow_file}.json"
             if framework_workflow.exists():

@@ -25,10 +25,14 @@ case "$MODE" in
     cd /app
     exec python3 worker.py "$@"
     ;;
+  shell)
+    echo "Starting shell..."
+    exec /bin/bash
+    ;;
   *)
     echo "Unknown MODE: $MODE"
-    echo "Valid modes: runner, api, framework, worker"
+    echo "Valid modes: runner, api, framework, worker, shell"
     echo "Falling back to bash..."
-    exec /bin/bash "$@"
+    exec /bin/bash
     ;;
 esac
