@@ -245,6 +245,7 @@ WORKDIR /app/backend
 RUN --mount=type=secret,id=npm_token \
   echo "//registry.npmjs.org/:_authToken=$(cat /run/secrets/npm_token)" > .npmrc && \
   yarn install --frozen-lockfile && \
+  npx prisma generate && \
   npx tsc
 WORKDIR /app
 
