@@ -147,8 +147,7 @@ RUN halmos --version
 # =============================================================================
 # [RUNNER] Install AWS CLI
 # =============================================================================
-ARG TARGETARCH
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-${TARGETARCH}.zip" -o "awscliv2.zip" && \
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(echo ${TARGETARCH} | sed 's/amd64/x86_64/;s/arm64/aarch64/').zip" -o "awscliv2.zip" && \
     unzip awscliv2.zip && ./aws/install && \
     rm -rf awscliv2.zip aws && \
     aws --version
