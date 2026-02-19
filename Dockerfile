@@ -225,6 +225,12 @@ RUN cp /app/runner/run_halmos.sh /usr/local/bin/run_halmos.sh && \
 RUN pip3 install -e .
 
 # =============================================================================
+# [SHARED] Prisma symlinks — both runner/ and backend/ resolve prisma/ to root
+# =============================================================================
+RUN ln -sf /app/prisma /app/backend/prisma && \
+    ln -sf /app/prisma /app/runner/prisma
+
+# =============================================================================
 # [RUNNER] Install Node deps (must be LAST so node_modules/ is not overwritten)
 # =============================================================================
 WORKDIR /app/runner
@@ -249,11 +255,7 @@ RUN --mount=type=secret,id=npm_token \
   npx tsc
 WORKDIR /app
 
-# =============================================================================
-# [SHARED] Prisma symlinks — both runner/ and backend/ resolve prisma/ to root
-# =============================================================================
-RUN ln -sf /app/prisma /app/backend/prisma && \
-    ln -sf /app/prisma /app/runner/prisma
+
 
 # =============================================================================
 # [BACKEND] Make build_project.sh available globally
