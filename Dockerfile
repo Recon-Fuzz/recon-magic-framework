@@ -111,9 +111,14 @@ RUN go version
 # Framework used `go install github.com/crytic/medusa@latest` — runner pins a
 # specific commit for reproducibility, keeping this one.
 # =============================================================================
+ENV GOOS=linux
+ENV GOARCH=arm64
+ENV CGO_ENABLED=1
+
 RUN git clone https://github.com/crytic/medusa && \
-    cd medusa && git config pull.ff false && git checkout 3857153837ab90ed73adc484414b4b43703a54fb && \
-    GOOS=linux GOARCH=amd64 go build && \
+    cd medusa && git config pull.ff false && \
+    git checkout 3857153837ab90ed73adc484414b4b43703a54fb && \
+    go build ./cmd/medusa && \
     mv medusa /usr/local/bin/ && chmod +x /usr/local/bin/medusa && \
     cd .. && rm -rf medusa
 RUN medusa --version
