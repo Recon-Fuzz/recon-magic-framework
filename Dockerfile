@@ -236,7 +236,7 @@ RUN --mount=type=secret,id=npm_token \
 # =============================================================================
 # [BACKEND] Install pnpm (needed by build_project.sh for user project builds)
 # =============================================================================
-RUN npm install -g pnpm only-allow@1.2.1
+RUN npm install -g --force pnpm only-allow@1.2.1
 
 # =============================================================================
 # [BACKEND] Install deps and compile TypeScript
