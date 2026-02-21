@@ -491,3 +491,134 @@ across ALL remaining properties:
 **Example from yearn-recon-v2-test:**
 - `property_setMin_overdraft`: `lte(vault.min(), 10000)` — DUPLICATE of `property_vault_min_leq_max`
 - `property_price_per_share_nonzero`: `gt(price, 0)` — SUBSUMED by `property_price_per_share_geq_one`: `gte(price, 1e18)`
+
+---
+
+### AP-14: UNTRACKED_MINT_EXTRACTION
+
+A property checks net token extraction per actor (PROFIT-01), but the harness includes a target that mints the tracked token directly (e.g., `asset_mint`), bypassing the protocol's deposit flow. The minted tokens inflate `currentBalance` without any protocol interaction, causing a false positive.
+
+**Connection to Step 2B:** Step 2B already flags `*_mint` as ADMIN targets, and Step 0D recommends removal. AP-14 adds the PROFIT-specific detection: if a `*_mint` target exists AND PROFIT-01 is active, flag as `PROFIT_MINT_CONFLICT`.
+
+**Detection:** Grep target functions for `.mint(` calls on any token tracked by PROFIT-01. Also check for direct `deal()` or `MockERC20.mint()` calls that credit tokens to actors without going through the protocol.
+
+**Fix (in priority order):**
+1. **Remove the target** (preferred): Delete or comment out the `*_mint` scaffold target function entirely.
+2. **Add ghost tracking**: Add ghost `_externalMints[actor][token]` incremented in the mint target, and subtract it in the PROFIT-01 check:
+   ```solidity
+   netExtraction -= int256(_externalMints[allActors[a]][allTokens[t]]);
+   ```
+3. **Use PROFIT_YIELD_AWARENESS Pattern A**: Only check actors with `_totalDeposited[actor] == 0`, which implicitly skips actors who received minted tokens through protocol interaction.
+
+---
+
+### AP-15: ACTOR_SET_DOUBLE_COUNT
+
+A property sums share balances across `_getActors()` plus additional addresses (feeRecipient, `address(this)`, treasury). If any extra address equals an actor (e.g., `setFeeRecipient(actors[0])` was called mid-run), the balance is counted twice, causing `sumBalances > totalSupply`.
+
+**Detection:** Sum loop includes hardcoded addresses alongside `_getActors()` without deduplication. Look for patterns like:
+```solidity
+uint256 sum = 0;
+for (uint i; i < actors.length; i++) { sum += vault.balanceOf(actors[i]); }
+sum += vault.balanceOf(vault.feeRecipient());  // ← may double-count!
+sum += vault.balanceOf(address(vault));
+```
+
+**Fix:** Check `if (extraAddr == actors[i]) skip` before adding each extra address's balance:
+```solidity
+address fr = vault.feeRecipient();
+bool frInActors = false;
+for (uint i; i < actors.length; i++) {
+    if (actors[i] == fr) { frInActors = true; break; }
+}
+if (!frInActors) sum += vault.balanceOf(fr);
+```
+
+---
+
+### AP-16: GLOBAL_IDLE_BALANCE_CHECK
+
+A property asserts `vaultBalance <= tolerance` as a standalone (non-inline) property. Since it evaluates after every fuzzer call (including admin ops, time warps, and actor switches), it fires whenever any transient idle balance exists — even from legitimate donations before `skim()` or from rounding dust across multiple market operations.
+
+**Detection:** Property checks vault/contract token balance without a `currentOperation` gate. Look for properties like:
+```solidity
+function property_no_idle_balance() public {
+    uint256 idle = token.balanceOf(address(vault));
+    t(idle <= TOLERANCE, "idle balance too high");
+}
+```
+
+**Fix:** Convert to inline property gated on deposit/withdraw/mint/redeem/reallocate operations only:
+```solidity
+function property_no_idle_balance() public {
+    if (currentOperation == bytes4(0)) return; // standalone call, skip
+    if (currentOperation == SUBMIT_CAP || currentOperation == SET_FEE) return; // admin op
+    uint256 idle = token.balanceOf(address(vault));
+    t(idle <= wqLen * 1, "idle balance after user op");
+}
+```
+
+---
+
+### AP-17: MISSING_OPERATION_GUARD
+
+A monotonicity/directional property guards against some operations but misses others that legitimately cause small state changes. Common misses:
+- **Reallocate** leaves 1 wei idle per market due to integer division (not counted in `totalAssets()`)
+- **Time warp** + interest accrual pushing values past fixed thresholds (e.g., supply exceeding a static cap)
+- **Interest-bearing operations** where passive growth over simulated time exceeds hardcoded bounds
+
+**Detection:** Inline property with operation guards that omits REALLOCATE, TIME_WARP, or interest-accruing operations from its guard list. Look for:
+```solidity
+if (currentOperation == DEPOSIT || currentOperation == WITHDRAW) {
+    // Missing: REALLOCATE, WARP_TIME
+    t(someMonotonicValue >= previous, "monotonicity violated");
+}
+```
+
+**Fix:** Add the missing operation guard, or use tolerance-based comparison that accounts for the missing operation's effect:
+```solidity
+// Option A: Add missing guard
+if (currentOperation == REALLOCATE) return; // reallocate can leave dust
+
+// Option B: Use tolerance accounting for interest growth
+uint256 maxGrowthFactor = 10; // e^(APR * time) ≈ 10x at 50% for 4.5y
+t(supplyAssets <= uint256(cap) * maxGrowthFactor + 1e18, "supply within cap with interest");
+```
+
+---
+
+### AP-18: NEGATIVE_NO_OP_EDGE
+
+A NEGATIVE property asserts that a call must always revert, but the call can be a valid no-op in certain states (e.g., `reallocate([{market, assets:0}])` when the vault has zero position). Withdrawing 0 from a 0-position is a no-op, not an error.
+
+**Detection:** NEGATIVE try/catch without state precondition checks. Look for:
+```solidity
+function property_neg_X_reverts() public {
+    try protocol.someOp(params) {
+        t(false, "should revert");
+    } catch {
+        // expected
+    }
+}
+// Missing: no check whether the operation would actually have a meaningful effect
+```
+
+**Fix:** Add precondition verifying the operation would actually have an effect before asserting revert:
+```solidity
+function property_neg_X_reverts() public {
+    // Precondition: verify the operation would have a meaningful effect
+    if (morpho.supplyShares(marketId, address(vault)) == 0) return; // no-op edge, skip
+    // Now the operation would actually attempt something, so it SHOULD revert
+    try protocol.someOp(params) {
+        t(false, "should revert");
+    } catch {
+        // expected
+    }
+}
+```
+
+**Common no-op edge cases to check:**
+- Zero-amount operations (withdraw 0, transfer 0)
+- Zero-position operations (withdraw from market with 0 supply shares)
+- Self-operations that result in no state change (approve self, transfer to self)
+- Operations on already-at-target state (set fee to current fee value)

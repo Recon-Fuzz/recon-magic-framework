@@ -370,6 +370,84 @@ any fuzzing begins.
 
 ---
 
+## NEGATIVE Property Completeness Checklist (v4.1)
+
+Before implementing ANY NEGATIVE property (VT-NEG-*, HF-*, LIQ-*), verify all four checks below. Skipping this checklist is the #1 source of NEGATIVE property false positives.
+
+### 1. Precondition validity
+
+Does the call have a meaningful effect in the current state? If it's a no-op (zero amount, empty position, no state change), the call may legitimately succeed — skip the test with an early return.
+
+```solidity
+// REQUIRED: verify operation would have an effect
+if (position.shares == 0) return;  // withdrawing from empty position is a no-op
+if (amount == 0) return;           // zero-amount operations are typically valid no-ops
+```
+
+**Common no-op edge cases that cause false positives:**
+- Zero-from-zero withdrawals (withdrawing 0 from a 0-position is not an error)
+- Self-approvals (valid in ERC20, not a revert condition)
+- Re-entrant callbacks that restore state before the revert check
+- Operations with zero amounts that succeed as no-ops
+- Setting a value to its current value (e.g., `setFee(currentFee)` may succeed)
+- Reallocating with zero-delta allocations
+
+### 2. Revert reason specificity
+
+Is the expected revert due to the condition being tested, or could it revert for an **unrelated reason** (e.g., unauthorized caller masking the real check)?
+
+```solidity
+// BAD: reverts because caller is not authorized, NOT because of the condition we're testing
+try protocol.restrictedFunction(invalidParam) {
+    t(false, "should revert due to invalid param");
+} catch {
+    // Caught! But was it invalid param or unauthorized caller? We don't know.
+}
+
+// BETTER: use the correct caller context
+vm.prank(authorizedCaller);
+try protocol.restrictedFunction(invalidParam) {
+    t(false, "should revert due to invalid param");
+} catch {
+    // Now we know it's the param validation, not auth
+}
+```
+
+### 3. State-dependent edge cases
+
+List ALL states where the call might **legitimately succeed** despite appearing "invalid":
+
+| Edge Case | Why It Succeeds | How to Guard |
+|-----------|----------------|-------------|
+| Zero-from-zero withdrawal | No-op, not an error | `if (position == 0) return;` |
+| Self-approval in ERC20 | Valid by spec | `if (spender == owner) return;` |
+| Reallocate with zero delta | No actual movement | `if (supplyShares == 0) return;` |
+| Setting value to current | Idempotent setter | `if (currentValue == newValue) return;` |
+| Transfer of 0 amount | Valid ERC20 no-op | `if (amount == 0) return;` |
+
+### 4. Guard template
+
+Apply this template to every NEGATIVE property:
+
+```solidity
+function property_neg_X_reverts() public {
+    // Step 1: Precondition — verify operation would have an effect
+    if (/* no-op condition */) return;
+
+    // Step 2: State setup — ensure we're testing the right condition
+    // (e.g., prank as correct caller to isolate param validation from auth)
+
+    // Step 3: Assert revert
+    try protocol.someOp(invalidParams) {
+        t(false, "NEG-X: operation should revert");
+    } catch {
+        // Expected revert
+    }
+}
+```
+
+---
+
 ## Verification Steps (Phase 3B)
 
 1. `forge build` — must compile without errors

@@ -986,6 +986,126 @@ Properties with unjustified tolerance MUST be flagged for review. Guidelines:
 
 ---
 
+### RULE: FP-PREVENTION PATTERNS (v4.1 — prevents systematic false positives)
+
+The following implementation patterns address the 5 most common false positive root causes identified across fuzzing campaigns. Apply the relevant pattern whenever implementing properties in the listed categories.
+
+**Pattern FP-1: Deduplicating actor sets in balance summation**
+
+When summing balances across actors plus additional protocol addresses (feeRecipient, treasury, `address(this)`), always deduplicate to prevent double-counting if any protocol address is also an actor.
+
+```solidity
+// CORRECT: deduplicate before summing
+uint256 sum = 0;
+address[] memory allActors = _getActors();
+for (uint i; i < allActors.length; i++) {
+    sum += vault.balanceOf(allActors[i]);
+}
+// Add protocol addresses only if NOT already in actor set
+address fr = vault.feeRecipient();
+bool frInActors = false;
+for (uint i; i < allActors.length; i++) {
+    if (allActors[i] == fr) { frInActors = true; break; }
+}
+if (!frInActors) sum += vault.balanceOf(fr);
+```
+
+**When to apply:** Any SOL-* or AGG-* property that sums `balanceOf` across actors and also includes protocol-level addresses (feeRecipient, treasury, vault itself). See AP-15.
+
+---
+
+**Pattern FP-2: Operation-gated idle balance checks**
+
+Never check idle balance (token balance of vault/contract) as a standalone global property. Gate on specific operations that should flush idle tokens.
+
+```solidity
+// CORRECT: only check after ops that should flush idle tokens
+function property_no_idle_balance() public {
+    if (currentOperation == bytes4(0)) return; // standalone call, skip
+    if (currentOperation == SUBMIT_CAP) return; // admin op, skip
+    if (currentOperation == SET_FEE) return;    // admin op, skip
+    // Only runs after deposit/withdraw/mint/redeem/reallocate
+    uint256 idle = token.balanceOf(address(vault));
+    uint256 wqLen = vault.withdrawQueueLength();
+    t(idle <= wqLen * 1, "idle balance exceeds expected rounding dust");
+}
+```
+
+**When to apply:** Any property checking token balance held by a contract against a threshold. See AP-16.
+
+---
+
+**Pattern FP-3: NEGATIVE precondition guards**
+
+Before asserting that an operation must revert, verify that the operation would actually have a meaningful effect in the current state. No-op edge cases (zero amounts, empty positions) may legitimately succeed.
+
+```solidity
+// CORRECT: verify the operation would have an effect before asserting revert
+function property_neg_unbalanced_reallocate_reverts() public {
+    Id id = MarketParamsLib.id(marketParams);
+    // Precondition: position exists (operation would actually withdraw)
+    if (morpho.supplyShares(id, address(vault)) == 0) return; // no-op edge, skip
+    // Now the reallocate would actually withdraw, so it SHOULD revert
+    try vault.reallocate(invalidAllocations) {
+        t(false, "unbalanced reallocate should revert");
+    } catch {
+        // expected
+    }
+}
+```
+
+**When to apply:** All VT-NEG-* properties. See AP-18. Common no-op edges: zero-from-zero withdrawals, self-approvals, operations on empty positions.
+
+---
+
+**Pattern FP-4: Interest-aware cap checks**
+
+When checking that a value stays below a cap (e.g., market supply <= supply cap), account for passive interest growth that can push the value above the cap without any new deposits.
+
+```solidity
+// CORRECT: account for passive interest growth exceeding static cap
+// Interest accrual can push supplyAssets above cap without any new deposits.
+// At 50% APR over ~4.5 years of simulated time, growth factor ≈ 10x.
+uint256 maxGrowthFactor = 10; // generous bound for simulated time ranges
+t(supplyAssets <= uint256(cap) * maxGrowthFactor + 1e18,
+    "supply within cap accounting for interest growth");
+```
+
+**When to apply:** Any VS-* or MON-* property comparing a growing value (debt, supply, accrued interest) against a fixed cap. See AP-17. Document the growth factor derivation in a comment.
+
+---
+
+**Pattern FP-5: PROFIT with yield awareness**
+
+When implementing PROFIT-01 for protocols where users legitimately earn yield, exclude earned yield from the extraction check.
+
+```solidity
+// CORRECT: exclude legitimately earned yield
+// Option A (simple): only check zero-participation actors
+address[] memory allActors = _getActors();
+for (uint256 a = 0; a < allActors.length; a++) {
+    if (_totalDeposited[allActors[a]] > 0) continue; // skip actors who used the vault
+    int256 netExtraction = 0;
+    for (uint256 t = 0; t < allTokens.length; t++) {
+        uint256 current = IERC20(allTokens[t]).balanceOf(allActors[a]);
+        uint256 initial = _initialBalances[allActors[a]][allTokens[t]];
+        netExtraction += int256(current) - int256(initial);
+    }
+    t(netExtraction <= int256(DUST_TOLERANCE), "PROFIT-01: non-depositor extracted value");
+}
+
+// Option B (precise): track deposits/withdrawals per actor
+for (uint256 a = 0; a < allActors.length; a++) {
+    int256 netExtraction = int256(currentBalance + sharesValue) - int256(initialBalance);
+    int256 netDeposits = int256(_totalDeposited[allActors[a]]) - int256(_totalWithdrawn[allActors[a]]);
+    t(netExtraction - netDeposits <= int256(DUST_TOLERANCE), "PROFIT-01: extraction exceeds deposits");
+}
+```
+
+**When to apply:** All PROFIT-01 implementations in vault/lending/staking protocols where yield accrual is expected. See PROFIT_YIELD_AWARENESS rule in Phase 1A.
+
+---
+
 ### RULE: DELEGATION_TRACKING (v4 — MANDATORY)
 
 When writing properties that track cumulative state (profit tracking, net deposits, share accounting), identify ALL delegation patterns:

@@ -168,6 +168,39 @@ Pattern: No actor should have a net positive extraction across all tokens.
   }
   ```
 
+**RULE: PROFIT_YIELD_AWARENESS (v4.1 — prevents PROFIT-01 false positives in yield protocols)**
+
+For vault/lending protocols where users legitimately earn yield (interest, fees, rewards), PROFIT-01 must not fire on earned interest. The existing DUST_TOLERANCE (1000 wei) is NOT sufficient because yield can legitimately grow by orders of magnitude over simulated time.
+
+Two implementation patterns:
+
+- **Pattern A (simple — recommended for most cases):** Only check actors with `_totalDeposited[actor] == 0` (never-participated actors). If an actor has deposited into the protocol, they can legitimately earn yield, so skip them. This requires a ghost variable `_totalDeposited[actor]` incremented in deposit/supply target functions.
+  ```solidity
+  // Pattern A: skip actors who have used the vault (they can legitimately earn yield)
+  for (uint256 a = 0; a < allActors.length; a++) {
+      if (_totalDeposited[allActors[a]] > 0) continue; // earned yield is legitimate
+      int256 netExtraction = 0;
+      for (uint256 t = 0; t < allTokens.length; t++) {
+          uint256 current = IERC20(allTokens[t]).balanceOf(allActors[a]);
+          uint256 initial = _initialBalances[allActors[a]][allTokens[t]];
+          netExtraction += int256(current) - int256(initial);
+      }
+      t(netExtraction <= int256(DUST_TOLERANCE), "PROFIT-01: non-depositor has net positive extraction");
+  }
+  ```
+
+- **Pattern B (precise — for protocols where non-depositing actors shouldn't exist):** Track `_totalDeposited[actor]` and `_totalWithdrawn[actor]` ghosts; assert `currentBalance + sharesValue <= initialBalance + _totalDeposited - _totalWithdrawn + DUST`.
+  ```solidity
+  // Pattern B: account for deposits and withdrawals explicitly
+  for (uint256 a = 0; a < allActors.length; a++) {
+      int256 netExtraction = int256(currentBalance + sharesValue) - int256(initialBalance);
+      int256 netDeposits = int256(_totalDeposited[allActors[a]]) - int256(_totalWithdrawn[allActors[a]]);
+      t(netExtraction - netDeposits <= int256(DUST_TOLERANCE), "PROFIT-01: actor extracted beyond deposits + yield");
+  }
+  ```
+
+**Connection to harness design:** If the harness includes an `asset_mint` (or similar `*_mint`) target function that mints the tracked token directly to an actor — bypassing the protocol's deposit flow — this inflates `currentBalance` without incrementing `_totalDeposited`, causing a PROFIT-01 false positive. See AP-14 (Phase 2) for detection and fix.
+
 - **PROFIT-02: No actor has net positive ETH extraction**
   Same pattern for ETH balances. Track initial ETH balances of all actors.
   ```solidity
@@ -203,6 +236,28 @@ Pattern: No actor should have a net positive extraction across all tokens.
 - `_initialETHBalances` mapping: `mapping(address => uint256)` — set in `setUp()`
 - `_recordInitialBalances()` helper: Call at end of `setUp()` to snapshot all actor and protocol balances
 - DUST_TOLERANCE: `1000` for 18-decimal tokens, `10` for 6-decimal tokens — accounts for rounding without masking real exploits
+
+**RULE: MULTI_MARKET_TOLERANCE (v4.1 — prevents false positives in multi-market/multi-pool protocols)**
+
+For protocols with N markets/pools (e.g., Morpho, Aave, Compound), rounding dust accumulates per-market per-operation. A static tolerance of 1000 wei is insufficient when the protocol performs rounding operations across multiple markets in a single transaction (e.g., `reallocate` across N markets).
+
+- **Minimum tolerance for idle-balance properties:** `N * rounding_per_op` where N is the number of markets/pools and `rounding_per_op` is the maximum rounding error per market interaction (typically 1 wei for integer division).
+  - For Morpho-style vaults: `withdrawQueueLength * 1 wei` per reallocate operation.
+  - For Aave-style pools: `numberOfActiveReserves * 1 wei` per multi-reserve operation.
+
+- **Static tolerance is insufficient when external state changes occur:** Donations (direct token transfers to vault), failed skims, or interest accrual across markets can cause idle balances that exceed any static threshold. For these cases, use **operation-gated checks** instead of global checks:
+  ```
+  // WRONG: global idle balance check with static tolerance
+  t(token.balanceOf(address(vault)) <= N * 1, "idle balance");
+
+  // RIGHT: operation-gated — only check after ops that should flush idle tokens
+  if (currentOperation == DEPOSIT || currentOperation == WITHDRAW ||
+      currentOperation == REALLOCATE) {
+      t(token.balanceOf(address(vault)) <= wqLen * 1, "idle balance after user op");
+  }
+  ```
+
+- **For PROFIT-03 (protocol drain):** When tracking multi-market protocol contract balances, tolerance should be `sum_over_all_markets(expected_rounding_per_market)`, not a fixed constant. Document the derivation in a comment.
 
 **ATTACK_SCENARIO:** "If any actor can extract more value than they deposited, the protocol has a direct loss-of-funds vulnerability. This catches flash loan attacks, oracle manipulation, rounding exploits, and any other economic extraction regardless of the specific mechanism."
 
