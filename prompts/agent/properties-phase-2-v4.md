@@ -1,5 +1,5 @@
 ---
-description: "Phase 2 of the Efficient Properties Workflow v4.0. Builds on v3.9 with AP-10 (stale/live mismatch), AP-11 (compound op ghost invalidation), AP-12 (rounding direction conflict). Reviews and filters properties, classifies ghost infrastructure (trackOp/A-delegate/updateGhosts/none), flags STALE_OP_RISK, validates against 10 anti-patterns, appeal score classification. Includes Tier 0 PROFIT oracle handling. NEVER_DISCARD guardrail, AP-9 core-read-masking rule, gateway/proxy modifier mismatch audit"
+description: "Phase 2 of the Efficient Properties Workflow v4.0. Builds on v3.9 with AP-10 (stale/live mismatch), AP-11 (compound op ghost invalidation), AP-12 (rounding direction conflict), AP-13 (assertion-body deduplication). Reviews and filters properties, classifies ghost infrastructure (trackOp/A-delegate/updateGhosts/none), flags STALE_OP_RISK, validates against 10 anti-patterns + AP-13 dedup, appeal score classification. Includes Tier 0 PROFIT oracle handling. NEVER_DISCARD guardrail, AP-9 core-read-masking rule, gateway/proxy modifier mismatch audit"
 mode: subagent
 temperature: 0.1
 ---
@@ -456,3 +456,38 @@ A monotonicity property ("X never decreases") conflicts with the protocol's inte
 **Resolution:** Restrict the property to fire only during operations that change one side of the ratio (e.g., interest accrual changes assets but not shares). Use `currentOperation` guard.
 
 **Example caught:** Morpho XR-02 — borrow rate decreased by 1 wei during `repay()` due to `toSharesDown` rounding.
+
+---
+
+### AP-13: Assertion-Body Deduplication (v4 — MANDATORY)
+
+After applying AP-1 through AP-12, perform a **pairwise assertion-body comparison**
+across ALL remaining properties:
+
+**Procedure:**
+1. For each property, extract its **assertion signature** — the tuple of:
+   (assertion_function, operand_expressions, guard_condition)
+   Examples:
+   - `lte(vault.min(), 10000)` guarded by `always` → sig = `(lte, vault.min(), 10000, always)`
+   - `eq(sumShares, totalSupply())` guarded by `always` → sig = `(eq, sumShares, totalSupply, always)`
+   - `gte(pricePerShare, 1e18)` guarded by `always` → sig = `(gte, pricePerShare, 1e18, always)`
+
+2. Group properties with **identical assertion signatures** (same function, same
+   operands, same guard — ignoring variable names and string messages).
+
+3. For each group of size > 1:
+   - Keep the property with the **most specific name** (describes the invariant, not
+     the trigger).
+   - DISCARD the rest with note: `DUPLICATE: identical assertion body as [kept property ID]`
+
+4. Check for **strict subsumption**: property A subsumes property B if A's assertion
+   logically implies B's. Common patterns:
+   - `gte(x, K)` where K > 0 subsumes `gt(x, 0)` (i.e., `x >= 1e18` ⊃ `x > 0`)
+   - `eq(x, y)` subsumes both `lte(x, y)` and `gte(x, y)`
+   - `lte(x, MAX)` with tighter MAX subsumes `lte(x, BIGGER_MAX)`
+
+   DISCARD the weaker property with note: `SUBSUMED: logically implied by [stronger property ID]`
+
+**Example from yearn-recon-v2-test:**
+- `property_setMin_overdraft`: `lte(vault.min(), 10000)` — DUPLICATE of `property_vault_min_leq_max`
+- `property_price_per_share_nonzero`: `gt(price, 0)` — SUBSUMED by `property_price_per_share_geq_one`: `gte(price, 1e18)`

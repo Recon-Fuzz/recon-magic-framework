@@ -1,5 +1,5 @@
 ---
-description: "Phase 3A of the Efficient Properties Workflow v4.0. Builds on v3.9 with mandatory v4 guards (ACTOR_GHOST_GUARD, ADDRESS_ZERO_GUARD, TOLERANCE_JUSTIFICATION, DELEGATION_TRACKING, STALE_LIVE_CONSISTENCY) and delegation-aware ProfitTracker. Fixes Setup.sol wiring (Step -1), ghost infrastructure (Step 0), ProfitTracker ghost contract (Step 0F), protocol-aware handler templates (Step 0G), Step 0H admin validation negative tests, core-read-fail rule, deeper ghost variable guidance, and implements PROFIT + SIMPLE + CANARY properties. Runs forge build to verify compilation before Phase 3B."
+description: "Phase 3A of the Efficient Properties Workflow v4.0. Builds on v3.9 with mandatory v4 guards (ACTOR_GHOST_GUARD, ADDRESS_ZERO_GUARD, TOLERANCE_JUSTIFICATION, DELEGATION_TRACKING, STALE_LIVE_CONSISTENCY, MSG_SIG_WRAPPER_AUDIT) and delegation-aware ProfitTracker. Fixes Setup.sol wiring (Step -1), ghost infrastructure (Step 0), ProfitTracker ghost contract (Step 0F), protocol-aware handler templates (Step 0G), Step 0H admin validation negative tests, core-read-fail rule, deeper ghost variable guidance, and implements PROFIT + SIMPLE + CANARY properties. Runs forge build to verify compilation before Phase 3B."
 mode: subagent
 temperature: 0.1
 ---
@@ -1017,6 +1017,65 @@ In protocols with lazy interest accrual (Aave, Compound, Morpho), all values in 
 
 ---
 
+### RULE: MSG_SIG_WRAPPER_AUDIT (v4 — MANDATORY)
+
+When implementing INLINE properties that filter on `_before.sig` or `_after.sig`:
+
+**Problem:** `msg.sig` captures the selector of the OUTERMOST call in the transaction,
+which is the target function wrapper (e.g., `yVault_deposit_clamped`), NOT the
+underlying protocol function (e.g., `IyVault.deposit`). If the property checks
+`_after.sig == IyVault.deposit.selector`, it will NEVER match when the fuzzer calls
+through a wrapper — creating a silent false positive (the property body never executes).
+
+**Rule:** For every INLINE property that gates on `_before.sig == X.func.selector`:
+
+1. **List ALL target function wrappers** that ultimately call `func`:
+   - Direct wrappers: `yVault_deposit(amount)` → `vault.deposit(amount)`
+   - Clamped wrappers: `yVault_deposit_clamped(amount)` → clamp → `vault.deposit(amount)`
+   - Shortcut wrappers: `shortcut_deposit_then_earn(amount)` → `vault.deposit(amount)` + `vault.earn()`
+
+2. **Check which wrappers have `updateGhosts`**: Only wrappers with `updateGhosts`
+   set `_before.sig`. If a clamped wrapper does NOT have `updateGhosts` but calls an
+   inner function that does, `_before.sig` will be the INNER function's selector
+   (correct). But if the clamped wrapper itself has `updateGhosts`, `_before.sig` will
+   be the WRAPPER's selector (incorrect for the property gate).
+
+3. **Choose the correct approach** based on the wrapper analysis:
+
+   **Option A (preferred): Delta-based gating** — Replace selector filtering with
+   observable state change detection:
+   ```solidity
+   // Instead of: if (_after.sig == IyVault.deposit.selector)
+   // Use:
+   if (_after.vaultTotalSupply > _before.vaultTotalSupply) {
+       // A deposit occurred — check deposit invariants
+   }
+   ```
+   This works regardless of which wrapper was called.
+
+   **Option B: Multi-selector OR** — Include ALL wrapper selectors in the guard:
+   ```solidity
+   if (_after.sig == IyVault.deposit.selector ||
+       _after.sig == this.yVault_deposit_clamped.selector ||
+       _after.sig == this.shortcut_deposit_then_earn.selector) {
+       // ...
+   }
+   ```
+   This is fragile — breaks whenever a new wrapper is added.
+
+   **Option C: trackOp delegation** — Use `currentOperation` from trackOp instead of
+   `msg.sig`. Wrappers call the inner function which has `trackOp(DEPOSIT)`, so
+   `currentOperation` reflects the actual operation, not the wrapper.
+
+   Prefer Option A > C > B.
+
+4. **Document the choice** in `coded-properties.md`:
+   ```
+   MSG_SIG_AUDIT: Uses delta-based gating (Option A) — immune to wrapper selectors.
+   ```
+
+---
+
 ### Step 0F Addition: ProfitTracker — Delegation-Aware Implementation (v4)
 
 When implementing ProfitTracker or net-deposit tracking (from Step 0F above):
@@ -1034,3 +1093,54 @@ When implementing ProfitTracker or net-deposit tracking (from Step 0F above):
    ```
 3. **Track fee recipients in share conservation**: Include `feeRecipient`, `address(0)`, and `treasury` in summation, or use `<=` instead of `==`
 4. **Track setup mints**: Use existing `_ghost_setupMinted[token]` to offset direct mints during setup
+
+---
+
+## Contract Variable Guards (REQUIRED)
+
+### The Problem
+`_deployLegacy()` may return `address(0)` if the target constructor reverts internally
+(e.g., calls an external contract that doesn't exist at that address in the test env).
+`new Contract()` can also leave a variable at `address(0)` if a conditional deployment
+path is never triggered. Properties that call `.balance`, `.balanceOf()`, or any view
+on an uninitialised variable will get empty/default return data — causing spurious
+pass/fail.
+
+### Rule
+For **every** property that reads from a protocol contract variable, the **first line**
+must be a zero-address guard:
+```solidity
+if (address(contractVar) == address(0)) return; // not initialized
+```
+Add one guard per contract variable accessed. If a property reads N contract variables,
+it needs N guards at the top.
+
+---
+
+## Access Control False Positives (PRIV Properties)
+
+### The Problem
+`ActorManager` always includes `address(this)` (the test contract, e.g. CryticTester)
+in the actor set and sets it as the initial `_actor`. This means:
+
+- Any target function with `asActor` that assigns a role to `_getActor()` can
+  make `address(this)` a privileged holder.
+- PRIV properties that then prank `_getActor()` and call a restricted function will
+  **succeed legitimately** — the actor really does hold the role.
+- This looks like a property failure but is a false positive.
+
+### Rule
+In every PRIV / access-control property, before pranking and calling the restricted
+function, add TWO guards:
+```solidity
+address actor = _getActor();
+if (address(target) == address(0)) return;              // not initialized
+if (actor == target.getPrivilegedRole()) return;        // actor already has the role
+vm.prank(actor);
+try target.restrictedFunction(...) {
+    t(false, "PRIV-XX: non-holder called restricted function");
+} catch {}
+```
+Replace `target.getPrivilegedRole()` with the actual view function that returns the
+current holder (e.g. `getAccessor()`, `owner()`, `getManager()`). Check dynamically —
+role assignments can change during the fuzzing campaign.

@@ -1,5 +1,5 @@
 ---
-description: "Phase 3B of the Efficient Properties Workflow v3.4. Implements INLINE + NEGATIVE + DOOMSDAY properties, building on Phase 3A's verified infrastructure. Includes error recovery decision tree."
+description: "Phase 3B of the Efficient Properties Workflow v3.4. Implements INLINE + NEGATIVE + DOOMSDAY properties, building on Phase 3A's verified infrastructure. Includes Block-0 Property Smoke Test and error recovery decision tree."
 mode: subagent
 temperature: 0.1
 ---
@@ -324,6 +324,49 @@ function property_HUB_VT_01_addIncreasesLiquidity() public { ... }
 function property_SPOKE_HF_02_zeroDebtMaxHF() public { ... }
 function property_DOOM_01_canWithdrawDeposit() public { ... }
 ```
+
+---
+
+## Block-0 Property Smoke Test (v3.4 — MANDATORY)
+
+Before running the full fuzzer, validate that ALL global invariant properties (SIMPLE
+tier — properties with NO selector guard) hold at block 0 with zero interactions:
+
+**Procedure:**
+1. Write a Foundry test that deploys the full setup and immediately calls each
+   global invariant property function:
+   ```solidity
+   function test_block0_invariants() public {
+       // No interactions — just check initial state
+       properties.property_token_conservation();
+       properties.property_solvency();
+       properties.property_sum_shares_eq_total_supply();
+       // ... all SIMPLE properties
+   }
+   ```
+
+2. Run `forge test --match-test test_block0_invariants -vvv`
+
+3. If ANY property fails at block 0:
+   - This is a **guaranteed false positive** — the property is broken by the
+     initial setup state, not by any protocol interaction.
+   - **Root cause checklist:**
+     - [ ] Address aliasing? Check `magic/setup-wiring-analysis.md` for ACCOUNTING_ALIAS flags.
+     - [ ] Missing initial funding? Check that all expected balances are seeded.
+     - [ ] Wrong reference value? Check that constants (e.g., initial price = 1e18) match the setup.
+   - Fix the property or the setup before proceeding.
+
+4. For INLINE properties (selector-gated), perform a **single-call smoke test**:
+   - Call one target function, then check that the corresponding INLINE property
+     does not revert AND its assertion body actually executes (not silently skipped
+     by a selector guard miss).
+   - If using msg.sig gating, verify the wrapper's selector matches the guard
+     (cross-reference with MSG_SIG_WRAPPER_AUDIT from Phase 3A).
+
+**Why:** The yearn-recon-v2-test `property_token_conservation` false positive would have
+been caught immediately — at block 0, `controller.rewards() == address(this)` causes a
+double-count that makes `total > initialTotal`, failing the conservation check before
+any fuzzing begins.
 
 ---
 

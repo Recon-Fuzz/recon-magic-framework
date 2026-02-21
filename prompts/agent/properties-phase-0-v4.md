@@ -398,11 +398,53 @@ Write the analysis to `magic/setup-wiring-analysis.md`:
 | Oracle | Set price feed | baseOracleOffchain.set("BTC", 8, 50000e8) |
 | Symbol | Register symbol | addSymbol("BTCUSD", 1, params) |
 | Swapper | Set slippage | setMaxSlippageRatio(tokenB0, 1e17) |
+
+### Address Aliasing (from Step 5h)
+| Alias Group | Addresses | Risk |
+|-------------|-----------|------|
+| [group name] | [addr1], [addr2] | [ACCOUNTING_ALIAS / ACCESS_ALIAS]: [description] |
+
+Downstream flags:
+- ACCOUNTING_ALIAS targets: [list property categories that must deduplicate]
+- ACCESS_ALIAS targets: [list property categories that may be vacuously true]
 ```
 
 ### 5g: Verify No Modifications
 
 **IMPORTANT:** Step 5 is ANALYSIS ONLY. Do NOT modify Setup.sol, target files, or any other files. All modifications happen in Phase 3A which reads this analysis.
+
+### 5h: Address Aliasing Detection (NEW in v4.0)
+
+Scan Setup.sol (and any helper setup contracts) for address aliasing — cases where two
+or more distinct logical roles resolve to the same address at deployment time.
+
+**Procedure:**
+1. List every named address assigned in setUp() / constructor:
+   - Contract deployer (`address(this)`)
+   - Governance, admin, strategist, rewards, treasury, fee recipient, etc.
+   - Each actor address
+   - Any mock contract that doubles as a role holder
+2. Build an equivalence map: group addresses that point to the same value.
+   Common patterns that create aliases:
+   - `constructor(address(this))` — deployer IS governance/admin/rewards
+   - `setRewards(address(controller))` — rewards IS the controller
+   - Single EOA used for multiple roles (governance + strategist)
+   - Mock contract deployed once but registered in multiple slots
+3. For each aliased group, emit a warning in `magic/setup-wiring-analysis.md` under the
+   **Address Aliasing** section:
+
+   | Alias Group | Addresses | Risk |
+   |-------------|-----------|------|
+   | deployer = rewards | `address(this)`, `controller.rewards()` | Accounting properties that sum `balanceOf(rewards) + balanceOf(deployer)` will DOUBLE-COUNT |
+   | governance = strategist | `gov`, `controller.strategist()` | Access-control properties may be trivially satisfied |
+
+4. Flag downstream impact:
+   - **ACCOUNTING_ALIAS**: Any conservation / total-balance property MUST deduplicate
+     aliased addresses before summing balances.
+   - **ACCESS_ALIAS**: Privilege-escalation properties gated on `actor != role` may
+     be vacuously true if actor IS the role.
+
+Phase 1 and Phase 3 MUST consume these flags when generating/implementing properties.
 
 ---
 
