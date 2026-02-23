@@ -928,6 +928,8 @@ def run_workflow(
             print(f"\n🛑 STOP action triggered by step {i}")
             print("Halting workflow execution early.")
             return SUCCESS
+        elif action == "CONTINUE_WITH_WARNING":
+            print(f"\n⚠️  CONTINUE_WITH_WARNING: proceeding despite non-ideal condition")
         elif action == "SKIPPED":
             print(f"\n⏭️  Step {i} was skipped by user request")
             # Continue to next step (don't treat as failure)
