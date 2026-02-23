@@ -1,5 +1,5 @@
 ---
-description: "Phase 3A of the Efficient Properties Workflow v4.2. Builds on v4.1 with flash loan attacker handler (Step 0L), reentrant callback mock (Step 0M), FoundryProperties.sol split (Step 0N), fee volume conservation ghost tracking, and state machine property implementations. Previous: weird token mock deployment (Step 0I), accumulation ghost tracking (Step 0J), token compliance harness (Step 0K), mandatory v4 guards and delegation-aware ProfitTracker. Fixes Setup.sol wiring (Step -1), ghost infrastructure (Step 0), ProfitTracker ghost contract (Step 0F), protocol-aware handler templates (Step 0G), Step 0H admin validation negative tests, core-read-fail rule, deeper ghost variable guidance, and implements PROFIT + SIMPLE + CANARY + WTOK + ACCUM + COMPLY + STATE_MACHINE + FEE_VOL properties. Runs forge build to verify compilation before Phase 3B."
+description: "Phase 3A of the Efficient Properties Workflow v4.2. Builds on v4.1 with flash loan attacker handler (Step 0L), reentrant callback mock (Step 0M), FoundryProperties.sol split (Step 0N), fee volume conservation ghost tracking, and state machine property implementations. Previous: weird token mock deployment (Step 0I), accumulation ghost tracking (Step 0J), token compliance harness (Step 0K), mandatory v4 guards and delegation-aware ProfitTracker. Fixes Setup.sol wiring (Step -1), ghost infrastructure (Step 0), ProfitTracker ghost contract (Step 0F), protocol-aware handler templates (Step 0G), Step 0H admin validation negative tests, core-read-fail rule, deeper ghost variable guidance, and implements PROFIT + SIMPLE + CANARY + WTOK + ACCUM + COMPLY + STATE_MACHINE + FEE_VOL properties. FP-PREVENTION PATTERNS updated with FP-6 (ROLE_ROTATION: historical feeRecipient tracking via _wasEverFeeRecipient) and FP-7 (FEE_SHARE_RESIDUAL: onlyFeeSharesRemain guard for PROFIT-02). Runs forge build to verify compilation before Phase 3B."
 mode: subagent
 temperature: 0.1
 ---
@@ -1811,6 +1811,63 @@ for (uint256 a = 0; a < allActors.length; a++) {
 ```
 
 **When to apply:** All PROFIT-01 implementations in vault/lending/staking protocols where yield accrual is expected. See PROFIT_YIELD_AWARENESS rule in Phase 1A.
+
+---
+
+**Pattern FP-6: ROLE_ROTATION — privileged recipient changes over time**
+
+When a protocol can rotate its privileged payment address (`setFeeRecipient`, `setTreasury`, `setRewardDistributor`), PROFIT-01 must exclude *all historical* recipients, not just the current one. After rotation, the former recipient still holds legitimately-earned shares but is no longer protected by a point-in-time check.
+
+```solidity
+// Ghost state in BeforeAfter.sol
+mapping(address => bool) internal _wasEverFeeRecipient;
+
+// Populate in _recordInitialBalances():
+address initialFr = protocol.feeRecipient();
+if (initialFr != address(0)) _wasEverFeeRecipient[initialFr] = true;
+
+// Populate in __after() when fee shares are minted:
+if (_after.feeRecipientShares > _before.feeRecipientShares) {
+    address fr = protocol.feeRecipient();
+    if (fr != address(0)) _wasEverFeeRecipient[fr] = true;
+}
+
+// Populate in the setFeeRecipient wrapper (after the call):
+_wasEverFeeRecipient[newFeeRecipient] = true;
+```
+
+```solidity
+// WRONG (v4.1 — point-in-time only):
+address fr = protocol.feeRecipient();
+if (fr != address(0) && allActors[a] == fr) continue;
+
+// CORRECT (v4.2 — historical):
+if (_wasEverFeeRecipient[allActors[a]]) continue;
+```
+
+**When to apply:** Any PROFIT-01 implementation where the protocol has a mutable privileged recipient address AND that address can be one of the fuzz actors. Detection: look for `setFeeRecipient()`, `setTreasury()`, `setRewardDistributor()`, or any admin function that rotates a payment address.
+
+---
+
+**Pattern FP-7: FEE_SHARE_RESIDUAL — protocol-minted shares prevent totalSupply == 0**
+
+When a protocol auto-mints shares to a privileged address (fee accrual, performance fee), PROFIT-02's `totalSupply == 0` guard for "legitimately empty vault" never fires. After all depositing users exit, the fee shares keep `totalSupply > 0` while the protocol's backing asset balance is near-zero — a correct state that PROFIT-02 incorrectly flags.
+
+```solidity
+// WRONG (v4.1 — misses fee-share residual):
+bool fullyWithdrawn = protocol.totalSupply() == 0;
+t(balance > 0 || initial <= DUST_TOLERANCE || fullyWithdrawn, "PROFIT-02");
+
+// CORRECT (v4.2 — also allows state where only fee shares remain):
+bool fullyWithdrawn = protocol.totalSupply() == 0;
+address fr = protocol.feeRecipient();
+uint256 frShares = (fr != address(0)) ? protocol.balanceOf(fr) : 0;
+bool onlyFeeSharesRemain = protocol.totalSupply() <= frShares;
+t(balance > 0 || initial <= DUST_TOLERANCE || fullyWithdrawn || onlyFeeSharesRemain,
+  "PROFIT-02: protocol drained");
+```
+
+**When to apply:** Any PROFIT-02 implementation using `totalSupply == 0` as a "legitimately empty" guard, in protocols where shares are auto-minted to a privileged address (fee recipient, treasury, protocol-owned account). The fee shares represent a real claim; the vault is not "drained."
 
 ---
 
