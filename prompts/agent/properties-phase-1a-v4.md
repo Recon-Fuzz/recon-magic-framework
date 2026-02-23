@@ -1,5 +1,5 @@
 ---
-description: "Phase 1A of the Efficient Properties Workflow v4.0. Generates high-priority security-relevant properties for Tiers 0-10 (PROFIT through DOOM) using inline mandatory patterns, condensed anti-patterns, reachability integration, protocol-type templates, cross-protocol templates, economic oracle integration, expanded economic oracles, taint-informed property prioritization, privilege escalation negative tests, share inflation pattern, math round-trip, deposit-withdraw sandwich resistance."
+description: "Phase 1A of the Efficient Properties Workflow v4.2. Generates high-priority security-relevant properties for Tiers 0-17 (PROFIT through ACCUM) using inline mandatory patterns, condensed anti-patterns, reachability integration, protocol-type templates, cross-protocol templates, economic oracle integration, expanded economic oracles, taint-informed property prioritization, privilege escalation negative tests, share inflation pattern, math round-trip, deposit-withdraw sandwich resistance, weird token integration (Tier 16), precision loss accumulation (Tier 17), token compliance patterns (ERC20-E through H), state machine properties (CROSS-E/F/G), systematic auth sweep (PRIV-AUTH), and fee volume conservation (PATTERN 29)."
 mode: subagent
 temperature: 0.1
 ---
@@ -12,7 +12,7 @@ We're specifying properties for the smart contract system in scope.
 ## Inputs
 
 First, read these Phase 0 outputs to understand the protocol:
-- `magic/contracts-dependency-list.md` — all contracts, functions, storage slots, call relationships, **PROTOCOL_TYPE classification**
+- `magic/contracts-dependency-list.md` — all contracts, functions, storage slots, call relationships, **PROTOCOL_TYPE classification**, **TOKEN_ASSUMPTION**, **ISSUES_TOKENS**, **State Machine Patterns** (HAS_INITIALIZER, HAS_PAUSE, USES_UPGRADEABLE_PROXY), **Access Control Inventory**
 - `magic/properties-review-priority.md` — review order by complexity
 - `magic/reachability-analysis.md` (if it exists) — hard-to-reach branches and shortcut target functions
 - `magic/economic-oracles.md` (if it exists) — economic vulnerability class analysis with per-class applicability
@@ -177,8 +177,10 @@ Two implementation patterns:
 - **Pattern A (simple — recommended for most cases):** Only check actors with `_totalDeposited[actor] == 0` (never-participated actors). If an actor has deposited into the protocol, they can legitimately earn yield, so skip them. This requires a ghost variable `_totalDeposited[actor]` incremented in deposit/supply target functions.
   ```solidity
   // Pattern A: skip actors who have used the vault (they can legitimately earn yield)
+  address feeRecipient = address(0); // set if protocol has fee recipient (e.g., vault.feeRecipient())
   for (uint256 a = 0; a < allActors.length; a++) {
       if (_totalDeposited[allActors[a]] > 0) continue; // earned yield is legitimate
+      if (feeRecipient != address(0) && allActors[a] == feeRecipient) continue; // fee shares are legitimate
       int256 netExtraction = 0;
       for (uint256 t = 0; t < allTokens.length; t++) {
           uint256 current = IERC20(allTokens[t]).balanceOf(allActors[a]);
@@ -188,6 +190,8 @@ Two implementation patterns:
       t(netExtraction <= int256(DUST_TOLERANCE), "PROFIT-01: non-depositor has net positive extraction");
   }
   ```
+
+  > **FEE_RECIPIENT_EXTRACTION (v4.1 edge case):** In vault protocols with a fee recipient, the feeRecipient gains vault shares via `_accrueInterest()` without ever calling `deposit()`. This means `_totalDeposited[feeRecipient] == 0` while their `sharesValue > 0`, causing Pattern A to fire on them. Always skip the current `feeRecipient` explicitly, or set `feeRecipient` in the loop guard as shown above. If the feeRecipient can change mid-run (e.g., via `setFeeRecipient()`), read the current value from the contract each time rather than caching it at setup.
 
 - **Pattern B (precise — for protocols where non-depositing actors shouldn't exist):** Track `_totalDeposited[actor]` and `_totalWithdrawn[actor]` ghosts; assert `currentBalance + sharesValue <= initialBalance + _totalDeposited - _totalWithdrawn + DUST`.
   ```solidity
@@ -222,14 +226,18 @@ Two implementation patterns:
       for (uint256 t = 0; t < allTokens.length; t++) {
           uint256 current = IERC20(allTokens[t]).balanceOf(address(protocolContract));
           uint256 initial = _initialProtocolBalances[address(protocolContract)][allTokens[t]];
-          // Allow decrease but not complete drain
+          // Allow decrease but not complete drain.
+          // Exception: if all depositors have exited (totalSupply == 0), zero balance is legitimate.
           if (initial > 0) {
-              t(current > 0 || initial <= DUST_TOLERANCE,
+              bool fullyWithdrawn = (vault.totalSupply() == 0); // replace vault with actual share token
+              t(current > 0 || initial <= DUST_TOLERANCE || fullyWithdrawn,
                 "PROFIT-03: protocol contract drained to zero");
           }
       }
   }
   ```
+
+  > **FULL_WITHDRAWAL_DRAIN (v4.1 edge case):** When all depositors redeem their shares (`totalSupply == 0`), the underlying protocol contract's token balance legitimately drops to zero. Without the `fullyWithdrawn` guard, the property fires on every full-exit scenario. For lending protocols without a share token, use an equivalent check such as `totalDeposited == 0` or `pool.totalBorrows() == 0 && pool.totalDeposits() == 0`.
 
 **Implementation notes:**
 - `_initialBalances` mapping: `mapping(address => mapping(address => uint256))` — set in `setUp()` after all funding
@@ -460,6 +468,46 @@ Required patterns:
 
 Minimum: 2 properties per admin setter function
 
+### TIER 7B-PRIV (Extended): SYSTEMATIC AUTH SWEEP (PRIV-AUTH-*) (NEW in v4.2)
+**PRIORITY: HIGH — Full Authorization Coverage**
+
+**Check `Access Control Inventory` from PROTOCOL CHARACTERISTICS section of `magic/contracts-dependency-list.md`** (generated by Phase 0 Step 4h). For every function that has an access control modifier AND is NOT already covered by PRIV-NEG-01/02/03 (admin setters), generate one PRIV-AUTH property.
+
+**Attack scenario template:** "If [functionName] is callable by unauthorized addresses, an attacker can [describe impact: drain funds, change config, brick protocol]. Access control bugs in non-setter functions are the #1 most common exploit vector on Immunefi."
+
+**NEVER_DISCARD: PRIV-AUTH properties MUST NOT be discarded by Phase 2, regardless of AP-1 matching. Like PRIV-NEG, they test that the authorization gate itself works.**
+
+**Generation rule:** Phase 1A reads the Access Control Inventory from Phase 0 Step 4h. For each function marked `In PRIV-NEG? = NO` with a non-trivial access modifier (not just `whenNotPaused`), auto-generate one PRIV-AUTH property.
+
+**Required pattern:**
+
+```
+### PRIV-AUTH-XX: [functionName] rejects unauthorized caller
+- Pattern: Auth Sweep
+- Category: NEGATIVE
+- Tier: 7B-PRIV (extended)
+
+Pseudocode:
+  address actor = _getActor();
+  if (actor == protocol.owner()) return; // actor already has role, skip
+  // Add checks for ALL relevant roles the function requires:
+  // if (actor == protocol.admin()) return;
+  // if (protocol.hasRole(ROLE, actor)) return;
+  vm.prank(actor);
+  try protocol.functionName(args) {
+      t(false, "PRIV-AUTH-XX: unauthorized [functionName] succeeded");
+  } catch {
+      // expected — access control works
+  }
+
+ATTACK_SCENARIO: "If [functionName] is callable by unauthorized addresses, attacker can
+[describe impact: drain funds, change config, brick protocol]."
+ANTI-PATTERN_CHECK: Not tautological — tests that the access control modifier EXISTS and
+WORKS on this specific function, not just that msg.sender is checked somewhere.
+```
+
+**Minimum:** 1 property per access-controlled function not already in PRIV-NEG. NEVER_DISCARD category.
+
 ### TIER 8: EXCHANGE RATE / SHARE PRICE INVARIANTS
 **PRIORITY: MEDIUM — Share Price Manipulation Prevention**
 
@@ -555,6 +603,43 @@ eq(valueAfter, valueBefore, "FEE: zero-time accrual must be no-op");
 - If `lockup`: Generate unlock timing property (withdrawal blocked before, allowed after)
 
 Minimum: 2 properties (4+ if TIME_BASED=true)
+
+#### 9C: FEE VOLUME CONSERVATION (NEW in v4.2)
+
+**Mandatory Pattern:** PATTERN 29 (Fee Volume Conservation)
+Detection: Protocol has fee collection (`feeRate`, `protocolFee`, `performanceFee`, `managementFee`, or any function that deducts a percentage from user operations).
+Pattern: Total fees collected must never exceed total volume processed.
+
+**PROPERTY_TYPE:** SIMPLE (checked after every operation using ghost counters)
+
+```
+### FEE-VOL-01: Total fees collected never exceed total volume
+- Pattern: PATTERN 29
+- Category: SIMPLE
+- Tier: 9A
+
+Ghost variables:
+- _totalVolumeProcessed: cumulative sum of all deposit/withdraw/swap/borrow amounts
+- _totalFeesCollected: cumulative sum of all fees taken by protocol
+
+Pseudocode:
+  lte(_totalFeesCollected, _totalVolumeProcessed,
+      "FEE-VOL-01: fees exceed total volume — fee calculation bug");
+
+ATTACK_SCENARIO: "Fee calculation bug causes protocol to charge 110% fee on a 100-unit
+swap. Cumulative fees exceed total volume, indicating the fee math is broken.
+Victims: all users who overpay fees."
+ANTI-PATTERN_CHECK: Not tautological — no single require checks cumulative fee/volume ratio.
+Not structurally impossible — fee accounting storage IS written by swap/deposit/withdraw.
+Distinct from SOL-* (Tier 2) which checks solvency, not fee correctness.
+Distinct from PROFIT-* (Tier 0) which checks actor-level extraction, not protocol-level fees.
+```
+
+**Implementation note:** Ghost variables `_totalVolumeProcessed` and `_totalFeesCollected` must be tracked in target function handlers (Phase 3A). `_totalVolumeProcessed` is incremented by the amount parameter in deposit/withdraw/swap/borrow handlers. `_totalFeesCollected` is tracked by reading the protocol's fee recipient balance or cumulative fee counter in `__after()`.
+
+**Skip condition:** If the protocol has NO fee mechanism (no feeRate, no protocolFee, no fee recipient), skip this pattern entirely.
+
+Minimum: 1 property (if protocol has fees; 0 if no fee mechanism)
 
 ### TIER 10: DOOMSDAY / LIVENESS PROPERTIES (DOOM-*)
 **PRIORITY: MEDIUM — Fund Locking Prevention**
@@ -658,11 +743,12 @@ Minimum: 2 properties (if MULTI_ACTOR=true; 0 if false)
 ## PROPERTY_TYPE (one per property)
 
 - **PROFIT**: Economic extraction oracle — checks net value flow across all actors after every operation. (Tier 0)
-- **SIMPLE**: Global invariant not tied to a specific function call. Checked after every operation. (Tiers 2, 5, 6, 8, 12)
+- **SIMPLE**: Global invariant not tied to a specific function call. Checked after every operation. (Tiers 2, 5, 6, 8, 9C, 12, 16, 17)
 - **INLINE**: Per-function assertion using before/after ghost state. Filters on function selector. (Tiers 7A, 7B, 9, 11)
 - **DOOMSDAY**: A liveness guarantee verified via try/catch, or an unacceptable state that must never occur. (Tier 10)
-- **NEGATIVE**: A spec-based negative test verifying an operation reverts. Uses try/catch pattern. (Tiers 3, 4, 7B)
+- **NEGATIVE**: A spec-based negative test verifying an operation reverts. Uses try/catch pattern. (Tiers 3, 4, 7B, 17)
 - **CANARY**: Coverage verification property designed to break when fuzzer reaches target state. (Tier 1)
+- **FLAG**: Static detection flag — not a runtime property, but a code analysis finding. (Tier 16 WTOK-C only)
 
 ---
 
@@ -706,6 +792,17 @@ Also classify each property:
 | PATTERN 15: Zero-Time No-Op | Any accrual function (TIME_BASED=true) | ONE property per accrual function |
 | PATTERN 16: Reentrancy Atomicity | External call followed by SSTORE (MULTI_ACTOR=true) | ONE property per external-call-before-SSTORE pattern |
 | PATTERN 17: Shared Resource Integrity | Storage slot written by 2+ functions from different callers (MULTI_ACTOR=true) | ONE property per shared storage slot |
+| PATTERN 27-A: Precision Drift Bounded | Deposit + withdraw with integer division (PRECISION_ACCUMULATION=APPLICABLE) | ONE property tracking per-actor drift |
+| PATTERN 27-B: Solvency Gap Growth | Internal accounting vs real balance (PRECISION_ACCUMULATION=APPLICABLE) | ONE property tracking gap growth rate |
+| PATTERN 27-C: Zero-Share Prevention | Share-based accounting (PRECISION_ACCUMULATION=APPLICABLE) | ONE property per deposit function |
+| PATTERN 28-WTOK-A: Fee-on-Transfer Solvency | TOKEN_ASSUMPTION=OPEN\|UNSPECIFIED, FEE_ON_TRANSFER != ALREADY_HANDLED | ONE mock deployment + re-use SOL properties |
+| PATTERN 28-WTOK-B: Rebasing Accounting | TOKEN_ASSUMPTION=OPEN\|UNSPECIFIED, REBASING != ALREADY_HANDLED | ONE mock deployment + rebase handler |
+| PATTERN 28-WTOK-D: Low Decimals Precision | TOKEN_ASSUMPTION=OPEN\|UNSPECIFIED, LOW_DECIMALS != ALREADY_HANDLED | ONE mock deployment + re-use MATH properties |
+| PATTERN 23-CROSS-E: Re-initialization Protection | HAS_INITIALIZER=true (Phase 0 Step 4g) | TWO properties per initializer function (already-init, version check) |
+| PATTERN 23-CROSS-F: Pause-Freeze Invariant | HAS_PAUSE=true (Phase 0 Step 4g) | ONE property (state frozen while paused) + DOOM pause guards |
+| PATTERN 23-CROSS-G: Storage Slot Stability | USES_UPGRADEABLE_PROXY=true (Phase 0 Step 4g) | ONE property per proxy (impl + admin slot checks) |
+| PATTERN 29: Fee Volume Conservation | Protocol has fee mechanism (feeRate, protocolFee, etc.) | ONE property (cumulative fees <= cumulative volume) |
+| PRIV-AUTH-*: Auth Sweep | Access Control Inventory (Phase 0 Step 4h) | ONE property per non-PRIV-NEG access-controlled function |
 
 ---
 
@@ -895,6 +992,334 @@ These templates detect vulnerability classes that can appear in ANY protocol typ
   }
   ```
 
+### State Machine Templates (apply when detected by Phase 0 Step 4g) (NEW in v4.2)
+
+These templates detect state machine bugs (re-initialization, pause-freeze violations, storage slot corruption on upgrade) that remain top-5 on Immunefi with zero coverage in v4.1.
+
+- **PATTERN 23-CROSS-E** → Tier 7B: Re-initialization Protection
+  Condition: `HAS_INITIALIZER=true` (from Phase 0 Step 4g)
+  Two properties:
+  1. `initialize()` reverts when already initialized (try/catch NEGATIVE)
+  2. `reinitialize()` reverts with same or lower version number (if applicable)
+  NEVER_DISCARD category (critical safety).
+
+  ```solidity
+  // Property 1: initialize() reverts when already initialized
+  function property_CROSS_E_01_initializeRevertsWhenInitialized() public {
+      if (address(protocol) == address(0)) return;
+      // Protocol should already be initialized from setUp()
+      try protocol.initialize(initParams) {
+          t(false, "CROSS-E-01: initialize() succeeded on already-initialized contract");
+      } catch {
+          // expected — re-initialization blocked
+      }
+  }
+
+  // Property 2: reinitialize() reverts with same or lower version
+  function property_CROSS_E_02_reinitializeVersionCheck(uint8 version) public {
+      if (address(protocol) == address(0)) return;
+      uint8 currentVersion = protocol.getInitializedVersion(); // or read _initialized slot
+      if (version > currentVersion) return; // valid upgrade, skip
+      try protocol.reinitializer(version) {
+          t(false, "CROSS-E-02: reinitialize succeeded with same/lower version");
+      } catch {
+          // expected — version check works
+      }
+  }
+  ```
+
+  **ATTACK_SCENARIO:** "Attacker calls initialize() on an already-deployed contract to reset admin to their address. All protocol funds are now under attacker control. This is the #1 proxy vulnerability pattern."
+
+- **PATTERN 23-CROSS-F** → Tier 12: Pause-Freeze Invariant
+  Condition: `HAS_PAUSE=true` (from Phase 0 Step 4g)
+  Property: When `paused() == true`, critical state (balances, accounting) does not change.
+  Implementation: Snapshot critical state hash before/after any operation while paused.
+
+  ```solidity
+  function property_CROSS_F_pauseFreezeInvariant() public {
+      if (address(protocol) == address(0)) return;
+      if (!protocol.paused()) return; // only check while paused
+
+      // Critical state should not change while paused
+      // Use _before/_after ghosts — if paused, no state-changing op should alter them
+      if (_before.totalAssets != 0 || _after.totalAssets != 0) {
+          eq(_after.totalAssets, _before.totalAssets,
+             "CROSS-F: totalAssets changed while paused");
+      }
+      if (_before.totalSupply != 0 || _after.totalSupply != 0) {
+          eq(_after.totalSupply, _before.totalSupply,
+             "CROSS-F: totalSupply changed while paused");
+      }
+  }
+  ```
+
+  **ATTACK_SCENARIO:** "Admin pauses protocol during emergency, but attacker finds a function missing the whenNotPaused modifier. Attacker drains funds while protocol is supposed to be frozen."
+
+  **Implementation note:** The `_before.totalAssets` / `_after.totalSupply` references in the pseudocode are illustrative. Phase 3A MUST substitute the actual ghost variable names from the protocol's BeforeAfter.sol `Vars` struct. If those ghost variables don't exist, Phase 3A Step 0E must add them before implementing this property.
+
+  **RULE: PAUSE_GUARD_ON_DOOM** — When `HAS_PAUSE=true`, ALL DOOM/liveness properties MUST include `if (protocol.paused()) return;` guard. Without it, admin pausing trivially falsifies the property (see AP-21 in Phase 2).
+
+- **PATTERN 23-CROSS-G** → Tier 12: Storage Slot Stability
+  Condition: `USES_UPGRADEABLE_PROXY=true` (from Phase 0 Step 4g)
+  Property: Critical storage slots (admin, implementation, initialized) match expected values after any operation.
+  Uses `vm.load(address(proxy), SLOT)` to read raw storage.
+
+  ```solidity
+  function property_CROSS_G_storageSlotStability() public {
+      if (address(proxy) == address(0)) return;
+
+      // EIP-1967 implementation slot
+      bytes32 IMPL_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+      bytes32 implSlotValue = vm.load(address(proxy), IMPL_SLOT);
+      address currentImpl = address(uint160(uint256(implSlotValue)));
+      t(currentImpl != address(0), "CROSS-G: implementation slot zeroed — bricked proxy");
+      eq(currentImpl, address(expectedImplementation),
+         "CROSS-G: implementation slot changed unexpectedly");
+
+      // EIP-1967 admin slot
+      bytes32 ADMIN_SLOT = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
+      bytes32 adminSlotValue = vm.load(address(proxy), ADMIN_SLOT);
+      address currentAdmin = address(uint160(uint256(adminSlotValue)));
+      t(currentAdmin != address(0), "CROSS-G: admin slot zeroed — unrecoverable proxy");
+  }
+  ```
+
+  **ATTACK_SCENARIO:** "After an upgrade, a storage collision overwrites the admin slot with user data. The proxy admin is now a random address, and the real admin can never upgrade or recover the proxy. All funds locked permanently."
+
+  **Implementation constraint:** `vm.load()` is a Foundry cheatcode. This property MUST be placed in CryticToFoundry only (or a separate FoundryProperties.sol). It cannot be included in CryticTester which runs under Echidna/Medusa.
+
+### Token Compliance Templates (if ISSUES_TOKENS=true and overrides exist) (NEW in v4.1)
+
+These test the protocol's OWN issued ERC20 tokens for standard compliance. Only generated when the protocol deploys custom ERC20 contracts with overrides on transfer/approve/transferFrom. Skip if protocol uses unmodified OpenZeppelin ERC20.
+
+- **PATTERN 23-ERC20-E** → Tier 12: Transfer-to-Self Conservation
+  `token.transfer(msg.sender, amount)` must not change msg.sender's balance.
+  ```solidity
+  // Transfer to self must preserve balance
+  uint256 before = token.balanceOf(actor);
+  vm.prank(actor);
+  token.transfer(actor, amount);
+  uint256 afterBal = token.balanceOf(actor);
+  eq(afterBal, before, "ERC20-E: self-transfer changed balance");
+  ```
+
+- **PATTERN 23-ERC20-F** → Tier 12: Approve Overwrites (No Additive Behavior)
+  After `approve(spender, X)` then `approve(spender, Y)`, allowance must be Y, not X+Y.
+  ```solidity
+  // Approve must overwrite, not add
+  vm.startPrank(actor);
+  token.approve(spender, amount1);
+  token.approve(spender, amount2);
+  vm.stopPrank();
+  eq(token.allowance(actor, spender), amount2, "ERC20-F: approve is additive, not overwrite");
+  ```
+
+- **PATTERN 23-ERC20-G** → Tier 12: Zero-Amount Transfer Succeeds
+  `token.transfer(to, 0)` must not revert (composability requirement).
+  ```solidity
+  // Zero transfer must succeed
+  vm.prank(actor);
+  try token.transfer(otherActor, 0) {
+      t(true, "ERC20-G: zero transfer succeeded");
+  } catch {
+      t(false, "ERC20-G: zero transfer reverted — breaks composability");
+  }
+  ```
+
+- **PATTERN 23-ERC20-H** → Tier 12: Max Approval Persistence
+  If allowance == type(uint256).max, transferFrom must NOT decrease it.
+  ```solidity
+  // Max approval must stay infinite after transferFrom
+  vm.prank(actor);
+  token.approve(spender, type(uint256).max);
+  vm.prank(spender);
+  token.transferFrom(actor, otherActor, amount);
+  eq(token.allowance(actor, spender), type(uint256).max,
+     "ERC20-H: max allowance decreased after transferFrom");
+  ```
+
+---
+
+### TIER 16: WEIRD TOKEN INTEGRATION (WTOK-*) (NEW in v4.1)
+**PRIORITY: MEDIUM — External Token Compatibility**
+
+**Check `TOKEN_ASSUMPTION` from PROTOCOL CHARACTERISTICS section of `magic/contracts-dependency-list.md`.**
+- If `TOKEN_ASSUMPTION=RESTRICTED`: Skip this tier entirely.
+- If `TOKEN_ASSUMPTION=OPEN` or `TOKEN_ASSUMPTION=UNSPECIFIED`: This tier is MANDATORY.
+
+**Attack scenario template:** "Protocol accepts arbitrary ERC20 tokens but doesn't account for non-standard transfer behavior. A fee-on-transfer token causes internal accounting to exceed actual balance (solvency violation). A rebasing token changes balances without protocol interaction. A missing-return token causes silent transfer failures."
+
+This tier does NOT create fundamentally new property assertions — it documents which mock tokens must be deployed in Setup.sol so that existing SOL/PROFIT/VT properties catch the bugs.
+
+**PATTERN 28-WTOK-A** → Fee-on-Transfer Solvency
+Detection: `TOKEN_ASSUMPTION=OPEN|UNSPECIFIED` AND `FEE_ON_TRANSFER != ALREADY_HANDLED`
+Setup: Deploy `MockFeeOnTransferERC20(fee=100 bps)` INSTEAD of standard `MockERC20`
+Assertion: Existing SOL-* (Tier 2) must still hold: `internalAccounting <= token.balanceOf(protocol)`
+```
+### WTOK-01: Fee-on-transfer solvency
+- Pattern: PATTERN 28-WTOK-A
+- Mock: MockFeeOnTransferERC20(fee=100 bps)
+- Assertion: SOL-* properties still hold (internal accounting <= balanceOf)
+- Category: SIMPLE (re-uses existing SOL properties)
+- Tier: 16
+ATTACK_SCENARIO: "Protocol calls transferFrom(user, protocol, 100) but only receives 99 due to 1% fee.
+Internal accounting records 100 but balanceOf(protocol) only has 99. After enough operations, protocol
+is insolvent — users cannot withdraw their full balance."
+ANTI-PATTERN_CHECK: Not tautological — no require in the protocol checks for fee-on-transfer.
+Not structurally impossible — the accounting slot IS written by deposit/transfer.
+```
+
+**PATTERN 28-WTOK-B** → Rebasing Accounting Integrity
+Detection: `TOKEN_ASSUMPTION=OPEN|UNSPECIFIED` AND `REBASING != ALREADY_HANDLED`
+Setup: Deploy `MockRebasingERC20` with `rebase()` as a handler target function
+Assertion: After positive rebase, solvency holds. After negative rebase, solvency may break (valid finding).
+```
+### WTOK-02: Rebasing token accounting integrity
+- Pattern: PATTERN 28-WTOK-B
+- Mock: MockRebasingERC20 with adjustable rebaseFactor
+- Handler target: rebase(uint256 newFactor) — fuzzer can trigger rebases
+- Assertion: After any rebase, internal accounting should still be <= real balance for positive rebase.
+  Negative rebase breaking solvency IS a valid finding (protocol should handle it).
+- Category: SIMPLE (re-uses existing SOL properties)
+- Tier: 16
+ATTACK_SCENARIO: "After a negative rebase, token.balanceOf(protocol) decreases but internal accounting
+stays the same. Protocol becomes insolvent — users who withdraw first get funds, later users get nothing."
+```
+
+**PATTERN 28-WTOK-C** → Missing Return Value Compatibility
+Detection: `TOKEN_ASSUMPTION=OPEN|UNSPECIFIED` AND `MISSING_RETURN != ALREADY_HANDLED`
+Note: This is primarily a STATIC flag — if the protocol uses raw `IERC20.transfer()` instead of
+`SafeERC20.safeTransfer()`, the transfer will silently fail on tokens like USDT that don't return bool.
+```
+### WTOK-03: Missing return value compatibility
+- Pattern: PATTERN 28-WTOK-C
+- Detection: Static — grep for raw `.transfer()` and `.transferFrom()` without SafeERC20
+- Category: FLAG (static detection, not a runtime property)
+- Tier: 16
+ATTACK_SCENARIO: "Protocol uses IERC20(token).transfer() on a token that doesn't return bool (USDT).
+The call doesn't revert but returns empty data, which Solidity decodes as false/reverts depending on
+version. Users cannot withdraw their funds."
+```
+
+**PATTERN 28-WTOK-D** → Low Decimals Precision
+Detection: `TOKEN_ASSUMPTION=OPEN|UNSPECIFIED` AND `LOW_DECIMALS != ALREADY_HANDLED`
+Setup: Deploy `MockERC20(decimals=2)` or `MockERC20(decimals=6)` as primary token
+Assertion: Existing MATH-* (Tier 6) round-trip properties still hold. Share price calculations
+don't lose significant precision with low decimal tokens.
+```
+### WTOK-04: Low decimals precision
+- Pattern: PATTERN 28-WTOK-D
+- Mock: MockERC20 with decimals=2 (GUSD-like) or decimals=6 (USDC-like)
+- Assertion: MATH-* round-trip properties still hold, no zero-share minting for non-zero deposits
+- Category: SIMPLE (re-uses existing MATH/ER properties)
+- Tier: 16
+ATTACK_SCENARIO: "With 2-decimal token, deposit(1) = 0.01 tokens. Share calculation:
+shares = 1 * totalShares / totalAssets may round to 0. Depositor loses 0.01 tokens silently."
+```
+
+Minimum: 2 properties (if TOKEN_ASSUMPTION=OPEN|UNSPECIFIED; 0 if RESTRICTED)
+
+---
+
+### TIER 17: PRECISION LOSS ACCUMULATION (ACCUM-*) (NEW in v4.1)
+**PRIORITY: MEDIUM — Accumulated Rounding Insolvency**
+
+**Check `PRECISION_ACCUMULATION` from `magic/economic-oracles.md`.** If NOT_APPLICABLE, skip.
+
+**Attack scenario template:** "Individual deposit-withdraw cycles pass round-trip checks, but after 1000+ cycles, rounding dust accumulates. Either (a) protocol becomes insolvent as accounting exceeds real balance, (b) users extract rounding dust via many small operations, or (c) small deposits round to zero shares causing silent value loss."
+
+**PROPERTY_TYPE:** SIMPLE (checked after every operation using ghost counters)
+
+**PATTERN 27-A — Deposit-Withdraw Precision Drift Bounded:**
+Detection: Protocol has deposit + withdraw (or mint/redeem) with integer division.
+Pattern: Per-actor drift stays proportional to operation count.
+```
+### ACCUM-01: Deposit-withdraw precision drift bounded
+- Pattern: PATTERN 27-A
+- Category: SIMPLE
+- Tier: 17
+- Ghost variables:
+  - _accumulatedOps[actor]: count of deposit+withdraw operations by this actor
+  - _actorNetDeposit[actor]: cumulative deposits minus withdrawals per actor
+
+Pseudocode:
+  // Drift = difference between what actor deposited net and what they could withdraw
+  // Must stay proportional to operation count
+  uint256 expectedBalance = _actorNetDeposit[currentActor];
+  uint256 actualBalance = token.balanceOf(currentActor);
+  if (expectedBalance > actualBalance) {
+      uint256 drift = expectedBalance - actualBalance;
+      uint256 allowedDrift = _accumulatedOps[currentActor] * MAX_DUST_PER_OP;
+      lte(drift, allowedDrift, "ACCUM-01: precision drift exceeds bounded accumulation");
+  }
+  // MAX_DUST_PER_OP = 1 for 18-decimal tokens, 1 for 6-decimal tokens (1 unit of smallest denomination)
+
+ATTACK_SCENARIO: "Attacker performs 10000 small deposit-withdraw cycles. Each cycle extracts
+1 wei of rounding dust. After 10000 cycles, attacker has extracted 10000 wei from the protocol.
+At scale with low-decimal tokens (USDC), this becomes 0.01 USDC per 10000 ops."
+ANTI-PATTERN_CHECK: Not tautological — no require guards against accumulated drift.
+Not AP-2 — deposit and withdraw both write to the accounting slot.
+```
+
+**PATTERN 27-B — Protocol-Side Solvency Gap Growth:**
+Detection: Protocol has internal accounting variable + real token balance.
+Pattern: Gap between real balance and accounting should not grow unboundedly with operations.
+```
+### ACCUM-02: Solvency gap does not grow unboundedly
+- Pattern: PATTERN 27-B
+- Category: SIMPLE
+- Tier: 17
+- Ghost variables:
+  - _totalOps: count of all operations in this sequence
+  - _previousSolvencyGap: gap between real balance and accounting at last check
+
+Pseudocode:
+  uint256 realBalance = token.balanceOf(address(protocol));
+  uint256 accounting = protocol.totalAssets(); // or equivalent
+  uint256 gap = realBalance > accounting ? realBalance - accounting : accounting - realBalance;
+  if (_totalOps > 100) {
+      // Gap should not grow faster than linearly with operations
+      lte(gap, _previousSolvencyGap + MAX_DRIFT_PER_100_OPS,
+          "ACCUM-02: solvency gap growing unboundedly");
+  }
+  _previousSolvencyGap = gap;
+
+ATTACK_SCENARIO: "Each operation introduces 1 wei of rounding error in the same direction.
+After 1M operations, the gap between real balance and accounting is 1M wei. For lending protocols
+with compounding, this can be worse — each accrual compounds the previous rounding error."
+ANTI-PATTERN_CHECK: Not tautological — protocol has no require preventing gap growth.
+Distinct from SOL-* (Tier 2) which checks solvency at a point in time, not growth rate.
+```
+
+**PATTERN 27-C — Small Deposit Zero-Share Prevention:**
+Detection: Protocol has share-based accounting (ERC4626 or similar).
+Pattern: Non-zero deposit must either mint non-zero shares or revert.
+```
+### ACCUM-03: Small deposits don't round to zero shares
+- Pattern: PATTERN 27-C
+- Category: NEGATIVE
+- Tier: 17
+
+Pseudocode:
+  uint256 amount = ...; // fuzzer-provided, clamped > 0
+  if (amount == 0) return;
+  uint256 sharesBefore = vault.balanceOf(actor);
+  try vault.deposit(amount, actor) {
+      uint256 sharesAfter = vault.balanceOf(actor);
+      gt(sharesAfter, sharesBefore, "ACCUM-03: deposit minted 0 shares — silent value loss");
+  } catch {
+      // Revert is acceptable — protocol rejects too-small deposits
+  }
+
+ATTACK_SCENARIO: "User deposits 1 wei. Protocol calculates shares = 1 * totalShares / totalAssets
+and rounds down to 0. User loses 1 wei permanently. Attacker front-runs with large deposit + donation
+to inflate share price, then all subsequent small deposits mint 0 shares."
+ANTI-PATTERN_CHECK: Distinct from PATTERN 25 (share inflation) which tests first-depositor attack.
+ACCUM-03 tests ongoing zero-share minting at ANY totalSupply, not just first deposit.
+```
+
+Minimum: 3 properties (if PRECISION_ACCUMULATION=APPLICABLE; 0 if NOT_APPLICABLE)
+
 ---
 
 ## ECONOMIC ORACLE INTEGRATION (NEW in v3.5)
@@ -915,6 +1340,7 @@ For each class marked APPLICABLE with HIGH or MEDIUM confidence, generate 1-3 co
 | SHARE_INFLATION | Tier 8 | PATTERN 24-F | First-depositor attack, share price manipulation |
 | FEE_EXTRACTION | Tier 9 | PATTERN 24-G | Fee bypass, fee accumulation correctness |
 | GOVERNANCE_MANIPULATION | Tier 10B | PATTERN 24-H | Flash-loan voting, proposal manipulation |
+| PRECISION_ACCUMULATION | Tier 17 | PATTERN 27 | Multi-operation rounding drift, solvency gap growth |
 
 ### Generation Rules
 
@@ -980,6 +1406,16 @@ Before completing, verify:
 - [ ] Share inflation / first-depositor attack tested for vault/pool protocols (PATTERN 25)
 - [ ] Math library inverse function pairs tested for round-trip inflation (PATTERN 26)
 - [ ] Deposit-withdraw sandwich resistance tested for deposit/withdraw protocols (PATTERN 23-CROSS-D)
+- [ ] Token compliance properties generated if ISSUES_TOKENS=true and overrides exist (PATTERN 23-ERC20-E through H)
+- [ ] Weird token integration properties generated if TOKEN_ASSUMPTION=OPEN|UNSPECIFIED (PATTERN 28-WTOK-A through D)
+- [ ] Precision accumulation properties generated if PRECISION_ACCUMULATION=APPLICABLE (PATTERN 27-A through C)
+- [ ] State machine properties generated if HAS_INITIALIZER/HAS_PAUSE/USES_UPGRADEABLE_PROXY detected (PATTERN 23-CROSS-E/F/G)
+- [ ] Re-initialization protection properties if HAS_INITIALIZER=true (PATTERN 23-CROSS-E)
+- [ ] Pause-freeze invariant property if HAS_PAUSE=true (PATTERN 23-CROSS-F)
+- [ ] All DOOM/liveness properties include pause guard when HAS_PAUSE=true (PAUSE_GUARD_ON_DOOM rule)
+- [ ] Storage slot stability property if USES_UPGRADEABLE_PROXY=true (PATTERN 23-CROSS-G)
+- [ ] Fee volume conservation property if protocol has fee mechanism (PATTERN 29)
+- [ ] PRIV-AUTH auth sweep properties generated for all access-controlled functions not in PRIV-NEG (Phase 0 Step 4h)
 - [ ] HIGH_TAINT functions have minimum 4 properties each (if taint analysis exists)
 - [ ] MEDIUM_TAINT functions have minimum 2 properties each (if taint analysis exists)
 - [ ] LOW_TAINT functions have CANARY coverage (if taint analysis exists)
