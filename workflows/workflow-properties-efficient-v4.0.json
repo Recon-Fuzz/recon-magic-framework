@@ -1,14 +1,14 @@
 {
-  "name": "Efficient Properties Specification Workflow v4.0",
-  "version": "4.0.0",
-  "description": "Builds on v3.9 with FP-prevention improvements from Morpho/Enzyme/Radiant analysis.\n\nKey additions in v4.0:\n- BeforeAfter template: actor consistency tracking (_beforeActor, _afterActor, _actorConsistent)\n- Properties template: address(0) guard, tolerance derivation, stale-vs-live, delegation tracking comments\n- Phase 0: Setup liveness validation report (contract != address(0) checks, target function revert rate prediction)\n- Phase 1A: PRIV-NEG tier (privilege escalation negative tests), PATTERN 25 (share inflation), PATTERN 26 (math round-trip), PATTERN 23-CROSS-D (deposit-withdraw sandwich)\n- Phase 2: NEVER_DISCARD guardrail, AP-9 (core-read-masking), AP-10 (stale/live mismatch), AP-11 (compound op ghost invalidation), AP-12 (rounding direction conflict), gateway/proxy modifier mismatch audit\n- Phase 3A: ACTOR_GHOST_GUARD, ADDRESS_ZERO_GUARD, TOLERANCE_JUSTIFICATION, DELEGATION_TRACKING, STALE_LIVE_CONSISTENCY mandatory rules; ProfitTracker delegation-aware implementation; Step 0H admin validation negative tests; core-read-fail rule; ghost variable depth rules\n- Workflow: smoke-test-gate (10K test pre-flight before full campaign)\n- Workflow: smoke test step after Phase 3B to catch shallow FPs before coverage\n\nChanges from v3.8/v3.9:\n- Phase 0 agent: v3.8 -> v4 (added Step 9: Setup Liveness Validation)\n- Phase 1A agent: v3.7 -> v4 (added PRIV-NEG, share inflation, math round-trip, sandwich patterns from v3.9)\n- Phase 2 agent: v3.6 -> v4 (merged v3.9 NEVER_DISCARD + AP-9 + modifier mismatch + v4 AP-10/11/12)\n- Phase 3A agent: v3.7 -> v4 (merged v3.9 Step 0H + core-read-fail + ghost depth + v4 mandatory guard rules + delegation-aware ProfitTracker)\n- Workflow: added smoke-test-gate + smoke test validation step after Phase 3B\n- Phases 1B, 3B: unchanged (1B=v3.4, 3B=v3.4)",
+  "name": "Efficient Properties Specification Workflow v4.1",
+  "version": "4.1.0",
+  "description": "Builds on v4.0 with three new property categories: weird token integration (Tier 16, WTOK-*), precision loss accumulation (Tier 17, ACCUM-*), and token standard compliance (COMPLY-*, PATTERN 23-ERC20-E through H).\n\nKey additions in v4.1:\n- Phase 0: Step 4e (Token Assumption Analysis: RESTRICTED/OPEN/UNSPECIFIED), Step 4f (Protocol-Issued Token Detection: ISSUES_TOKENS), PRECISION_ACCUMULATION economic oracle class\n- Phase 1A: Tier 16 (WTOK-* weird token integration, PATTERN 28-WTOK-A through D), Tier 17 (ACCUM-* precision accumulation, PATTERN 27-A through C), PATTERN 23-ERC20-E through H (token compliance)\n- Phase 2: AP-19 (weird token on restricted protocol), AP-20 (unjustified accumulation threshold)\n- Phase 3A: Step 0I (weird token mock deployment), Step 0J (accumulation ghost tracking), Step 0K (token compliance harness)\n\nKey additions in v4.0:\n- BeforeAfter template: actor consistency tracking (_beforeActor, _afterActor, _actorConsistent)\n- Properties template: address(0) guard, tolerance derivation, stale-vs-live, delegation tracking comments\n- Phase 0: Setup liveness validation report (contract != address(0) checks, target function revert rate prediction)\n- Phase 1A: PRIV-NEG tier (privilege escalation negative tests), PATTERN 25 (share inflation), PATTERN 26 (math round-trip), PATTERN 23-CROSS-D (deposit-withdraw sandwich)\n- Phase 2: NEVER_DISCARD guardrail, AP-9 (core-read-masking), AP-10 (stale/live mismatch), AP-11 (compound op ghost invalidation), AP-12 (rounding direction conflict), gateway/proxy modifier mismatch audit\n- Phase 3A: ACTOR_GHOST_GUARD, ADDRESS_ZERO_GUARD, TOLERANCE_JUSTIFICATION, DELEGATION_TRACKING, STALE_LIVE_CONSISTENCY mandatory rules; ProfitTracker delegation-aware implementation; Step 0H admin validation negative tests; core-read-fail rule; ghost variable depth rules\n- Workflow: smoke-test-gate (10K test pre-flight before full campaign)\n- Workflow: smoke test step after Phase 3B to catch shallow FPs before coverage\n\nChanges from v3.8/v3.9:\n- Phase 0 agent: v3.8 -> v4 (added Step 9: Setup Liveness Validation)\n- Phase 1A agent: v3.7 -> v4 (added PRIV-NEG, share inflation, math round-trip, sandwich patterns from v3.9)\n- Phase 2 agent: v3.6 -> v4 (merged v3.9 NEVER_DISCARD + AP-9 + modifier mismatch + v4 AP-10/11/12)\n- Phase 3A agent: v3.7 -> v4 (merged v3.9 Step 0H + core-read-fail + ghost depth + v4 mandatory guard rules + delegation-aware ProfitTracker)\n- Workflow: added smoke-test-gate + smoke test validation step after Phase 3B\n- Phases 1B, 3B: unchanged (1B=v3.4, 3B=v3.4)",
   "steps": [
     {
       "name": "Phase 0: Dependency + Reachability + Wiring + Taint Analysis + Liveness Validation",
       "type": "task",
       "description": "Analyze contracts for dependencies, review priority, reachability of guarded branches, protocol type classification, economic oracle identification, data-flow taint analysis, Setup.sol wiring issues, and setup liveness validation",
       "preconditions": ["forge-build-gate"],
-      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-0-v4.md. Run exclusively the properties-phase-0 agent using the Task tool. This phase will analyze all contracts, create a dependency list, generate a review priority order, perform a reachability analysis to identify hard-to-reach branches that need shortcut target functions, classify the protocol type (AMM/LENDING/VAULT/ERC20/GOVERNANCE/STAKING), identify economic vulnerability oracles, perform data-flow taint analysis (source/sink identification, taint propagation tracing, exploitability scoring), build a function transition graph (state-enabling relationships, entry/terminal points), analyze Setup.sol for wiring issues (constructor params, proxy patterns, access control, funding), and generate setup liveness validation (contract != address(0) checks, target function revert rate prediction).",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-v4-phase-0.md. Run exclusively the properties-phase-0 agent using the Task tool. This phase will analyze all contracts, create a dependency list, generate a review priority order, perform a reachability analysis to identify hard-to-reach branches that need shortcut target functions, classify the protocol type (AMM/LENDING/VAULT/ERC20/GOVERNANCE/STAKING), identify economic vulnerability oracles, perform data-flow taint analysis (source/sink identification, taint propagation tracing, exploitability scoring), build a function transition graph (state-enabling relationships, entry/terminal points), analyze Setup.sol for wiring issues (constructor params, proxy patterns, access control, funding), and generate setup liveness validation (contract != address(0) checks, target function revert rate prediction).",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -247,7 +247,7 @@
       "name": "Phase 1A: Tiered Property Identification (Tiers 0-10)",
       "type": "task",
       "description": "Generate high-priority security-relevant properties for Tiers 0-10 (PROFIT through DOOM) using inline mandatory patterns, protocol-type templates, economic oracle integration, taint-informed property prioritization, condensed anti-patterns, and reachability integration",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-1a-v4.md. Run exclusively the properties-phase-1a agent using the Task tool. This phase will generate properties for Tiers 0-10 (PROFIT oracle, CANARY, solvency, health factor, liquidation, monotonicity, math, variable transitions, exchange rate, fees, doomsday) organized by financial impact priority, with architectural prefixes, attack scenarios, protocol-type templates, cross-protocol templates (locked funds, delegatecall safety, selfdestruct protection), economic oracle integration, expanded economic oracles (flash loan profitability, sandwich resistance), taint-informed property prioritization (density modulation by taint classification: HIGH_TAINT min 4/function, MEDIUM min 2, LOW canary-only, NO skip), privilege escalation negative tests (PRIV-NEG tier), share inflation / first-depositor attack detection (PATTERN 25), math library round-trip inflation (PATTERN 26), and deposit-withdraw sandwich resistance (PATTERN 23-CROSS-D).",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-v4-phase-1a.md. Run exclusively the properties-phase-1a agent using the Task tool. This phase will generate properties for Tiers 0-10 (PROFIT oracle, CANARY, solvency, health factor, liquidation, monotonicity, math, variable transitions, exchange rate, fees, doomsday) organized by financial impact priority, with architectural prefixes, attack scenarios, protocol-type templates, cross-protocol templates (locked funds, delegatecall safety, selfdestruct protection), economic oracle integration, expanded economic oracles (flash loan profitability, sandwich resistance), taint-informed property prioritization (density modulation by taint classification: HIGH_TAINT min 4/function, MEDIUM min 2, LOW canary-only, NO skip), privilege escalation negative tests (PRIV-NEG tier), share inflation / first-depositor attack detection (PATTERN 25), math library round-trip inflation (PATTERN 26), and deposit-withdraw sandwich resistance (PATTERN 23-CROSS-D).",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -284,7 +284,7 @@
       "name": "Phase 1B: Low-Priority Tiers + Free-Form Discovery",
       "type": "task",
       "description": "Generate properties for Tiers 11-15 and perform free-form discovery pass with fresh context. Reads Phase 1A output to avoid duplicates and fill gaps.",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-1b-v3.4.md. Run exclusively the properties-phase-1b agent using the Task tool. This phase will generate properties for Tiers 11-15 (state transition, valid state, peripheral, dust, bitmap) and perform a free-form line-by-line review of top contracts to catch protocol-specific edge cases. It reads Phase 1A's output to avoid duplicates.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-v4-phase-1b.md. Run exclusively the properties-phase-1b agent using the Task tool. This phase will generate properties for Tiers 11-15 (state transition, valid state, peripheral, dust, bitmap) and perform a free-form line-by-line review of top contracts to catch protocol-specific edge cases. It reads Phase 1A's output to avoid duplicates.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -322,7 +322,7 @@
       "name": "Phase 2: Review, Ghost Classification, Stale-Op Analysis, and FP Applicability Patterns",
       "type": "task",
       "description": "Review properties, classify ghost infrastructure, flag STALE_OP_RISK, apply AP-10/11/12 FP patterns, filter invalid properties",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-2-v4.md. Run exclusively the properties-phase-2 agent using the Task tool. This phase will review and filter properties (including Tier 0 PROFIT), classify all target functions by ghost modifier category, flag stale-operation risks, apply AP-10 (stale/live mismatch), AP-11 (compound op ghost invalidation), AP-12 (rounding direction conflict) FP detection, compute fuzzer appeal scores (5-point difficulty rating with NEEDS_SHORTCUT_HANDLER flagging), and create the refined properties list with an INFRASTRUCTURE STATUS header and APPEAL SCORE DISTRIBUTION.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-v4-phase-2.md. Run exclusively the properties-phase-2 agent using the Task tool. This phase will review and filter properties (including Tier 0 PROFIT), classify all target functions by ghost modifier category, flag stale-operation risks, apply AP-10 (stale/live mismatch), AP-11 (compound op ghost invalidation), AP-12 (rounding direction conflict) FP detection, compute fuzzer appeal scores (5-point difficulty rating with NEEDS_SHORTCUT_HANDLER flagging), and create the refined properties list with an INFRASTRUCTURE STATUS header and APPEAL SCORE DISTRIBUTION.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -436,7 +436,7 @@
       "name": "Phase 3A: Wiring + Infrastructure + ProfitTracker + Handler Templates + SIMPLE/CANARY Implementation + v4 Guards",
       "type": "task",
       "description": "Fix Setup.sol wiring (Step -1), ghost infrastructure (Step 0), delegation-aware ProfitTracker ghost contract (Step 0F), protocol-aware handler templates (Step 0G), implement SIMPLE + CANARY properties with v4 mandatory guards (actor consistency, address(0), tolerance justification, delegation tracking, stale-live consistency). Verifies compilation before Phase 3B.",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-3a-v4.md. Run exclusively the properties-phase-3a agent using the Task tool. This phase will first fix Setup.sol wiring (constructor params, proxy implementations, modifier selection, funding, protocol config), then fix ghost infrastructure (updateGhosts on target functions, reset fix for Category B), implement delegation-aware ProfitTracker ghost contract (ProtocolSnapshot struct, cumulative sequence tracking, PROFIT-04/05 properties, onBehalfOf/delegation-aware tracking), generate protocol-aware handler templates (ERC20/VAULT/AMM/LENDING/STAKING attack-pattern handlers), implement PROFIT oracle infrastructure (_initialBalances tracking), implement all SIMPLE properties (PROFIT, SOL, MON, MATH, ER, VS) and CANARY properties, apply v4 mandatory rules (ACTOR_GHOST_GUARD, ADDRESS_ZERO_GUARD, TOLERANCE_JUSTIFICATION, DELEGATION_TRACKING, STALE_LIVE_CONSISTENCY), then run forge build and forge test to verify compilation and setUp().",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-v4-phase-3a.md. Run exclusively the properties-phase-3a agent using the Task tool. This phase will first fix Setup.sol wiring (constructor params, proxy implementations, modifier selection, funding, protocol config), then fix ghost infrastructure (updateGhosts on target functions, reset fix for Category B), implement delegation-aware ProfitTracker ghost contract (ProtocolSnapshot struct, cumulative sequence tracking, PROFIT-04/05 properties, onBehalfOf/delegation-aware tracking), generate protocol-aware handler templates (ERC20/VAULT/AMM/LENDING/STAKING attack-pattern handlers), implement PROFIT oracle infrastructure (_initialBalances tracking), implement all SIMPLE properties (PROFIT, SOL, MON, MATH, ER, VS) and CANARY properties, apply v4 mandatory rules (ACTOR_GHOST_GUARD, ADDRESS_ZERO_GUARD, TOLERANCE_JUSTIFICATION, DELEGATION_TRACKING, STALE_LIVE_CONSISTENCY), then run forge build and forge test to verify compilation and setUp().",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -498,7 +498,7 @@
       "name": "Phase 3B: INLINE + NEGATIVE + DOOM Implementation",
       "type": "task",
       "description": "Implement INLINE, NEGATIVE, and DOOMSDAY properties building on Phase 3A's verified infrastructure.",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-3b-v3.4.md. Run exclusively the properties-phase-3b agent using the Task tool. This phase will implement INLINE properties (VT, FEE, ST, PERIPH), NEGATIVE properties (HF, LIQ, VT-NEG, PRIV-NEG privilege escalation tests), and DOOMSDAY properties (DOOM) using the verified infrastructure from Phase 3A.",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-v4-phase-3b.md. Run exclusively the properties-phase-3b agent using the Task tool. This phase will implement INLINE properties (VT, FEE, ST, PERIPH), NEGATIVE properties (HF, LIQ, VT-NEG, PRIV-NEG privilege escalation tests), and DOOMSDAY properties (DOOM) using the verified infrastructure from Phase 3A.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -519,7 +519,7 @@
           "operator": "eq",
           "value": 0,
           "action": "CONTINUE",
-          "NOTE": "Full property suite compiles. Continue to smoke test."
+          "NOTE": "Full property suite compiles. Continue to Foundry-only property validation."
         },
         {
           "operator": "neq",
@@ -530,6 +530,31 @@
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
+    },
+    {
+      "name": "Run Foundry-Only Properties (DOOM + vm.load)",
+      "type": "decision",
+      "description": "Run DOOM-*, CROSS-G, and other vm.snapshot/vm.revertTo/vm.load properties via forge test. These cannot run in Echidna/Medusa — Foundry is the only runner.",
+      "mode": "SHELL",
+      "modeInfo": {
+        "command": "forge test --match-contract CryticToFoundry --match-test property_ -v 2>&1 | tee magic/foundry-properties-output.log; exit ${PIPESTATUS[0]}"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE",
+          "NOTE": "All Foundry-only properties pass. Results logged to magic/foundry-properties-output.log. Continue to smoke test."
+        },
+        {
+          "operator": "neq",
+          "value": 0,
+          "action": "CONTINUE_WITH_WARNING",
+          "NOTE": "Some Foundry-only properties FAILED. Check magic/foundry-properties-output.log for [FAIL] entries. These may indicate real liveness bugs (DOOM violations) or false positives — review before declaring the suite clean."
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
     },
     {
       "name": "Smoke Test: Validate Properties Against Fuzzer",

@@ -1,5 +1,5 @@
 ---
-description: "Phase 3A of the Efficient Properties Workflow v4.0. Builds on v3.9 with mandatory v4 guards (ACTOR_GHOST_GUARD, ADDRESS_ZERO_GUARD, TOLERANCE_JUSTIFICATION, DELEGATION_TRACKING, STALE_LIVE_CONSISTENCY, MSG_SIG_WRAPPER_AUDIT) and delegation-aware ProfitTracker. Fixes Setup.sol wiring (Step -1), ghost infrastructure (Step 0), ProfitTracker ghost contract (Step 0F), protocol-aware handler templates (Step 0G), Step 0H admin validation negative tests, core-read-fail rule, deeper ghost variable guidance, and implements PROFIT + SIMPLE + CANARY properties. Runs forge build to verify compilation before Phase 3B."
+description: "Phase 3A of the Efficient Properties Workflow v4.2. Builds on v4.1 with flash loan attacker handler (Step 0L), reentrant callback mock (Step 0M), FoundryProperties.sol split (Step 0N), fee volume conservation ghost tracking, and state machine property implementations. Previous: weird token mock deployment (Step 0I), accumulation ghost tracking (Step 0J), token compliance harness (Step 0K), mandatory v4 guards and delegation-aware ProfitTracker. Fixes Setup.sol wiring (Step -1), ghost infrastructure (Step 0), ProfitTracker ghost contract (Step 0F), protocol-aware handler templates (Step 0G), Step 0H admin validation negative tests, core-read-fail rule, deeper ghost variable guidance, and implements PROFIT + SIMPLE + CANARY + WTOK + ACCUM + COMPLY + STATE_MACHINE + FEE_VOL properties. Runs forge build to verify compilation before Phase 3B."
 mode: subagent
 temperature: 0.1
 ---
@@ -543,6 +543,551 @@ validation, not authorization).
 If the protocol doesn't validate zero-address inputs (setAdmin(0) succeeds), that's
 a REAL BUG — the property correctly catches it.
 
+### 0I: Weird Token Mock Deployment (NEW in v4.1)
+
+**Read `TOKEN_ASSUMPTION` from `magic/contracts-dependency-list.md`.** If `RESTRICTED`, skip this step entirely.
+
+If `TOKEN_ASSUMPTION=OPEN` or `UNSPECIFIED`, and WTOK-* properties are in scope:
+
+**Deploy weird token mocks INSTEAD of standard MockERC20 for the primary protocol token.**
+
+```solidity
+// Mock library for weird token testing — add to test/recon/mocks/
+
+/// @notice ERC20 that takes a percentage fee on every transfer
+contract MockFeeOnTransferERC20 is MockERC20 {
+    uint256 public transferFeeBps; // e.g., 100 = 1%
+
+    constructor(string memory name, string memory symbol, uint8 decimals_, uint256 feeBps)
+        MockERC20(name, symbol, decimals_)
+    {
+        transferFeeBps = feeBps;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        uint256 fee = amount * transferFeeBps / 10000;
+        uint256 netAmount = amount - fee;
+        _burn(msg.sender, fee); // fee is burned (lost)
+        return super.transfer(to, netAmount);
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        uint256 fee = amount * transferFeeBps / 10000;
+        uint256 netAmount = amount - fee;
+        _burn(from, fee); // fee is burned (lost)
+        return super.transferFrom(from, to, netAmount);
+    }
+}
+
+/// @notice ERC20 with adjustable rebase factor — balances scale by factor
+contract MockRebasingERC20 is MockERC20 {
+    uint256 public rebaseFactor = 1e18; // 1.0x
+
+    constructor(string memory name, string memory symbol, uint8 decimals_)
+        MockERC20(name, symbol, decimals_)
+    {}
+
+    function rebase(uint256 newFactor) external {
+        rebaseFactor = newFactor;
+    }
+
+    function balanceOf(address account) public view override returns (uint256) {
+        return super.balanceOf(account) * rebaseFactor / 1e18;
+    }
+
+    function totalSupply() public view override returns (uint256) {
+        return super.totalSupply() * rebaseFactor / 1e18;
+    }
+}
+```
+
+**Deployment rules:**
+1. Deploy the weird token mock INSTEAD of (not alongside) the standard `MockERC20` for the primary asset
+2. All existing properties (SOL, PROFIT, VT) run unchanged — if they fail, that's a REAL finding
+3. For `MockRebasingERC20`, add `rebase(uint256)` as a handler target function in TargetFunctions.sol:
+   ```solidity
+   function rebase_token(uint256 factor) public updateGhosts {
+       factor = factor % 2e18 + 5e17; // clamp to 0.5x-2.5x range
+       MockRebasingERC20(address(token)).rebase(factor);
+   }
+   ```
+4. For `MockFeeOnTransferERC20`, use `feeBps=100` (1%) as default — represents common tax tokens
+5. Only deploy ONE weird token type per fuzzing campaign — don't mix fee-on-transfer with rebasing
+
+**Which weird token to deploy depends on WEIRD_TOKEN_CLASSES from Phase 0:**
+- If `FEE_ON_TRANSFER=APPLICABLE` → deploy `MockFeeOnTransferERC20`
+- If `REBASING=APPLICABLE` → deploy `MockRebasingERC20`
+- If both APPLICABLE → run two separate campaigns (one per mock type)
+- If `LOW_DECIMALS=APPLICABLE` → deploy standard `MockERC20` with `decimals=2` or `decimals=6`
+
+### 0J: Accumulation Ghost Tracking (NEW in v4.1)
+
+**Read `PRECISION_ACCUMULATION` from `magic/economic-oracles.md`.** If `NOT_APPLICABLE`, skip.
+
+If ACCUM-* properties are in scope, add ghost variables to `BeforeAfter.sol`:
+
+```solidity
+// Accumulation tracking for ACCUM-* (Tier 17) properties
+uint256 internal _totalOps;                              // total operations in this sequence
+mapping(address => uint256) internal _accumulatedOps;    // per-actor operation count
+mapping(address => int256) internal _actorNetDeposit;    // per-actor cumulative deposit - withdraw
+uint256 internal _previousSolvencyGap;                   // last observed gap between balance and accounting
+
+// MAX_DUST_PER_OP: Derived from token decimals and rounding operations
+// For 18-decimal tokens with 1 roundDown per deposit/withdraw: 1 wei
+// For 6-decimal tokens with 1 roundDown: 1 (1 micro-unit)
+// For protocols with N rounding ops per call: N
+uint256 constant MAX_DUST_PER_OP = 1; // MUST be justified per AP-20
+uint256 constant MAX_DRIFT_PER_100_OPS = 100; // = 100 * MAX_DUST_PER_OP
+```
+
+**Update `__after()` in BeforeAfter.sol:**
+```solidity
+// In __after(), increment counters
+_totalOps++;
+_accumulatedOps[_getActor()]++;
+
+// Track net deposits per actor (update in target function handlers, not here)
+// _actorNetDeposit is updated in target functions:
+//   deposit handler: _actorNetDeposit[actor] += int256(amount);
+//   withdraw handler: _actorNetDeposit[actor] -= int256(amount);
+```
+
+**Update target function handlers** to track net deposits:
+```solidity
+function vault_deposit(uint256 amount) public trackOp(DEPOSIT) {
+    // ... existing clamping and call ...
+    _actorNetDeposit[_getActor()] += int256(amount);
+    _totalVolumeProcessed += amount; // Fee volume conservation (PATTERN 29)
+}
+
+function vault_withdraw(uint256 amount) public trackOp(WITHDRAW) {
+    // ... existing clamping and call ...
+    _actorNetDeposit[_getActor()] -= int256(amount);
+    _totalVolumeProcessed += amount; // Fee volume conservation (PATTERN 29)
+}
+```
+
+**Fee volume conservation ghost tracking (NEW in v4.2 — PATTERN 29):**
+
+If the protocol has a fee mechanism (detected by Phase 0 Step 6 `FEE_EXTRACTION=APPLICABLE` or any `feeRate`/`protocolFee` pattern), add:
+
+```solidity
+// Fee volume conservation tracking
+uint256 internal _totalVolumeProcessed;  // cumulative sum of all deposit/withdraw/swap/borrow amounts
+uint256 internal _totalFeesCollected;    // cumulative sum of all fees taken by protocol
+
+// Update _totalVolumeProcessed in each target function handler:
+// deposit: _totalVolumeProcessed += amount;
+// withdraw: _totalVolumeProcessed += amount;
+// swap: _totalVolumeProcessed += amountIn;
+// borrow: _totalVolumeProcessed += amount;
+
+// Update _totalFeesCollected in __after():
+// Option A (if protocol exposes cumulative fee counter):
+//   _totalFeesCollected = protocol.totalFeesCollected();
+// Option B (if protocol has fee recipient):
+//   _totalFeesCollected = IERC20(asset).balanceOf(feeRecipient) - _initialFeeRecipientBalance;
+// Option C (compute from fee rate):
+//   Track in handler: _totalFeesCollected += amount * feeRate / BPS;
+```
+
+**Fee volume property implementation:**
+```solidity
+function property_FEE_VOL_01_feesNeverExceedVolume() public {
+    if (_totalVolumeProcessed == 0) return; // no operations yet
+    lte(_totalFeesCollected, _totalVolumeProcessed,
+        "FEE-VOL-01: fees exceed total volume — fee calculation bug");
+}
+```
+
+### 0K: Token Compliance Harness (NEW in v4.1)
+
+**Read `ISSUES_TOKENS` from `magic/contracts-dependency-list.md`.** If `false` or no overrides, skip.
+
+If COMPLY-* properties (PATTERN 23-ERC20-E through H) are in scope:
+
+**Implementation rules:**
+1. COMPLY-* properties test the protocol's OWN token contract — not external tokens
+2. Properties are always SIMPLE or NEGATIVE type
+3. Use the actual token contract variable from Setup.sol (e.g., `shareToken`, `aToken`, `lpToken`)
+4. Skip entirely if the token inherits unmodified OpenZeppelin ERC20 with NO overrides on transfer/approve/transferFrom
+
+```solidity
+// Token compliance properties — test protocol's own ERC20
+
+function property_COMPLY_01_selfTransferPreservesBalance(uint256 amount) public {
+    address actor = _getActor();
+    if (address(protocolToken) == address(0)) return;
+    uint256 actorBal = protocolToken.balanceOf(actor);
+    if (actorBal == 0) return;
+    amount = amount % (actorBal + 1);
+    if (amount == 0) return;
+
+    uint256 before = protocolToken.balanceOf(actor);
+    vm.prank(actor);
+    protocolToken.transfer(actor, amount);
+    uint256 afterBal = protocolToken.balanceOf(actor);
+    eq(afterBal, before, "COMPLY-01: self-transfer changed balance");
+}
+
+function property_COMPLY_02_approveOverwrites(uint256 amount1, uint256 amount2) public {
+    address actor = _getActor();
+    address spender = address(this);
+    if (address(protocolToken) == address(0)) return;
+
+    vm.startPrank(actor);
+    protocolToken.approve(spender, amount1);
+    protocolToken.approve(spender, amount2);
+    vm.stopPrank();
+    eq(protocolToken.allowance(actor, spender), amount2,
+       "COMPLY-02: approve is additive, not overwrite");
+}
+
+function property_COMPLY_03_zeroTransferSucceeds() public {
+    address actor = _getActor();
+    address other = address(0x10001); // any non-zero address
+    if (address(protocolToken) == address(0)) return;
+
+    vm.prank(actor);
+    try protocolToken.transfer(other, 0) {
+        // success — zero transfer works
+    } catch {
+        t(false, "COMPLY-03: zero transfer reverted — breaks composability");
+    }
+}
+
+function property_COMPLY_04_maxApprovalPersists(uint256 amount) public {
+    address actor = _getActor();
+    address spender = address(this);
+    if (address(protocolToken) == address(0)) return;
+    uint256 actorBal = protocolToken.balanceOf(actor);
+    if (actorBal == 0) return;
+    amount = amount % (actorBal + 1);
+    if (amount == 0) return;
+
+    vm.prank(actor);
+    protocolToken.approve(spender, type(uint256).max);
+
+    protocolToken.transferFrom(actor, address(this), amount);
+    eq(protocolToken.allowance(actor, spender), type(uint256).max,
+       "COMPLY-04: max allowance decreased after transferFrom");
+}
+```
+
+**Replace `protocolToken` with the actual protocol token variable from Setup.sol** (e.g., `shareToken`, `vault` if it's ERC20, `lpToken`, etc.).
+
+### 0L: Flash Loan Attacker Handler (NEW in v4.2)
+
+**Read `FLASH_LOAN_ARBITRAGE` from `magic/economic-oracles.md`.** If `NOT_APPLICABLE`, skip this step entirely.
+
+Only deploy when `FLASH_LOAN_ARBITRAGE=APPLICABLE` — gives the fuzzer access to large temporary capital to explore flash-loan-amplified attack sequences.
+
+**MockFlashBank contract** — add to `test/recon/mocks/MockFlashBank.sol`:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import {IERC20} from "forge-std/interfaces/IERC20.sol";
+
+interface IFlashBorrower {
+    function onFlashLoan(
+        address initiator,
+        address token,
+        uint256 amount,
+        uint256 fee,
+        bytes calldata data
+    ) external returns (bytes32);
+}
+
+/// @notice Unlimited flash lender — gives fuzzer access to large temporary capital
+contract MockFlashBank {
+    function flashLoan(
+        address receiver,
+        address token,
+        uint256 amount,
+        bytes calldata data
+    ) external {
+        uint256 balBefore = IERC20(token).balanceOf(address(this));
+        // Transfer tokens to receiver (flash bank must be pre-funded)
+        IERC20(token).transfer(receiver, amount);
+        // Execute callback
+        IFlashBorrower(receiver).onFlashLoan(msg.sender, token, amount, 0, data);
+        // Verify repayment
+        uint256 balAfter = IERC20(token).balanceOf(address(this));
+        require(balAfter >= balBefore, "flash loan not repaid");
+    }
+}
+```
+
+**Handler target function** — add to TargetFunctions.sol or a new handler file:
+
+```solidity
+/// @notice Flash loan attack sequence — borrow big, interact, repay
+function handler_flashLoan_attack(uint256 amount, uint256 actionSeed) public updateGhosts {
+    if (address(flashBank) == address(0)) return;
+    amount = amount % 1_000_000_000e18 + 1; // 1 wei to 1B tokens
+    address token = _getAsset();
+
+    // Check flash bank has enough
+    uint256 available = IERC20(token).balanceOf(address(flashBank));
+    if (available < amount) amount = available;
+    if (amount == 0) return;
+
+    // Execute flash loan — CryticTester implements onFlashLoan callback
+    try flashBank.flashLoan(address(this), token, amount, abi.encode(actionSeed)) {
+        // PROFIT properties will catch any value extraction
+    } catch {
+        // Flash loan failed (e.g., couldn't repay) — acceptable
+    }
+}
+```
+
+**onFlashLoan callback** — implement in CryticTester (or the test contract that inherits TargetFunctions):
+
+```solidity
+function onFlashLoan(
+    address initiator,
+    address token,
+    uint256 amount,
+    uint256 fee,
+    bytes calldata data
+) external returns (bytes32) {
+    uint256 actionSeed = abi.decode(data, (uint256));
+    // Use actionSeed to pick which protocol function to call with the borrowed funds
+    _executeFlashAction(token, amount, actionSeed);
+    // Repay
+    IERC20(token).transfer(msg.sender, amount + fee);
+    return keccak256("ERC3156FlashBorrower.onFlashLoan");
+}
+
+/// @notice Route flash-loaned funds through protocol functions based on seed
+function _executeFlashAction(address token, uint256 amount, uint256 actionSeed) internal {
+    // Simple routing: use actionSeed to select a protocol interaction
+    // Customize based on protocol's API
+    uint256 action = actionSeed % 3;
+    if (action == 0) {
+        // Deposit borrowed funds
+        IERC20(token).approve(address(protocol), amount);
+        try protocol.deposit(amount) {} catch {}
+    } else if (action == 1) {
+        // Swap borrowed funds (if AMM)
+        IERC20(token).approve(address(protocol), amount);
+        try protocol.swap(token, amount, 0) {} catch {}
+    } else {
+        // Direct transfer to protocol (donation attack)
+        IERC20(token).transfer(address(protocol), amount);
+    }
+}
+```
+
+**Deployment in Setup.sol:**
+```solidity
+flashBank = new MockFlashBank();
+// Fund flash bank with large amounts of each token
+address[] memory assets = _getAssets();
+for (uint i; i < assets.length; i++) {
+    MockERC20(assets[i]).mint(address(flashBank), 1_000_000_000e18);
+}
+```
+
+**Key rules:**
+1. Flash loan handler MUST be paired with PROFIT-01 property — the PROFIT oracle catches extraction, the handler provides capital
+2. `_executeFlashAction` should be customized per protocol — add cases for the protocol's actual functions
+3. The handler uses `try/catch` throughout to avoid reverting — reverts waste fuzzer cycles
+4. Flash bank is pre-funded with `mint()`, not `deal()`, to avoid interference with balance tracking
+
+### 0M: Reentrant Callback Mock (NEW in v4.2)
+
+**Skip if protocol has NO external calls followed by state updates** (check Phase 0 Step 4a for reentrancy vectors). Only deploy when `MULTI_ACTOR=true` with identified reentrancy vectors.
+
+**MockReentrantReceiver contract** — add to `test/recon/mocks/MockReentrantReceiver.sol`:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+/// @notice Token/ETH receiver that reenters the protocol on receive
+contract MockReentrantReceiver {
+    address public target;
+    bytes public reentrantCalldata;
+    bool public shouldReenter;
+
+    function setReentryTarget(address _target, bytes calldata _calldata) external {
+        target = _target;
+        reentrantCalldata = _calldata;
+        shouldReenter = true;
+    }
+
+    function disableReentry() external {
+        shouldReenter = false;
+    }
+
+    // ERC721 callback — reenters on NFT receive
+    function onERC721Received(address, address, uint256, bytes calldata)
+        external returns (bytes4)
+    {
+        _tryReenter();
+        return this.onERC721Received.selector;
+    }
+
+    // ETH receive — reenters on ETH transfer
+    receive() external payable {
+        _tryReenter();
+    }
+
+    // ERC1155 callback
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
+        external returns (bytes4)
+    {
+        _tryReenter();
+        return this.onERC1155Received.selector;
+    }
+
+    // Fallback for any other callback
+    fallback() external payable {
+        _tryReenter();
+    }
+
+    function _tryReenter() internal {
+        if (shouldReenter && target != address(0)) {
+            shouldReenter = false; // prevent infinite loop — single reentry only
+            (bool success,) = target.call(reentrantCalldata);
+            // success/failure doesn't matter — the property checks state consistency
+            // Silence unused variable warning
+            success;
+        }
+    }
+}
+```
+
+**Handler target function:**
+```solidity
+/// @notice Set up reentrant callback then trigger it via protocol interaction
+function handler_reentrant_setup(uint256 functionSelector, uint256 amount) public updateGhosts {
+    if (address(reentrantReceiver) == address(0)) return;
+    if (address(protocol) == address(0)) return;
+
+    // Pick which function to reenter with based on functionSelector
+    bytes memory calldata_ = _buildReentrantCalldata(functionSelector, amount);
+    reentrantReceiver.setReentryTarget(address(protocol), calldata_);
+
+    // Now the next protocol call that sends ETH/tokens to reentrantReceiver
+    // will trigger reentry — PROFIT/SOL/MON properties catch any state corruption
+}
+
+/// @notice Build calldata for reentrant callback based on seed
+function _buildReentrantCalldata(uint256 seed, uint256 amount) internal view returns (bytes memory) {
+    // Customize based on protocol's API
+    uint256 action = seed % 3;
+    if (action == 0) {
+        return abi.encodeWithSignature("deposit(uint256)", amount);
+    } else if (action == 1) {
+        return abi.encodeWithSignature("withdraw(uint256)", amount);
+    } else {
+        return abi.encodeWithSignature("transfer(address,uint256)", address(this), amount);
+    }
+}
+```
+
+**Deployment in Setup.sol:**
+```solidity
+reentrantReceiver = new MockReentrantReceiver();
+// Register reentrantReceiver as an actor (replace actor[2] or add as actor[3])
+// When the protocol sends tokens/ETH to this actor, it automatically reenters
+```
+
+**Key rules:**
+1. `shouldReenter = false` after first reentry prevents infinite loops — only tests single-depth reentry
+2. Reentrant receiver should be registered as a fuzzing actor so the protocol naturally sends to it
+3. Existing PROFIT/SOL/MON properties catch any state corruption from reentry — no new property functions needed
+4. The handler_reentrant_setup arms the receiver, but the actual reentry happens when the protocol interacts with the receiver actor
+5. For protocols that use `ReentrancyGuard`, the reentrant call will revert (expected) — the property system catches cases where the guard is MISSING
+
+---
+
+### 0N: FoundryProperties.sol Split (NEW in v4.2)
+
+**Always run this step.** Creates `FoundryProperties.sol` so that Foundry-only properties (using `vm.snapshot`, `vm.revertTo`, `vm.load`) are separated from Echidna-compatible properties in `Properties.sol`.
+
+**Why this matters:** Echidna and Medusa crash on Foundry cheatcodes (`vm.snapshot`, `vm.revertTo`, `vm.load`). Without the split, DOOM-* and CROSS-G properties cannot coexist with Echidna testing. The split gives each runner the properties it can handle:
+
+| File | Runner | Properties |
+|------|--------|-----------|
+| `Properties.sol` | Echidna + Foundry | SOL, MON, MATH, VT, FEE, ST, PRIV, CANARY, CROSS-E/F, ACCUM-01/02, FEE-VOL |
+| `FoundryProperties.sol` | Foundry only | DOOM-*, CROSS-G, LIQ-04/05, ACCUM-03 |
+
+**Step 1: Create `test/recon/FoundryProperties.sol`**
+
+Check if it already exists. If not, create it:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import {Properties} from "./Properties.sol";
+import {Test} from "forge-std/Test.sol";
+
+/// @notice Foundry-only properties: DOOM (vm.snapshot/vm.revertTo), CROSS-G (vm.load)
+/// @dev Inherited ONLY by CryticToFoundry — never by CryticTester (Echidna incompatible)
+/// @dev Phase 3B appends DOOM-* properties here. Phase 3A writes CROSS-G here if applicable.
+abstract contract FoundryProperties is Properties, Test {
+
+}
+```
+
+**Step 2: Update `CryticToFoundry.sol` inheritance**
+
+Add the import and change `CryticToFoundry` to inherit `FoundryProperties` instead of `Properties` directly:
+
+```solidity
+// BEFORE (or equivalent):
+import {Properties} from "./Properties.sol";
+contract CryticToFoundry is Test, Properties, TargetFunctions, FoundryAsserts { ... }
+
+// AFTER:
+import {FoundryProperties} from "./FoundryProperties.sol";
+contract CryticToFoundry is Test, FoundryProperties, TargetFunctions, FoundryAsserts { ... }
+```
+
+**IMPORTANT:** Remove the direct `Properties` import from CryticToFoundry — `FoundryProperties` already imports it.
+
+**CryticTester stays UNCHANGED** — it inherits `Properties` only:
+
+```solidity
+// CryticTester.sol — no change
+contract CryticTester is Properties, TargetFunctions, CryticAsserts { ... }
+```
+
+**Step 3: Move any existing vm.snapshot / vm.load calls**
+
+If `Properties.sol` already contains functions with `vm.snapshot()`, `vm.revertTo()`, or `vm.load()`:
+1. Move those functions to `FoundryProperties.sol`
+2. Delete them from `Properties.sol`
+3. Run `forge build` to verify no compilation errors
+
+**Step 4: Write CROSS-G here (if `USES_UPGRADEABLE_PROXY=true`)**
+
+If Phase 0 detected `USES_UPGRADEABLE_PROXY=true`, write the CROSS-G storage slot stability property directly into `FoundryProperties.sol` (it uses `vm.load`):
+
+```solidity
+// In FoundryProperties.sol — FOUNDRY ONLY (vm.load)
+function property_CROSS_G_01_implSlotUnchanged() public {
+    bytes32 IMPL_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+    address impl = address(uint160(uint256(vm.load(address(proxy), IMPL_SLOT))));
+    t(impl == address(expectedImplementation),
+        "CROSS-G-01: implementation slot changed unexpectedly");
+}
+```
+
+**Key rules:**
+1. `FoundryProperties.sol` MUST import `Properties` (not re-declare all parents)
+2. `FoundryProperties.sol` MUST import `forge-std/Test.sol` for `vm` cheatcodes
+3. `CryticToFoundry` inherits `FoundryProperties` → gets both `Properties` and `Test` transitively
+4. Phase 3B will place all DOOM-* properties in `FoundryProperties.sol` (routing table in Phase 3B)
+5. Update `magic/coded-properties.md` to note the file each property was written to
+
 ---
 
 ## Rules to Implement All Properties
@@ -609,7 +1154,7 @@ The testing suite provides actor/asset management:
 
 ---
 
-## Phase 3A Scope: PROFIT + CANARY + SIMPLE Properties Only
+## Phase 3A Scope: PROFIT + CANARY + SIMPLE + WTOK + ACCUM + COMPLY + STATE_MACHINE + FEE_VOL Properties
 
 This phase implements the following property types:
 
@@ -721,6 +1266,167 @@ function property_HUB_VS_01_drawnIndexGteRay() public {
     gte(drawnIndex, 1e27, "HUB-VS-01: drawnIndex must be >= RAY (1e27)");
 }
 ```
+
+### WTOK-* (TIER 16: Weird Token Integration — SIMPLE)
+WTOK properties re-use existing SOL/PROFIT properties — the "property" is the mock token deployment.
+No new property functions are needed; existing properties should break when weird tokens expose bugs.
+See Step 0I for mock deployment instructions.
+
+### ACCUM-* (TIER 17: Precision Accumulation — SIMPLE/NEGATIVE)
+```solidity
+// ACCUM-01: Per-actor precision drift bounded
+function property_ACCUM_01_precisionDriftBounded() public {
+    address actor = _getActor();
+    if (_accumulatedOps[actor] == 0) return; // no ops, no drift
+    if (_actorNetDeposit[actor] <= 0) return; // net withdrawer, skip
+
+    uint256 expectedBalance = uint256(_actorNetDeposit[actor]);
+    uint256 actualBalance = IERC20(asset).balanceOf(actor);
+    if (expectedBalance > actualBalance) {
+        uint256 drift = expectedBalance - actualBalance;
+        uint256 allowedDrift = _accumulatedOps[actor] * MAX_DUST_PER_OP;
+        lte(drift, allowedDrift, "ACCUM-01: precision drift exceeds bounded accumulation");
+    }
+}
+
+// ACCUM-02: Solvency gap does not grow unboundedly
+function property_ACCUM_02_solvencyGapBounded() public {
+    if (address(protocol) == address(0)) return;
+    if (_totalOps < 100) return; // need enough ops for meaningful signal
+
+    uint256 realBalance = IERC20(asset).balanceOf(address(protocol));
+    uint256 accounting = protocol.totalAssets();
+    uint256 gap = realBalance > accounting
+        ? realBalance - accounting
+        : accounting - realBalance;
+
+    lte(gap, _previousSolvencyGap + MAX_DRIFT_PER_100_OPS,
+        "ACCUM-02: solvency gap growing unboundedly");
+    _previousSolvencyGap = gap;
+}
+
+// ACCUM-03: Non-zero deposit must mint non-zero shares
+function property_ACCUM_03_noZeroShareMint(uint256 amount) public {
+    if (address(vault) == address(0)) return;
+    address actor = _getActor();
+    uint256 actorBal = IERC20(asset).balanceOf(actor);
+    if (actorBal == 0) return;
+    amount = amount % (actorBal + 1);
+    if (amount == 0) return;
+
+    uint256 sharesBefore = vault.balanceOf(actor);
+    vm.prank(actor);
+    IERC20(asset).approve(address(vault), amount);
+    vm.prank(actor);
+    try vault.deposit(amount, actor) {
+        uint256 sharesAfter = vault.balanceOf(actor);
+        gt(sharesAfter, sharesBefore, "ACCUM-03: deposit minted 0 shares — silent value loss");
+    } catch {
+        // Revert is acceptable — protocol rejects too-small deposits
+    }
+}
+```
+
+### COMPLY-* (TIER 12 Extension: Token Compliance — SIMPLE/NEGATIVE)
+See Step 0K for full implementation templates. Replace `protocolToken` with actual token variable.
+
+### CROSS-E/F/G (State Machine Properties — NEGATIVE/SIMPLE) (NEW in v4.2)
+
+**Check `State Machine Patterns` from `magic/contracts-dependency-list.md`.** Skip if all three are false.
+
+```solidity
+// CROSS-E-01: Re-initialization blocked (if HAS_INITIALIZER=true)
+function property_CROSS_E_01_initializeRevertsWhenInitialized() public {
+    if (address(protocol) == address(0)) return;
+    // Protocol should already be initialized from setUp()
+    // Use the same initialize params from Setup.sol
+    try protocol.initialize(/* setUp params */) {
+        t(false, "CROSS-E-01: initialize() succeeded on already-initialized contract");
+    } catch {
+        // expected — re-initialization blocked
+    }
+}
+
+// CROSS-F: Pause-freeze invariant (if HAS_PAUSE=true)
+function property_CROSS_F_pauseFreezeInvariant() public {
+    if (address(protocol) == address(0)) return;
+    try protocol.paused() returns (bool isPaused) {
+        if (!isPaused) return; // only check while paused
+        // Critical state should not change while paused
+        eq(_after.totalAssets, _before.totalAssets,
+           "CROSS-F: totalAssets changed while paused");
+        eq(_after.totalSupply, _before.totalSupply,
+           "CROSS-F: totalSupply changed while paused");
+    } catch {
+        return; // paused() not available
+    }
+}
+
+// CROSS-G: Storage slot stability (if USES_UPGRADEABLE_PROXY=true)
+// ⚠️ FOUNDRY ONLY: vm.load is a Foundry cheatcode. Implement ONLY in CryticToFoundry,
+// NOT in CryticTester (Echidna/Medusa will fail to compile/run this property).
+// Wrap with `#ifdef FOUNDRY` or move to a separate FoundryProperties.sol if needed.
+function property_CROSS_G_storageSlotStability() public {
+    if (address(proxy) == address(0)) return;
+
+    // EIP-1967 implementation slot
+    bytes32 IMPL_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+    bytes32 implSlotValue = vm.load(address(proxy), IMPL_SLOT);
+    address currentImpl = address(uint160(uint256(implSlotValue)));
+    t(currentImpl != address(0), "CROSS-G: implementation slot zeroed — bricked proxy");
+    eq(currentImpl, address(expectedImplementation),
+       "CROSS-G: implementation slot changed unexpectedly");
+
+    // EIP-1967 admin slot
+    bytes32 ADMIN_SLOT = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
+    bytes32 adminSlotValue = vm.load(address(proxy), ADMIN_SLOT);
+    address currentAdmin = address(uint160(uint256(adminSlotValue)));
+    t(currentAdmin != address(0), "CROSS-G: admin slot zeroed — unrecoverable proxy");
+}
+```
+
+**Replace `protocol`, `proxy`, `expectedImplementation` with actual contract variables from Setup.sol.** Adapt the initialize params to match your protocol's constructor/initializer.
+
+**CROSS-E adaptation note:** Replace `protocol.initialize(/* setUp params */)` with the EXACT same call used in `setUp()`. The function signature and parameter types must match precisely — do not guess.
+
+**CROSS-F adaptation note:** Replace `_after.totalAssets`, `_before.totalAssets`, `_after.totalSupply`, `_before.totalSupply` with the ACTUAL ghost variable names from your BeforeAfter.sol `Vars` struct. Use the variables that track the protocol's most critical accounting state (e.g., `_after.vaultTotalAssets`, `_after.poolTotalShares`). If these ghost variables don't exist, add them in Step 0E first.
+
+### FEE-VOL-* (TIER 9C: Fee Volume Conservation — SIMPLE) (NEW in v4.2)
+See Step 0J fee volume section for ghost variable setup. The property itself is straightforward:
+```solidity
+function property_FEE_VOL_01_feesNeverExceedVolume() public {
+    if (_totalVolumeProcessed == 0) return; // no operations yet
+    lte(_totalFeesCollected, _totalVolumeProcessed,
+        "FEE-VOL-01: fees exceed total volume — fee calculation bug");
+}
+```
+**Skip entirely** if the protocol has no fee mechanism.
+
+### PRIV-AUTH-* (Auth Sweep — NEGATIVE) (NEW in v4.2)
+
+For each function in the Access Control Inventory (Phase 0 Step 4h) marked `In PRIV-NEG? = NO`:
+
+```solidity
+// Template: adapt per function
+function property_PRIV_AUTH_XX_functionName_rejectsUnauthorized() public {
+    address actor = _getActor();
+    if (address(protocol) == address(0)) return;
+    // Skip if actor already has the required role
+    if (actor == protocol.owner()) return;
+    // Add checks for ALL relevant roles:
+    // if (actor == protocol.admin()) return;
+    // if (protocol.hasRole(REQUIRED_ROLE, actor)) return;
+
+    vm.prank(actor);
+    try protocol.functionName(/* args */) {
+        t(false, "PRIV-AUTH-XX: unauthorized functionName succeeded");
+    } catch {
+        // expected — access control works
+    }
+}
+```
+
+**Replace `protocol.functionName` and role checks with actual contract API.** Generate one property per access-controlled function not in PRIV-NEG.
 
 ### Reading State Through Proxies
 
@@ -925,18 +1631,20 @@ function canary_CANARY_01_reachedLiquidation() public { ... }
    - `* 1e27` in tolerance calculations (excessive tolerance)
    - Any hardcoded large numbers not from protocol constants
 7. **CRITICAL: Verify Properties wiring in CryticTester and CryticToFoundry.**
-   Both contracts MUST inherit `Properties` so that echidna/medusa can see the property functions.
-   Check that the inheritance chain includes `Properties` before `TargetFunctions`:
+   After Step 0N, the inheritance chains MUST be:
    ```solidity
-   // CryticTester.sol — MUST have Properties
+   // CryticTester.sol — inherits Properties (Echidna-compatible only)
    contract CryticTester is Properties, TargetFunctions, CryticAsserts { ... }
 
-   // CryticToFoundry.sol — MUST have Properties
-   contract CryticToFoundry is Test, Properties, TargetFunctions, FoundryAsserts { ... }
+   // CryticToFoundry.sol — inherits FoundryProperties (which includes Properties transitively)
+   contract CryticToFoundry is Test, FoundryProperties, TargetFunctions, FoundryAsserts { ... }
    ```
-   If `Properties` is missing from either file, add the import and inheritance.
-   **Order matters:** `Properties` must come BEFORE `TargetFunctions` to satisfy Solidity C3 linearization
-   (both inherit from `BeforeAfter → Setup`, so the base must appear first).
+   If `FoundryProperties` is missing from CryticToFoundry, add the import and update inheritance.
+   **Order matters:** `FoundryProperties` / `Properties` must come BEFORE `TargetFunctions` to satisfy
+   Solidity C3 linearization (both inherit from `BeforeAfter → Setup`, so the base must appear first).
+8. **CRITICAL: Verify Properties.sol has NO Foundry cheatcodes.**
+   Run: `grep -n "vm\.snapshot\|vm\.revertTo\|vm\.load" test/recon/Properties.sol`
+   This MUST return zero results. If any are found, move them to `FoundryProperties.sol`.
 
 **Phase 3A must compile cleanly before Phase 3B starts.** If compilation fails after 3 fix cycles, document blockers and proceed with what compiles.
 

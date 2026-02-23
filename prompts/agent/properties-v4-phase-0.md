@@ -1,5 +1,5 @@
 ---
-description: "Phase 0 of the Efficient Properties Workflow v4.0. Builds on v3.8 with setup liveness validation (contract != address(0) checks, target function revert rate prediction)."
+description: "Phase 0 of the Efficient Properties Workflow v4.2. Builds on v4.1 with state machine & lifecycle detection (Step 4g), access control inventory (Step 4h). Previous: token assumption analysis (Step 4e), protocol-issued token detection (ISSUES_TOKENS), PRECISION_ACCUMULATION economic oracle class."
 mode: subagent
 temperature: 0.1
 ---
@@ -284,6 +284,148 @@ Classification Evidence:
 Confidence: [HIGH (3+ signals) | MEDIUM (2 signals) | LOW (defaulted to OTHER)]
 ```
 
+### 4e: Token Assumption Analysis (NEW in v4.1)
+
+Determine whether the protocol restricts which ERC20 tokens it interacts with, or accepts arbitrary tokens. This drives Tier 16 (Weird Token Integration) in Phase 1A.
+
+**Detection signals for RESTRICTED tokens:**
+- Hardcoded token addresses (`immutable` or `constant`)
+- Admin-only `addToken()` / `setToken()` / `addAsset()` with documented whitelists
+- Docs/comments/NatSpec specifying "only standard ERC20", "no fee-on-transfer", "no rebasing"
+- Factory pattern with curated token list
+- Constructor takes token address as immutable parameter
+
+**Detection signals for OPEN tokens:**
+- `IERC20(token)` where `token` comes from a user-supplied function parameter
+- Permissionless pool/pair creation (Uniswap-style factory anyone can call)
+- No token validation beyond `address != address(0)`
+- Docs state "any ERC20" or make no restriction
+
+**Also detect if the protocol handles weird tokens already:**
+- Uses `balanceBefore/balanceAfter` pattern for transfer amounts (handles fee-on-transfer)
+- Uses SafeERC20 / `safeTransfer` (handles missing return values)
+- Explicitly checks `decimals()` and normalizes
+
+**Output:** Append to PROTOCOL CHARACTERISTICS section:
+
+```markdown
+### Token Assumption Analysis
+TOKEN_ASSUMPTION: [RESTRICTED|OPEN|UNSPECIFIED]
+Evidence:
+- [Signal]: [location in code]
+WEIRD_TOKEN_CLASSES:
+- FEE_ON_TRANSFER: [APPLICABLE|NOT_APPLICABLE|ALREADY_HANDLED]
+- REBASING: [APPLICABLE|NOT_APPLICABLE|ALREADY_HANDLED]
+- MISSING_RETURN: [APPLICABLE|NOT_APPLICABLE|ALREADY_HANDLED]
+- LOW_DECIMALS: [APPLICABLE|NOT_APPLICABLE|ALREADY_HANDLED]
+- HIGH_DECIMALS: [APPLICABLE|NOT_APPLICABLE|ALREADY_HANDLED]
+```
+
+**Classification rules:**
+- `RESTRICTED` → Phase 1A skips Tier 16 entirely (protocol chose its tokens)
+- `OPEN` → Tier 16 is MANDATORY
+- `UNSPECIFIED` → Tier 16 is MANDATORY (absence of restriction = open)
+- `ALREADY_HANDLED` → Protocol explicitly handles that class (e.g., uses `balanceBefore/After` for fee-on-transfer) — skip that specific weird token sub-pattern
+
+### 4f: Protocol-Issued Token Detection (NEW in v4.1)
+
+Determine if the protocol deploys or mints its own ERC20 tokens (share tokens, receipt tokens, debt tokens). This drives COMPLY-* properties (PATTERN 23-ERC20-E through H) in Phase 1A.
+
+**Detection signals:**
+- Contracts inheriting `ERC20`, `ERC20Upgradeable`, or custom ERC20 base
+- Internal `_mint()` / `_burn()` calls
+- Share token tracking (`totalSupply`, `balanceOf`) on protocol-deployed contracts
+- Receipt/debt tokens minted on deposit/borrow
+
+**Output:** Append to PROTOCOL CHARACTERISTICS section:
+
+```markdown
+### Protocol-Issued Tokens
+ISSUES_TOKENS: [true|false]
+Token Contracts:
+- [ContractName.sol] — [share token / receipt token / debt token / LP token]
+- ...
+Overrides: [list any transfer/approve/transferFrom overrides in these contracts]
+```
+
+**Classification rule:**
+- `ISSUES_TOKENS=true` + at least one override on transfer/approve/transferFrom → COMPLY properties MANDATORY
+- `ISSUES_TOKENS=true` + unmodified OpenZeppelin ERC20 → COMPLY properties SKIPPED (standard impl is correct)
+- `ISSUES_TOKENS=false` → COMPLY properties SKIPPED
+
+### 4g: State Machine & Lifecycle Detection (NEW in v4.2)
+
+Scan all in-scope contracts for state machine patterns that inform PATTERN 23-CROSS-E/F/G properties in Phase 1A.
+
+**Initializer patterns:**
+- `initialize()` / `__init()` / `reinitialize()` functions
+- `initializer` / `reinitializer` modifiers (OpenZeppelin)
+- `_initialized` storage variable
+- Classify: `HAS_INITIALIZER: true/false`
+
+**Pause patterns:**
+- `pause()` / `unpause()` / `paused()` functions
+- `whenNotPaused` / `whenPaused` modifiers
+- `_paused` storage variable
+- Classify: `HAS_PAUSE: true/false`
+
+**Upgrade patterns:**
+- `setImplementation()` / `upgradeTo()` / `upgradeToAndCall()`
+- UUPS / TransparentProxy / BeaconProxy inheritance
+- `delegatecall` in fallback function
+- Classify: `USES_UPGRADEABLE_PROXY: true/false`
+
+**Critical storage slots** (for stability tracking):
+- Slots storing admin/owner address
+- Slots storing implementation address
+- Slots storing `_initialized` flag
+- Document slot numbers using `bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)` convention
+
+**Output:** Append to PROTOCOL CHARACTERISTICS section of `magic/contracts-dependency-list.md`:
+
+```markdown
+### State Machine Patterns
+HAS_INITIALIZER: [true|false]
+Initializer Functions: [list]
+HAS_PAUSE: [true|false]
+Pause Functions: [list]
+USES_UPGRADEABLE_PROXY: [true|false]
+Upgrade Mechanism: [UUPS|TRANSPARENT|BEACON|CUSTOM|NONE]
+Critical Storage Slots:
+- [0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc] — implementation address (EIP-1967)
+- [0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103] — admin address (EIP-1967)
+- [slot] — _initialized flag
+```
+
+### 4h: Access Control Inventory (NEW in v4.2)
+
+For EVERY function in scope, build an access control inventory to drive PRIV-AUTH-* (auth sweep) properties in Phase 1A.
+
+**Scan for access control patterns:**
+- `onlyOwner`, `onlyAdmin`, `onlyRole(X)`, `require(msg.sender == X)`
+- `auth`, `requiresAuth`, `onlyGateway`, custom modifiers
+- OpenZeppelin `AccessControl` role-based patterns
+- Implicit access control via `if (msg.sender != X) revert`
+
+**Build inventory table:**
+
+```markdown
+### Access Control Inventory
+| Contract | Function | Modifier/Guard | Role Required | In PRIV-NEG? |
+|----------|----------|----------------|---------------|-------------|
+| Vault | setFeeRate | onlyOwner | owner | YES (setter) |
+| Vault | emergencyWithdraw | onlyAdmin | admin | NO — needs auth test |
+| Pool | liquidate | whenNotPaused | any (but guarded) | NO — pause guard only |
+```
+
+**Classification rules:**
+1. Functions already covered by PRIV-NEG-01/02/03 (admin setters) → mark `In PRIV-NEG? = YES`
+2. Functions with access control NOT covered by PRIV-NEG → mark `In PRIV-NEG? = NO` with reason
+3. Functions with no access control → omit from table
+4. Functions where access control is ONLY `whenNotPaused` → note as "pause guard only" (not auth sweep target)
+
+**Output:** Append to PROTOCOL CHARACTERISTICS section of `magic/contracts-dependency-list.md` under a new `### Access Control Inventory` heading. Phase 1A will consume this to auto-generate PRIV-AUTH-* properties.
+
 ---
 
 ## Step 5: Setup Wiring Analysis (NEW in v3.5)
@@ -466,6 +608,7 @@ For each of the following 8 vulnerability classes, determine if it applies to th
 | **SHARE_INFLATION** | Protocol has share/asset conversion | ERC4626, `convertToShares()`, first-depositor patterns |
 | **FEE_EXTRACTION** | Protocol collects fees | `feeRate`, `protocolFee`, fee-on-transfer |
 | **GOVERNANCE_MANIPULATION** | Protocol has on-chain governance | `propose()`, `vote()`, quorum, flash-loan voting |
+| **PRECISION_ACCUMULATION** | Protocol has share/asset math or fee calculations with integer division | `mulDiv`, `wadMul`, custom rounding, `convertToShares`/`convertToAssets`, integer division in deposit/withdraw/borrow/repay |
 
 ### 6b: Document Applicable Classes
 
@@ -494,6 +637,7 @@ Write the analysis to `magic/economic-oracles.md`:
 | SHARE_INFLATION | APPLICABLE | HIGH | Vault.sol | ERC4626 first-depositor |
 | FEE_EXTRACTION | APPLICABLE | LOW | Router.sol | Swap fee logic |
 | GOVERNANCE_MANIPULATION | NOT_APPLICABLE | — | — | No governance |
+| PRECISION_ACCUMULATION | APPLICABLE | HIGH | Vault.sol | mulDiv in convertToShares/convertToAssets |
 
 ### Detailed Analysis
 
@@ -510,6 +654,13 @@ Write the analysis to `magic/economic-oracles.md`:
 - **Attack Vector**: First depositor donates tokens to inflate share price, causing rounding to zero for subsequent depositors
 - **Monitoring Variables**: totalAssets(), totalSupply(), balanceOf(vault)
 - **Prerequisites**: Multi-actor, small deposit amounts
+
+#### PRECISION_ACCUMULATION
+- **Contracts**: Vault.sol (deposit, withdraw, convertToShares, convertToAssets)
+- **Economic Invariant**: After N deposit-withdraw cycles with amount X, protocol balance delta <= N * MAX_DUST_PER_OP
+- **Attack Vector**: Many small deposits/withdrawals extract rounding dust each time, or accumulated rounding makes protocol insolvent
+- **Monitoring Variables**: totalAssets(), totalSupply(), token.balanceOf(vault), per-actor deposit/withdraw counts
+- **Prerequisites**: Single-actor stress loop, small amounts near rounding boundaries
 ```
 
 ### 6d: Handle Missing Data Gracefully
@@ -736,7 +887,7 @@ This prevents the Enzyme/Radiant pattern where admin targets silently waste budg
 - This analysis is based on **static review** of the source code. It identifies branches that LIKELY need special handling.
 - Not every MULTI-STEP branch needs a shortcut — if the sequence is short (1-2 steps) and values aren't specific, the fuzzer may find it. But if the sequence is 3+ steps or requires very specific values, a shortcut is recommended.
 - The reachability report will be used by Phase 1 to inform CANARY/DOOM property design and by post-echidna coverage analysis.
-- The protocol characteristics section (including PROTOCOL_TYPE from Step 4d) will be used by Phase 1A (multi-actor, time-based, protocol-specific templates) and Phase 1B (cross-contract, impossible states) to generate targeted properties.
+- The protocol characteristics section (including PROTOCOL_TYPE from Step 4d, TOKEN_ASSUMPTION from Step 4e, ISSUES_TOKENS from Step 4f, State Machine Patterns from Step 4g, Access Control Inventory from Step 4h) will be used by Phase 1A (multi-actor, time-based, protocol-specific templates, weird token integration, token compliance, state machine properties, auth sweep) and Phase 1B (cross-contract, impossible states) to generate targeted properties.
 - The economic oracles analysis (Step 6) will be used by Phase 1A to generate economic vulnerability properties.
 - The data-flow taint analysis (Step 7) will be used by Phase 1A to modulate property density per function based on exploitability classification.
 - The function transition graph (Step 8) will be used by the full-audit pipeline for pre-fuzzing sequence analysis and by coverage iteration for dead-cycle analysis.

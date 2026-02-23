@@ -1,5 +1,5 @@
 ---
-description: "Phase 2 of the Efficient Properties Workflow v4.0. Builds on v3.9 with AP-10 (stale/live mismatch), AP-11 (compound op ghost invalidation), AP-12 (rounding direction conflict), AP-13 (assertion-body deduplication). Reviews and filters properties, classifies ghost infrastructure (trackOp/A-delegate/updateGhosts/none), flags STALE_OP_RISK, validates against 10 anti-patterns + AP-13 dedup, appeal score classification. Includes Tier 0 PROFIT oracle handling. NEVER_DISCARD guardrail, AP-9 core-read-masking rule, gateway/proxy modifier mismatch audit"
+description: "Phase 2 of the Efficient Properties Workflow v4.2. Builds on v4.1 with AP-21 (pause-dependent property without guard). Previous: AP-19 (weird token on restricted protocol), AP-20 (unjustified accumulation threshold). Reviews and filters properties, classifies ghost infrastructure (trackOp/A-delegate/updateGhosts/none), flags STALE_OP_RISK, validates against 10 anti-patterns + AP-13 dedup + AP-19/AP-20/AP-21, appeal score classification. Includes Tier 0 PROFIT oracle handling. NEVER_DISCARD guardrail, AP-9 core-read-masking rule, gateway/proxy modifier mismatch audit"
 mode: subagent
 temperature: 0.1
 ---
@@ -230,10 +230,14 @@ move it to discarded-properties.
 - **Variable transition properties** (TIER 7A): Per-function checks. Catch real state corruption bugs.
 - **Negative transition properties** (TIER 7B): Revert checks using try/catch.
 - **Time-warping properties** (TIER 9B): Time-dependent accrual if TIME_BASED=true. Catches temporal manipulation.
+- **Fee volume conservation** (TIER 9C): Cumulative fees <= cumulative volume if protocol has fees. Distinct from SOL/PROFIT.
 - **DOOM-* liveness properties** (TIER 10): Fund locking prevention. Critical.
 - **Multi-actor properties** (TIER 10B): Reentrancy, race conditions if MULTI_ACTOR=true. Catches concurrent-access bugs.
 - **Impossible state properties** (TIER 12F): Forbidden state combinations. Catches state corruption from operation sequences.
 - **Cross-contract consistency** (TIER 13B): Multi-contract accounting sync if CROSS_CONTRACT=true. Catches delegation drift.
+- **Weird token properties** (TIER 16): External token compatibility if TOKEN_ASSUMPTION=OPEN|UNSPECIFIED.
+- **Precision accumulation properties** (TIER 17): Multi-operation rounding drift if PRECISION_ACCUMULATION=APPLICABLE.
+- **Token compliance properties** (COMPLY): Protocol's own ERC20 compliance if ISSUES_TOKENS=true.
 - **FREE-FORM discoveries**: Protocol-specific edge cases from the final pass.
 
 ---
@@ -386,6 +390,7 @@ TIER 7B-PRIV (PRIV-NEG): X properties
 TIER 8 (ER): X properties
 TIER 9A (FEE-BASIC): X properties (Y with STALE_OP_RISK)
 TIER 9B (FEE-TIME-WARP): X properties (only if TIME_BASED=true)
+TIER 9C (FEE-VOL): X properties (only if protocol has fee mechanism)
 TIER 10 (DOOM): X properties
 TIER 10B (MULTI-ACTOR): X properties (only if MULTI_ACTOR=true)
 TIER 11 (ST): X properties
@@ -395,13 +400,20 @@ TIER 13A (PERIPH-VIEW): X properties
 TIER 13B (PERIPH-CROSS-CONTRACT): X properties (only if CROSS_CONTRACT=true)
 TIER 14 (DUST): X properties
 TIER 15 (FLAG): X properties
+TIER 16 (WTOK): X properties (only if TOKEN_ASSUMPTION=OPEN|UNSPECIFIED)
+TIER 17 (ACCUM): X properties (only if PRECISION_ACCUMULATION=APPLICABLE)
+COMPLY (ERC20-E-H): X properties (only if ISSUES_TOKENS=true with overrides)
 FREE-FORM: X properties
 
 TOTAL: X properties (Y blocked by infrastructure, Z with STALE_OP_RISK)
 PROTOCOL-CONDITIONAL TIERS:
 - TIER 9B: [ACTIVE/SKIPPED] (TIME_BASED=[true/false])
+- TIER 9C: [ACTIVE/SKIPPED] (FEE_MECHANISM=[present/absent])
 - TIER 10B: [ACTIVE/SKIPPED] (MULTI_ACTOR=[true/false])
 - TIER 13B: [ACTIVE/SKIPPED] (CROSS_CONTRACT=[true/false])
+- TIER 16: [ACTIVE/SKIPPED] (TOKEN_ASSUMPTION=[OPEN|UNSPECIFIED/RESTRICTED])
+- TIER 17: [ACTIVE/SKIPPED] (PRECISION_ACCUMULATION=[APPLICABLE/NOT_APPLICABLE])
+- COMPLY: [ACTIVE/SKIPPED] (ISSUES_TOKENS=[true with overrides/false or no overrides])
 COVERAGE GAPS: [list any tiers with 0 properties that should have some]
 
 ## APPEAL SCORE DISTRIBUTION
@@ -622,3 +634,79 @@ function property_neg_X_reverts() public {
 - Zero-position operations (withdraw from market with 0 supply shares)
 - Self-operations that result in no state change (approve self, transfer to self)
 - Operations on already-at-target state (set fee to current fee value)
+
+---
+
+### AP-19: WEIRD_TOKEN_ON_RESTRICTED_PROTOCOL (NEW in v4.1)
+
+A WTOK-* (Tier 16) property was generated, but Phase 0 classified `TOKEN_ASSUMPTION=RESTRICTED` — the protocol explicitly whitelists its tokens, so weird token testing is out of scope.
+
+**Detection:** WTOK-* property ID exists AND `TOKEN_ASSUMPTION=RESTRICTED` in `magic/contracts-dependency-list.md`.
+
+**Action:** DISCARD with reason: "AP-19: protocol restricts token set (TOKEN_ASSUMPTION=RESTRICTED). Weird token testing is out of scope."
+
+**Exception:** If `TOKEN_ASSUMPTION=RESTRICTED` but the Phase 0 evidence shows the restriction is ONLY documentation-based (no on-chain enforcement), keep the property and add a note: "AP-19 exception: restriction is documentation-only, no on-chain validation."
+
+---
+
+### AP-20: UNJUSTIFIED_ACCUMULATION_THRESHOLD (NEW in v4.1)
+
+An ACCUM-* (Tier 17) property uses `MAX_DUST_PER_OP` or `MAX_DRIFT_PER_100_OPS` without justifying the threshold value from the protocol's actual rounding behavior.
+
+**Detection:** ACCUM-* property with hardcoded tolerance threshold that doesn't reference:
+- Token decimals
+- Protocol rounding direction (roundUp vs roundDown)
+- Number of arithmetic operations in the code path
+
+**Action:** FIX — require the property's pseudocode or comment to include an explicit derivation:
+```
+MAX_DUST_PER_OP justification:
+- Token: 18 decimals
+- Rounding: roundDown in convertToShares (1 operation)
+- Max dust: 1 wei per roundDown = 1
+- Therefore MAX_DUST_PER_OP = 1
+```
+
+For protocols with multiple rounding operations in a single deposit/withdraw path (e.g., `convertToShares` + `mulDiv` + fee calculation), count each operation:
+```
+MAX_DUST_PER_OP = number_of_rounding_operations * 1
+```
+
+---
+
+### AP-21: PAUSE_DEPENDENT_WITHOUT_GUARD (NEW in v4.2)
+
+A DOOM/liveness property exists AND the protocol has `HAS_PAUSE=true` (from Phase 0 Step 4g), but the property does NOT include a pause guard (`if (protocol.paused()) return;`). Without the guard, an admin pausing the protocol trivially falsifies any liveness/withdrawal property.
+
+**Detection:** All three conditions must be true:
+1. Property is DOOM-* or asserts that a withdrawal/exit operation must succeed (liveness)
+2. Phase 0 classified `HAS_PAUSE=true` in PROTOCOL CHARACTERISTICS
+3. Property body does NOT contain `paused()` check or equivalent guard
+
+**Action:** FIX — add pause guard to the property:
+```solidity
+// BEFORE (vulnerable to admin pause):
+function property_DOOM_01_canWithdraw() public {
+    if (position > 0) {
+        try protocol.withdraw(position) {} catch {
+            t(false, "DOOM-01: funds locked");
+        }
+    }
+}
+
+// AFTER (pause-aware):
+function property_DOOM_01_canWithdraw() public {
+    if (protocol.paused()) return; // admin-induced state, not a bug
+    if (position > 0) {
+        try protocol.withdraw(position) {} catch {
+            t(false, "DOOM-01: funds locked");
+        }
+    }
+}
+```
+
+**Relationship to AP-8 (ADMIN_CONFLICT):** AP-8 catches cases where an admin target function trivially falsifies a property. AP-21 is more specific: it catches the case where the property itself is structurally missing a pause guard, even if no admin `setPause` target exists in the harness (the real protocol admin could still pause).
+
+**Scope:** Only applies when `HAS_PAUSE=true`. If `HAS_PAUSE=false`, this anti-pattern is not applicable.
+
+**NEVER_DISCARD interaction:** DOOM-* properties are NEVER_DISCARD. AP-21 does NOT discard them — it FIXes them by adding the guard. The property stays in the validated set with the guard added.

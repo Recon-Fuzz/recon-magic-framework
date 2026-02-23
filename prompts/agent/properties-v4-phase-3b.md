@@ -28,9 +28,46 @@ Your job is to implement the remaining property types: INLINE, NEGATIVE, and DOO
 
 ## Output
 
-**Append** your implementations to the existing `Properties.sol` (or `Properties2.sol`).
+**Route** implementations to the correct file based on the property routing table below:
+- **`Properties.sol`** — Echidna + Foundry compatible (no cheatcodes)
+- **`FoundryProperties.sol`** — Foundry-only (uses `vm.snapshot`, `vm.revertTo`, `vm.load`)
 
-**Update** `magic/coded-properties.md` with the new properties you implemented.
+If `Properties2.sol` exists (COMPARISON_MODE), append Echidna-compatible properties there.
+
+**Update** `magic/coded-properties.md` with each property implemented and which file it was written to.
+
+---
+
+## Property Routing: Properties.sol vs FoundryProperties.sol
+
+> **Decision rule:** Does the property use `vm.snapshot()`, `vm.revertTo()`, or `vm.load()`?
+> - **YES** → write to `FoundryProperties.sol`
+> - **NO** → write to `Properties.sol`
+
+| Property Type | Target File | Reason |
+|--------------|-------------|--------|
+| VT-* (Variable Transition INLINE) | Properties.sol | Selector gate only |
+| VT-NEG-* (Variable Transition Negative) | Properties.sol | try/catch only |
+| HF-* (Health Factor Negative) | Properties.sol | try/catch only |
+| LIQ-01/02/03 (Liquidation Blocking) | Properties.sol | try/catch only |
+| LIQ-04/05 (Snapshot-based liq checks) | FoundryProperties.sol | vm.snapshot needed |
+| FEE-* (Fee Accrual INLINE) | Properties.sol | Selector gate only |
+| ST-* (State Transition INLINE) | Properties.sol | Selector gate only |
+| PERIPH-* (Peripheral INLINE) | Properties.sol | View only |
+| PRIV-NEG-* (Privilege Escalation) | Properties.sol | try/catch only |
+| PRIV-AUTH-* (Auth Sweep) | Properties.sol | try/catch only |
+| CROSS-E (Re-init Protection) | Properties.sol | try/catch only |
+| CROSS-F (Pause-Freeze Invariant) | Properties.sol | State compare only |
+| CROSS-G (Storage Slot Stability) | FoundryProperties.sol | vm.load needed |
+| ACCUM-01/02 (Accumulation basic) | Properties.sol | Ghost tracking only |
+| ACCUM-03 (Snapshot-based accum) | FoundryProperties.sol | vm.snapshot needed |
+| **DOOM-* (Liveness/Doomsday)** | **FoundryProperties.sol** | **vm.snapshot/vm.revertTo** |
+
+**After writing, verify routing is correct:**
+```bash
+# MUST return 0 results — no cheatcodes in Properties.sol
+grep -n "vm\.snapshot\|vm\.revertTo\|vm\.load" test/recon/Properties.sol
+```
 
 ---
 
@@ -217,6 +254,10 @@ function property_PERIPH_01_viewMatchesActual() public {
 ```
 
 ### DOOM-* (TIER 10: Liveness — DOOMSDAY)
+
+> **⚠️ FOUNDRY ONLY — Write to `FoundryProperties.sol`, NOT `Properties.sol`**
+> Uses `vm.snapshot()`/`vm.revertTo()` which crash Echidna/Medusa.
+
 Use vm.snapshot()/vm.revertTo() to avoid state mutation.
 ```solidity
 function property_DOOM_01_canWithdrawDeposit() public {
@@ -312,9 +353,13 @@ For properties marked `BLOCKED_BY_INFRASTRUCTURE` in the second pass:
 
 ## File Organization
 
-1. **Append** to the existing Properties.sol that Phase 3A created
-2. The inheritance chain: TargetFunctions -> Properties -> BeforeAfter -> Setup
-3. Do NOT modify Phase 3A's existing property functions
+1. **Append Echidna-compatible properties** to the existing `Properties.sol` (VT, NEG, HF, LIQ-01/02/03, FEE, ST, PERIPH, PRIV-NEG, PRIV-AUTH, CROSS-E/F, ACCUM-01/02)
+2. **Append Foundry-only properties** to `FoundryProperties.sol` (DOOM-*, LIQ-04/05, CROSS-G, ACCUM-03)
+   - Phase 3A Step 0N created this file and updated CryticToFoundry inheritance
+3. The inheritance chains:
+   - **Echidna**: `CryticTester → Properties → BeforeAfter → Setup`
+   - **Foundry**: `CryticToFoundry → FoundryProperties → Properties → BeforeAfter → Setup`
+4. Do NOT modify Phase 3A's existing property functions
 
 ### Naming Convention
 
@@ -451,15 +496,21 @@ function property_neg_X_reverts() public {
 ## Verification Steps (Phase 3B)
 
 1. `forge build` — must compile without errors
-2. `forge test` — existing tests must still pass
+2. `forge test --match-contract CryticToFoundry` — existing tests must still pass
 3. Verify INLINE properties filter by correct function selectors
 4. Verify negative tests use try/catch pattern (not positive assertions)
-5. Verify DOOM properties use vm.snapshot()/vm.revertTo()
+5. Verify DOOM properties use vm.snapshot()/vm.revertTo() AND are in `FoundryProperties.sol`
 6. Verify STALE_OP_RISK properties have guards (if reset fix was NOT applied)
 7. **CRITICAL: Verify NO unjustified arbitrary bounds** — search for:
    - `% 1e24`, `% 1e30`, `% 1e36` (arbitrary modulo)
    - `+ 1e18` in mint/transfer calls (arbitrary buffer)
    - `* 1e27` in tolerance calculations (excessive tolerance)
    - Any hardcoded large numbers not from protocol constants
+8. **CRITICAL: Verify property routing** — `Properties.sol` must have ZERO cheatcode calls:
+   ```bash
+   grep -n "vm\.snapshot\|vm\.revertTo\|vm\.load" test/recon/Properties.sol
+   # Must return empty — move any matches to FoundryProperties.sol
+   ```
+9. Run `forge test --match-contract CryticToFoundry --match-test property_` to validate all Foundry-only properties pass at block 0
 
 If compilation fails, apply the error recovery process above. If you cannot implement a property due to code limitations, add it to `magic/properties-blocker.md` with the reason.
