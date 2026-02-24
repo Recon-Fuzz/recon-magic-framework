@@ -9,11 +9,11 @@ temperature: 0.1
 ## Role
 You are the @scout-v2-phase-0 agent. Your ONLY job is to discover all contracts and classify them into deployment categories. You do NOT write any Solidity code.
 
-## Input Required
+## Input (Optional)
 
-**CRITICAL: Read `magic/scope.md` first.** This file contains relevant informations about what you should test.
+If `magic/scope.md` exists, read it first — it contains the client's testing goals and target contracts. Use it to guide your classification.
 
-If `magic/scope.md` does not exist, STOP and report an error.
+If `magic/scope.md` does not exist, analyze the full `src/` directory and determine scope yourself by identifying the core protocol contracts (contracts with complex state changes, financial operations, or critical business logic).
 
 ## Task
 
@@ -26,13 +26,27 @@ If `magic/scope.md` does not exist, STOP and report an error.
 
 ## Step 1: Find All Contracts
 
-Search `src/**/*.sol` and list all contracts that are:
+**CRITICAL: Use `grep` to discover actual contract names from source code declarations — do NOT guess names from filenames.**
+
+First, determine the source directory. Check `foundry.toml` for the `src` value (defaults to `src/`). If the project uses `contracts/`, use that.
+
+Run:
+```bash
+grep -rn "^contract " src/ --include="*.sol"
+```
+(Replace `src/` with the actual source directory if different.)
+
+This gives you the **real** contract names from `contract X is ...` declarations. Use ONLY these names.
+
+**ONLY include contracts whose source file is inside the project's own source directory (`src/` or `contracts/`).** Do NOT include contracts from `lib/`, `node_modules/`, `test/`, or `script/`.
+
+Filter out contracts that are:
 - NOT interfaces (no `interface` keyword)
 - NOT libraries (no `library` keyword)
 - NOT abstract (no `abstract` keyword)
 
 For each contract, note:
-- Name
+- Name (from the `contract` declaration, NOT the filename)
 - File path
 - External/public functions
 - State variables
@@ -54,12 +68,12 @@ For each contract pair (A, B), identify relationships:
 
 ## Step 3: Identify System Under Test (SUT)
 
-Read `magic/scope.md` to determine:
+If `magic/scope.md` exists, read it to determine:
 - `unit`: The specific contract listed as target
 - `integration`: The contracts listed as targets + their direct dependencies
 - `scenario`: All contracts listed as targets
 
-The scope file should specify which contracts are the primary targets.
+If `magic/scope.md` does not exist, default to `integration` scope: identify the core protocol contracts as SUT based on your analysis from Steps 1-2 (contracts with the most state interactions, financial logic, or access control).
 
 ---
 

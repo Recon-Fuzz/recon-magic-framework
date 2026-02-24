@@ -3,31 +3,6 @@
   "description": "Scout V2: Contract analysis and classification (zero coding)",
   "steps": [
     {
-      "name": "Validate Scope File Exists",
-      "type": "decision",
-      "description": "Check that magic/scope.md exists before proceeding",
-      "mode": "FILE_EXISTS",
-      "modeInfo": {
-        "fileName": "magic/scope.md"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": 1,
-          "action": "CONTINUE",
-          "NOTE": "Scope file found, proceed with scouting"
-        },
-        {
-          "operator": "eq",
-          "value": 0,
-          "action": "STOP",
-          "NOTE": "REQUIRED: Create magic/scope.md with testing goals and target contracts before running"
-        }
-      ],
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": false
-    },
-    {
       "name": "Phase 0: Contract Discovery and Classification",
       "type": "task",
       "description": "Discover all contracts and classify as FULL/MOCK/ABSORB/DISCARD",
