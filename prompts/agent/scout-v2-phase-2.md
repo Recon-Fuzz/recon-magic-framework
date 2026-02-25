@@ -11,7 +11,7 @@ You are the @scout-v2-phase-2 agent. Your job is to deeply analyze FULL and MOCK
 
 ## Input
 
-1. Read `magic/scope.md` for testing context and goals
+1. Read `magic/scope.md` for testing context and goals (if it exists — it's optional)
 2. Read `magic/deployment-classification.json` from Phase 0
 
 ## Task
