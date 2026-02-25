@@ -36,21 +36,25 @@ Read ALL target function files under `test/recon/targets/` and the main `TargetF
 
 Classify every public/external function into these categories:
 
-| Category | Modifier | Sets currentOperation? | Updates _before/_after? | Risk |
-|----------|----------|----------------------|------------------------|------|
-| **A** | `trackOp(SELECTOR)` | Yes | Yes | None — safe for currentOperation-gated properties |
+| Category | Modifier | Sets lastTrackedOperation? | Updates _before/_after? | Risk |
+|----------|----------|--------------------------|------------------------|------|
+| **A** | `trackOp(SELECTOR)` | Yes | Yes | None — safe for `lastTrackedOperation`-gated properties |
 | **A-delegate** | No modifier, but internally calls a Category A function | Yes (via inner call) | Yes (via inner call) | None — safe (e.g., clamped wrappers like `deposit_clamped` that delegate to `deposit`) |
-| **B** | `updateGhosts` only | No | Yes | **HIGH** — overwrites ghost snapshots without updating currentOperation, causing stale-operation false positives |
+| **B** | `updateGhosts` only | No | Yes | **LOW** — `lastTrackedOperation` remains from last `trackOp` (correct for in-sequence use). `_before`/`_after` reflect this function but `lastTrackedOperation` is from prior tracked call. Properties must guard on the right selectors. |
 | **C** | No modifier, does NOT call any ghost-updating function | No | No | None — invisible to ghost system (e.g., `switchActor`, `switch_asset`) |
 
-**Important:** Clamped wrapper functions that have no modifier but internally call a `trackOp`-decorated function should be classified as **Category A-delegate**, NOT Category C. They trigger ghost updates through the inner call and are safe for currentOperation-gated properties.
+**Infrastructure note:** The v4 workflow uses a **dual-variable pattern**:
+- `currentOperation` — reset to `bytes4(0)` after every call (in-call use only, never read by `property_*` functions)
+- `lastTrackedOperation` — set by `trackOp` only, **never reset** — holds the last completed tracked selector, safe to read from `property_*` functions
+
+**Important:** Clamped wrapper functions that have no modifier but internally call a `trackOp`-decorated function should be classified as **Category A-delegate**, NOT Category C. They trigger ghost updates through the inner call and are safe for `lastTrackedOperation`-gated properties.
 
 ### Identify stale-operation risk
 
 For each **Category B** function, document:
 - The function name and signature
 - What protocol operations it performs internally
-- The specific risk: "After this function runs, `currentOperation` still holds the value from whatever ran before it, but `_before`/`_after` now reflect this function's state changes"
+- The specific risk: "After this function runs, `lastTrackedOperation` still holds the value from the last `trackOp` call, but `_before`/`_after` now reflect this function's state changes — a property checking `lastTrackedOperation == X` but comparing `_after` vs `_before` from a Category B call may see inconsistent state"
 
 ### 2B: Scaffold Target Admin Audit (REQUIRED — prevents false positives)
 
@@ -151,27 +155,26 @@ If yes:
 
 ## STEP 3: Flag Stale-Op Properties
 
-**NOTE:** The `recon-generate` template now resets `currentOperation = bytes4(0)` in both `trackOp` (after execution) and `updateGhosts` (before execution) by default. This eliminates most stale-op risks automatically. However, **legacy projects** or manually edited `BeforeAfter.sol` files may lack these resets.
+**NOTE:** The v4 workflow uses a dual-variable pattern in `BeforeAfter.sol`:
+- `lastTrackedOperation` (never reset) — the correct variable for `property_*` functions to gate on
+- `currentOperation` (reset after every call) — in-call use only
 
-Review every property from first-pass that gates on `currentOperation` or `_before.sig`:
+Review every property from first-pass that gates on an operation selector:
 
 ```solidity
-// Patterns to look for:
-if (currentOperation == SelectorStorage.SOME_OP) { ... }
-if (_before.sig == someContract.someFunction.selector) { ... }
+// Patterns to look for — should use lastTrackedOperation, not currentOperation:
+if (lastTrackedOperation == SelectorStorage.SOME_OP) { ... }
 ```
 
-**First, check `BeforeAfter.sol`:** If both modifiers reset `currentOperation` to `bytes4(0)`, mark all operation-gated properties as **SAFE** and skip the rest of this step.
+**First, check `BeforeAfter.sol`:** If it has both `lastTrackedOperation` and `currentOperation` as described in Phase 3A Step 0B, mark all operation-gated properties as **SAFE** and skip the rest of this step.
 
-**If resets are missing**, check: can a Category B function run between the `trackOp` call and this property check? Also: can Echidna call the property function as a standalone transaction after time has advanced?
+**If the project uses the legacy single-variable pattern** (only `currentOperation`, reset in both modifiers), then operation-gated properties are **broken by design** — they always see `bytes4(0)`. Two attack vectors apply:
+1. **Standalone property call:** `trackOp` runs → resets `currentOperation = bytes4(0)` → Echidna calls `property_*` → sees `bytes4(0)`, skips assertion → **false negative** (bugs missed)
+2. **Category B interleaving:** `trackOp` sets op → `updateGhosts` call overwrites `_before`/`_after` without updating op → property sees stale op with wrong snapshot → **false positive**
 
-Two stale-op attack vectors:
-1. **Category B interleaving:** `trackOp` sets op → `updateGhosts` overwrites ghosts without clearing op → property sees stale op with wrong ghosts
-2. **Standalone property call:** `trackOp` sets op (no reset) → Echidna calls `property_*` directly in a later tx with different `block.timestamp` → property sees stale op, stale ghosts, but current timestamp
-
-If a property can be triggered this way:
-- If the property is valuable: **keep it** but add a `STALE_OP_RISK` tag and document which function(s) can cause staleness. Phase 3 will add a guard.
-- If the property is marginal: **DISCARD** it with reason: "STALE_OP_RISK: currentOperation can be stale after [function name]"
+If the project is legacy and cannot be updated to the dual-variable pattern:
+- If the property is valuable: **keep it** but add a `STALE_OP_RISK` tag and document which function(s) can cause staleness. Phase 3 will add a `bytes4(0)` guard.
+- If the property is marginal: **DISCARD** it with reason: "STALE_OP_RISK: legacy single-variable currentOperation pattern — always zero when property is evaluated"
 
 ---
 
@@ -563,8 +566,8 @@ function property_no_idle_balance() public {
 **Fix:** Convert to inline property gated on deposit/withdraw/mint/redeem/reallocate operations only:
 ```solidity
 function property_no_idle_balance() public {
-    if (currentOperation == bytes4(0)) return; // standalone call, skip
-    if (currentOperation == SUBMIT_CAP || currentOperation == SET_FEE) return; // admin op
+    if (lastTrackedOperation == bytes4(0)) return; // no tracked op yet, skip
+    if (lastTrackedOperation == SUBMIT_CAP || lastTrackedOperation == SET_FEE) return; // admin op
     uint256 idle = token.balanceOf(address(vault));
     t(idle <= wqLen * 1, "idle balance after user op");
 }
@@ -581,7 +584,7 @@ A monotonicity/directional property guards against some operations but misses ot
 
 **Detection:** Inline property with operation guards that omits REALLOCATE, TIME_WARP, or interest-accruing operations from its guard list. Look for:
 ```solidity
-if (currentOperation == DEPOSIT || currentOperation == WITHDRAW) {
+if (lastTrackedOperation == DEPOSIT || lastTrackedOperation == WITHDRAW) {
     // Missing: REALLOCATE, WARP_TIME
     t(someMonotonicValue >= previous, "monotonicity violated");
 }
@@ -590,7 +593,7 @@ if (currentOperation == DEPOSIT || currentOperation == WITHDRAW) {
 **Fix:** Add the missing operation guard, or use tolerance-based comparison that accounts for the missing operation's effect:
 ```solidity
 // Option A: Add missing guard
-if (currentOperation == REALLOCATE) return; // reallocate can leave dust
+if (lastTrackedOperation == REALLOCATE) return; // reallocate can leave dust
 
 // Option B: Use tolerance accounting for interest growth
 uint256 maxGrowthFactor = 10; // e^(APR * time) ≈ 10x at 50% for 4.5y

@@ -259,8 +259,9 @@ For protocols with N markets/pools (e.g., Morpho, Aave, Compound), rounding dust
   t(token.balanceOf(address(vault)) <= N * 1, "idle balance");
 
   // RIGHT: operation-gated — only check after ops that should flush idle tokens
-  if (currentOperation == DEPOSIT || currentOperation == WITHDRAW ||
-      currentOperation == REALLOCATE) {
+  // Use lastTrackedOperation (not currentOperation) — persists after trackOp completes
+  if (lastTrackedOperation == DEPOSIT || lastTrackedOperation == WITHDRAW ||
+      lastTrackedOperation == REALLOCATE) {
       t(token.balanceOf(address(vault)) <= wqLen * 1, "idle balance after user op");
   }
   ```

@@ -198,48 +198,81 @@ The modifier should NOT be added to:
 - Functions that don't interact with the protocol (pure helpers)
 - Property functions themselves
 
-### 0B: Verify currentOperation Reset in Both Modifiers
+### 0B: Implement Dual-Variable Operation Tracking
 
-The `recon-generate` template now includes `currentOperation` resets in both modifiers by default. **Verify** that `BeforeAfter.sol` contains these resets:
+**The problem with a single `currentOperation`:** `trackOp` must reset `currentOperation` to `bytes4(0)` after execution so that non-tracked calls (e.g. `updateGhosts`) don't leave stale state. But this means `property_*` functions called by Echidna as standalone transactions always see `bytes4(0)` — making any `currentOperation`-gated INLINE property a guaranteed false positive.
+
+**Solution — dual variable (Option C):**
+- `currentOperation` — reset after every call. Used only for in-call logic (e.g. shortcut guards). Never read by `property_*` functions.
+- `lastTrackedOperation` — **never reset**. Set by `trackOp` only. Holds the selector of the last completed tracked call. Read by `property_*` functions that need to know what just ran.
+
+**Verify that `BeforeAfter.sol` contains this pattern.** If it does not, add `lastTrackedOperation` and update both modifiers:
 
 ```solidity
+// Tracks which function selector is currently executing (reset after each call)
+bytes4 public currentOperation;
+// Tracks the last COMPLETED tracked operation — never reset, safe to read from property_* functions
+bytes4 public lastTrackedOperation;
+
 modifier updateGhosts {
-    currentOperation = bytes4(0); // Reset to prevent stale operation leaking
+    currentOperation = bytes4(0); // Reset: non-tracked calls clear in-call op
+    _beforeActor = _getActor();
     __before();
     _;
+    _afterActor = _getActor();
     __after();
+    _actorConsistent = (_beforeActor == _afterActor);
+    currentOperation = bytes4(0); // Ensure clean after non-tracked call
+    // NOTE: lastTrackedOperation is NOT updated here — only trackOp sets it
 }
 
 modifier trackOp(bytes4 op) {
     currentOperation = op;
+    _beforeActor = _getActor();
     __before();
     _;
+    _afterActor = _getActor();
     __after();
-    currentOperation = bytes4(0); // Reset after use to prevent stale op in standalone property calls
+    _actorConsistent = (_beforeActor == _afterActor);
+    lastTrackedOperation = op; // Persist for property_* functions to read
+    currentOperation = bytes4(0); // Reset in-call op
 }
 ```
 
-**Why both resets matter:**
-- `trackOp` reset: Prevents Echidna from calling `property_*` functions as standalone transactions and seeing stale `currentOperation` from a previous `trackOp` call with a different `block.timestamp`.
-- `updateGhosts` reset: Prevents Category B functions (updateGhosts-only) from leaving `currentOperation` stale while overwriting `_before`/`_after` ghosts.
+**Why this works:**
+- `property_*` functions read `lastTrackedOperation` → always sees the selector of the last `trackOp` call, never stale from a prior sequence
+- `currentOperation` is still reset → no cross-sequence contamination for in-call guards
+- Shortcut functions using `updateGhosts` correctly leave `lastTrackedOperation` unchanged (they don't represent a single tracked op)
 
-**If either reset is missing** (legacy project or manually edited BeforeAfter.sol), add them.
-
-### 0C: Stale-Op Guards (Fallback — legacy projects only)
-
-Only needed if modifying BeforeAfter.sol is not practical (e.g., deeply customized ghost infrastructure). Add consistency preconditions to STALE_OP_RISK properties instead:
+**INLINE property pattern using `lastTrackedOperation`:**
 
 ```solidity
-// STALE_OP_RISK guard: verify snapshot is consistent with the operation
+// CORRECT: reads lastTrackedOperation — persists after trackOp completes
 function property_deposit_increases_shares() public {
-    if (currentOperation == SelectorStorage.DEPOSIT) {
+    if (lastTrackedOperation == SelectorStorage.DEPOSIT) {
         if (_after.totalSupply <= _before.totalSupply) return;
         t(_after.actorShareBalance > _before.actorShareBalance, "deposit must increase shares");
     }
 }
 ```
 
-If a STALE_OP_RISK property cannot have a natural consistency precondition, add it to `magic/properties-blocker.md`.
+**If `BeforeAfter.sol` already has `lastTrackedOperation`:** skip this step. If it only has `currentOperation` with the old reset pattern, add `lastTrackedOperation` as described above.
+
+### 0C: Stale-Op Guards (Fallback — legacy projects only)
+
+Only needed if modifying `BeforeAfter.sol` is not practical AND the project predates the dual-variable pattern. Add a `bytes4(0)` guard at the top of INLINE properties so they skip when called standalone:
+
+```solidity
+// FALLBACK (legacy only): guard against bytes4(0) from reset
+function property_deposit_increases_shares() public {
+    if (lastTrackedOperation == bytes4(0)) return; // no tracked op yet this session
+    if (lastTrackedOperation == SelectorStorage.DEPOSIT) {
+        t(_after.actorShareBalance > _before.actorShareBalance, "deposit must increase shares");
+    }
+}
+```
+
+If a STALE_OP_RISK property cannot use this pattern, add it to `magic/properties-blocker.md`.
 
 ### 0D: Scaffold Target Pruning (REQUIRED — prevents false positives)
 
@@ -1729,9 +1762,9 @@ Never check idle balance (token balance of vault/contract) as a standalone globa
 ```solidity
 // CORRECT: only check after ops that should flush idle tokens
 function property_no_idle_balance() public {
-    if (currentOperation == bytes4(0)) return; // standalone call, skip
-    if (currentOperation == SUBMIT_CAP) return; // admin op, skip
-    if (currentOperation == SET_FEE) return;    // admin op, skip
+    if (lastTrackedOperation == bytes4(0)) return; // no tracked op yet, skip
+    if (lastTrackedOperation == SUBMIT_CAP) return; // admin op, skip
+    if (lastTrackedOperation == SET_FEE) return;    // admin op, skip
     // Only runs after deposit/withdraw/mint/redeem/reallocate
     uint256 idle = token.balanceOf(address(vault));
     uint256 wqLen = vault.withdrawQueueLength();
