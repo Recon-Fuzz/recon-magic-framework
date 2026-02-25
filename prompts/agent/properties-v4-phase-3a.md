@@ -202,17 +202,22 @@ The modifier should NOT be added to:
 
 **The problem with a single `currentOperation`:** `trackOp` must reset `currentOperation` to `bytes4(0)` after execution so that non-tracked calls (e.g. `updateGhosts`) don't leave stale state. But this means `property_*` functions called by Echidna as standalone transactions always see `bytes4(0)` — making any `currentOperation`-gated INLINE property a guaranteed false positive.
 
-**Solution — dual variable (Option C):**
+**Solution — triple variable (Option C):**
 - `currentOperation` — reset after every call. Used only for in-call logic (e.g. shortcut guards). Never read by `property_*` functions.
 - `lastTrackedOperation` — **never reset**. Set by `trackOp` only. Holds the selector of the last completed tracked call. Read by `property_*` functions that need to know what just ran.
+- `lastCallWasTracked` — **boolean flag**. Set to `true` by `trackOp`, `false` by `updateGhosts`. INLINE properties that compare `_before`/`_after` snapshots MUST guard with `if (!lastCallWasTracked) return;` — this prevents false positives when a shortcut (`updateGhosts`) overwrites the snapshots after a `trackOp`, making `lastTrackedOperation` stale relative to the current `_before`/`_after`.
 
-**Verify that `BeforeAfter.sol` contains this pattern.** If it does not, add `lastTrackedOperation` and update both modifiers:
+**Verify that `BeforeAfter.sol` contains this pattern.** If it does not, add all three variables and update both modifiers:
 
 ```solidity
 // Tracks which function selector is currently executing (reset after each call)
 bytes4 public currentOperation;
 // Tracks the last COMPLETED tracked operation — never reset, safe to read from property_* functions
 bytes4 public lastTrackedOperation;
+// True only when the most recent __before/__after snapshot came from a trackOp call.
+// False after any updateGhosts call. INLINE properties that depend on _before/_after
+// being from the same trackOp call MUST guard with: if (!lastCallWasTracked) return;
+bool public lastCallWasTracked;
 
 modifier updateGhosts {
     currentOperation = bytes4(0); // Reset: non-tracked calls clear in-call op
@@ -222,7 +227,7 @@ modifier updateGhosts {
     _afterActor = _getActor();
     __after();
     _actorConsistent = (_beforeActor == _afterActor);
-    currentOperation = bytes4(0); // Ensure clean after non-tracked call
+    lastCallWasTracked = false; // Non-tracked call: snapshots not from a single trackOp
     // NOTE: lastTrackedOperation is NOT updated here — only trackOp sets it
 }
 
@@ -234,21 +239,26 @@ modifier trackOp(bytes4 op) {
     _afterActor = _getActor();
     __after();
     _actorConsistent = (_beforeActor == _afterActor);
-    lastTrackedOperation = op; // Persist for property_* functions to read
+    lastTrackedOperation = op;   // Persist for property_* functions to read
+    lastCallWasTracked = true;   // Snapshot is fresh from this trackOp call
     currentOperation = bytes4(0); // Reset in-call op
 }
 ```
 
 **Why this works:**
 - `property_*` functions read `lastTrackedOperation` → always sees the selector of the last `trackOp` call, never stale from a prior sequence
+- `lastCallWasTracked` guards against the cross-contamination case: if a shortcut (`updateGhosts`) runs AFTER a `trackOp`, it overwrites `_before`/`_after` with fresh snapshots but `lastTrackedOperation` still holds the old selector → INLINE properties comparing those snapshots would fire falsely. The guard skips them.
 - `currentOperation` is still reset → no cross-sequence contamination for in-call guards
 - Shortcut functions using `updateGhosts` correctly leave `lastTrackedOperation` unchanged (they don't represent a single tracked op)
 
-**INLINE property pattern using `lastTrackedOperation`:**
+**INLINE property pattern using `lastTrackedOperation` + `lastCallWasTracked`:**
 
 ```solidity
 // CORRECT: reads lastTrackedOperation — persists after trackOp completes
+// MANDATORY: lastCallWasTracked guard prevents false positives when updateGhosts
+// shortcut runs after a trackOp and overwrites _before/_after with stale snapshots
 function property_deposit_increases_shares() public {
+    if (!lastCallWasTracked) return;
     if (lastTrackedOperation == SelectorStorage.DEPOSIT) {
         if (_after.totalSupply <= _before.totalSupply) return;
         t(_after.actorShareBalance > _before.actorShareBalance, "deposit must increase shares");
@@ -256,7 +266,7 @@ function property_deposit_increases_shares() public {
 }
 ```
 
-**If `BeforeAfter.sol` already has `lastTrackedOperation`:** skip this step. If it only has `currentOperation` with the old reset pattern, add `lastTrackedOperation` as described above.
+**If `BeforeAfter.sol` already has all three variables:** skip this step. If it only has `currentOperation` or only `lastTrackedOperation`, add the missing variables as described above.
 
 ### 0C: Stale-Op Guards (Fallback — legacy projects only)
 
@@ -1901,6 +1911,62 @@ t(balance > 0 || initial <= DUST_TOLERANCE || fullyWithdrawn || onlyFeeSharesRem
 ```
 
 **When to apply:** Any PROFIT-02 implementation using `totalSupply == 0` as a "legitimately empty" guard, in protocols where shares are auto-minted to a privileged address (fee recipient, treasury, protocol-owned account). The fee shares represent a real claim; the vault is not "drained."
+
+---
+
+**Pattern FP-8: Ghost variable timing — set ghosts BEFORE `__before()` runs**
+
+Ghost variables that capture calldata parameters (recipient address, transfer target, distribute-to address) MUST be set **before** the `trackOp` modifier fires — i.e., before `__before()` runs — otherwise the `_before.*` snapshot captures stale ghost state.
+
+**Root cause:** The `trackOp` modifier calls `__before()` as its first action. If your target function sets a ghost variable inside the function body, `__before()` has already run with the OLD ghost value. The `_before.recipientBalance` snapshot is wrong, causing delta-based INLINE properties to fire falsely.
+
+```solidity
+// WRONG: ghost set inside function body, AFTER __before() already ran
+function katToken_mint(address to, uint256 amount) public trackOp(SelectorStorage.MINT) asActor {
+    _lastMintRecipient = to; // TOO LATE — __before() already read old _lastMintRecipient
+    katToken.mint(to, amount);
+}
+
+// CORRECT: wrapper sets ghost BEFORE delegating to tracked internal function
+function katToken_mint(address to, uint256 amount) public {
+    _lastMintRecipient = to; // Set BEFORE __before() runs in _katToken_mint_tracked
+    _katToken_mint_tracked(to, amount);
+}
+function _katToken_mint_tracked(address to, uint256 amount) internal trackOp(SelectorStorage.MINT) asActor {
+    katToken.mint(to, amount);
+}
+```
+
+**When to apply:** Any target function where `__before()` or `__after()` reads a ghost variable that is set from calldata (recipient, spender, destination address). Look for ghost vars like `_lastMintRecipient`, `_lastTransferTo`, `_lastDistributeToAddr` — any ghost set from a function parameter that `__before()` uses to snapshot a balance or capacity. Always use the public wrapper + internal tracked function split.
+
+---
+
+**Pattern FP-9: Ghost lazy initialization — seed counters from setUp state**
+
+Ghost accumulation counters (e.g. `_totalCapacityConsumedByMint`, `_totalDeposited`) start at zero but the protocol may have tokens/state pre-minted during `setUp`. If a property asserts `totalSupply == _totalCapacityConsumedByMint`, it fires immediately because setUp mints are not tracked.
+
+**Solution:** Use a `_ghostsInitialized` flag and initialize counters from live contract state on the first `__before()` call:
+
+```solidity
+// In BeforeAfter.sol — ghost initialization flag
+bool internal _ghostsInitialized;
+
+// In __before():
+function __before() internal {
+    if (!_ghostsInitialized) {
+        _ghostsInitialized = true;
+        // Seed counter with tokens already minted during setUp
+        // so properties track mints from this baseline, not from 0
+        _totalCapacityConsumedByMint = katToken.totalSupply();
+        // Add any other setUp-seeded counters here
+    }
+    // ... rest of __before()
+}
+```
+
+**Why not initialize in setUp/constructor:** BeforeAfter variables are `internal` and setUp may run in a contract that doesn't inherit BeforeAfter directly. The lazy-init in `__before()` runs in the correct inheritance context and is guaranteed to run before any property evaluation.
+
+**When to apply:** Any ghost accumulation counter whose corresponding property compares against an absolute protocol value (totalSupply, totalAssets, totalShares) and the protocol pre-seeds that value during setUp. Signs: a property fails on the VERY FIRST fuzzing call with a non-zero delta that matches exactly the setUp mint/deposit amounts.
 
 ---
 

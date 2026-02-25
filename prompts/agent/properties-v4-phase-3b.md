@@ -106,10 +106,11 @@ The testing suite provides actor/asset management:
 ## Phase 3B Scope: INLINE + NEGATIVE + DOOMSDAY Properties
 
 ### VT-* (TIER 7A: Variable Transition Positive — INLINE)
-Filter by `_before.sig` to apply checks only after specific function calls.
+Filter by `lastTrackedOperation` to apply checks only after specific function calls. Always add the `lastCallWasTracked` guard — see Stale-Op Awareness below.
 ```solidity
 function property_HUB_VT_01_addIncreasesLiquidity() public {
-    if (_before.sig == hub.add.selector) {
+    if (!lastCallWasTracked) return; // MANDATORY — skip if snapshots are from updateGhosts shortcut
+    if (lastTrackedOperation == SelectorStorage.HUB_ADD) {
         gte(_after.totalLiquidity, _before.totalLiquidity,
             "HUB-VT-01: add must increase liquidity");
     }
@@ -224,7 +225,8 @@ function property_SPOKE_LIQ_01_selfLiquidationBlocked() public {
 ### FEE-* (TIER 9: Fee Accrual — INLINE)
 ```solidity
 function property_HUB_FEE_01_feeReceiverGetsAccrued() public {
-    if (_before.sig == hub.accrueInterest.selector) {
+    if (!lastCallWasTracked) return; // MANDATORY
+    if (lastTrackedOperation == SelectorStorage.HUB_ACCRUE_INTEREST) {
         if (_after.lastAccrualTime > _before.lastAccrualTime) {
             gte(_after.feeReceiverBalance, _before.feeReceiverBalance,
                 "HUB-FEE-01: fee receiver must receive accrued fees");
@@ -236,8 +238,11 @@ function property_HUB_FEE_01_feeReceiverGetsAccrued() public {
 ### ST-* (TIER 11: State Transition — INLINE)
 ```solidity
 function property_HUB_ST_01_onlyAddIncreasesLiquidity() public {
+    if (!lastCallWasTracked) return; // MANDATORY
     if (_after.totalLiquidity > _before.totalLiquidity) {
-        t(_before.sig == hub.add.selector || _before.sig == hub.accrueInterest.selector,
+        t(
+            lastTrackedOperation == SelectorStorage.HUB_ADD ||
+            lastTrackedOperation == SelectorStorage.HUB_ACCRUE_INTEREST,
             "HUB-ST-01: unexpected liquidity increase");
     }
 }
@@ -301,21 +306,37 @@ If Step 0D in Phase 3A already removed all conflicting admin targets, these guar
 
 ## Stale-Op Awareness
 
-Phase 3A applied the updateGhosts reset fix (Step 0B) or stale-op guards (Step 0C). When implementing INLINE properties:
+Phase 3A applied the triple-variable tracking pattern (Step 0B): `currentOperation` (in-call only), `lastTrackedOperation` (never reset, persists for `property_*`), and `lastCallWasTracked` (true after trackOp, false after updateGhosts).
 
-- If the reset fix was applied: No additional guards needed — `currentOperation` is zeroed for Category B functions.
-- If stale-op guards were used instead: Add consistency preconditions to any STALE_OP_RISK-flagged property:
-  ```solidity
-  function property_deposit_increases_shares() public {
-      if (currentOperation == SelectorStorage.DEPOSIT) {
-          // Consistency precondition: deposit should increase totalSupply
-          if (_after.totalSupply <= _before.totalSupply) return;
-          t(_after.actorShareBalance > _before.actorShareBalance, "deposit must increase shares");
-      }
-  }
-  ```
+**MANDATORY guard on ALL INLINE properties that compare `_before`/`_after` snapshots:**
 
-Check `magic/properties-efficient-second-pass.md` for STALE_OP_RISK flags on each property.
+```solidity
+// REQUIRED on every INLINE property — prevents false positives when an updateGhosts
+// shortcut runs after a trackOp and overwrites _before/_after with stale snapshots
+// while lastTrackedOperation still holds the prior op selector.
+if (!lastCallWasTracked) return;
+```
+
+**Full INLINE property template:**
+
+```solidity
+function property_deposit_increases_shares() public {
+    if (!lastCallWasTracked) return;  // MANDATORY — skip if snapshots are from updateGhosts shortcut
+    if (lastTrackedOperation == SelectorStorage.DEPOSIT) {
+        if (_after.totalSupply <= _before.totalSupply) return; // no-op guard
+        t(_after.actorShareBalance > _before.actorShareBalance,
+            "deposit must increase shares");
+    }
+}
+```
+
+**Why `lastCallWasTracked` is needed (not just `lastTrackedOperation`):**
+
+Consider: `trackOp(DEPOSIT)` runs → `lastTrackedOperation = DEPOSIT`, snapshots correct → then `shortcut_adminSomething()` (updateGhosts) runs → `_before`/`_after` overwritten with NEW snapshots, but `lastTrackedOperation` still = `DEPOSIT`. Without the guard, the property sees `lastTrackedOperation == DEPOSIT` (true) but compares stale snapshots from the shortcut — false positive.
+
+**STALE_OP_RISK-flagged properties from Phase 2:** these are the properties that most urgently need the `lastCallWasTracked` guard. Check `magic/properties-efficient-second-pass.md` for STALE_OP_RISK flags.
+
+**Legacy projects (pre-triple-variable):** If BeforeAfter.sol only has `currentOperation` with the old reset, apply `if (currentOperation == bytes4(0)) return;` as a minimal fallback guard. But prefer upgrading BeforeAfter to the triple-variable pattern.
 
 ---
 
