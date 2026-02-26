@@ -11,7 +11,7 @@
     },
     {
       "type": "workflow",
-      "workflow_file": "workflow-properties-full-opus.json"
+      "workflow_file": "workflow-properties-efficient-v4.0-claude.json"
     },
     {
       "type": "workflow",
