@@ -699,10 +699,10 @@ def resolve_model_string(model_type: str, model_string: str) -> str:
     }
 
     OPENCODE_MODELS = {
-        "inherit": "openrouter/anthropic/claude-opus-4.5",
-        "opus": "openrouter/anthropic/claude-opus-4.5",
-        "sonnet": "openrouter/anthropic/claude-sonnet-4.5",
-        "haiku": "openrouter/anthropic/claude-haiku-4.5",
+        "inherit": "openrouter/anthropic/claude-opus-4-6",
+        "opus": "openrouter/anthropic/claude-opus-4-6",
+        "sonnet": "openrouter/anthropic/claude-sonnet-4-6",
+        "haiku": "openrouter/anthropic/claude-haiku-4-5",
     }
 
     # Resolve based on model type, fall back to default if not found
