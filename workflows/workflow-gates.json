@@ -49,6 +49,54 @@
         "shouldCommitChanges": true
       }
     },
+    "smoke-test-gate": {
+      "description": "Run 10K-test smoke campaign to catch shallow false positives before full budget",
+      "maxRetries": 1,
+      "check": {
+        "name": "Smoke Test Run",
+        "type": "task",
+        "description": "Run a quick 10K-test campaign and check for unexpected failures",
+        "prompt": "rm -f magic/SMOKE_TEST_PASSED.txt magic/smoke-test-results.json; ~/.local/bin/recon fuzz . --contract CryticTester --config echidna.yaml --format text --test-limit 10000 --workers 4 > magic/smoke-test-output.log 2>&1; SMOKE_EXIT=$?; if [ $SMOKE_EXIT -eq 0 ]; then echo SMOKE_TEST_PASSED > magic/SMOKE_TEST_PASSED.txt; elif grep -q 'failed' magic/smoke-test-output.log && ! grep -q 'canary' magic/smoke-test-output.log; then echo 'PROPERTY_FAILURES_DETECTED' > magic/smoke-test-results.json; else echo SMOKE_TEST_PASSED > magic/SMOKE_TEST_PASSED.txt; fi",
+        "model": {
+          "type": "PROGRAM",
+          "model": "inherit"
+        },
+        "allowFailure": true,
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": false
+      },
+      "successCondition": {
+        "mode": "FILE_EXISTS",
+        "modeInfo": {
+          "fileName": "magic/SMOKE_TEST_PASSED.txt"
+        },
+        "successValue": 1
+      },
+      "fix": {
+        "name": "Triage Smoke Test Failures",
+        "type": "task",
+        "description": "Analyze and fix shallow false positives found in smoke test",
+        "prompt": "Read magic/smoke-test-output.log. For each property failure:\n1. If call sequence length <= 3 → likely FP from setup issue, fix the property guard\n2. If involves address(0) → add address(0) guard to property\n3. If involves time warp → check stale-vs-live index values (AP-10)\n4. If fails by 1-2 wei → add tolerance\n5. If involves different actors → add _actorConsistent guard\nFix all identified FPs in Properties.sol, then run forge build to verify.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": true,
+        "shouldCommitChanges": true
+      },
+      "onFailure": {
+        "name": "Generate Smoke Test Failure Report",
+        "type": "task",
+        "description": "Generate failure report for unresolvable smoke test failures",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/generate-failure-report.md. Run exclusively the generate-failure-report agent to create magic/WORKFLOW_FAILURE_REPORT.md explaining smoke test failures.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      }
+    },
     "echidna-run-gate": {
       "description": "Run Echidna and verify it completes successfully, attempt fix if failed",
       "maxRetries": 3,
