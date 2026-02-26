@@ -640,6 +640,7 @@ def start_job_listener(
                 # Set environment variable for framework root
                 framework_root = Path(__file__).parent.resolve()
                 os.environ['RECON_FRAMEWORK_ROOT'] = str(framework_root)
+                os.environ['PROMPTS_DIR'] = str(framework_root / 'prompts')
 
                 # Set prompts directory (where agent reference documents live)
                 os.environ['PROMPTS_DIR'] = str(framework_root / 'prompts')

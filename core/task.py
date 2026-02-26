@@ -882,6 +882,8 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
     env = os.environ.copy()
     env['BASH_DEFAULT_TIMEOUT_MS'] = '214748364'
     env['BASH_MAX_TIMEOUT_MS'] = '214748364'
+    # Remove CLAUDECODE so nested claude invocations are allowed
+    env.pop('CLAUDECODE', None)
 
     # Generate log filename with timestamp and step name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

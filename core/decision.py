@@ -30,10 +30,13 @@ class ModelType:
 class DecisionMode(str, Enum):
     """Decision mode enum defining how decisions are evaluated."""
     FILE_EXISTS = "FILE_EXISTS"      # check if a file exists
+    FILE_CONTAINS = "FILE_CONTAINS"  # check if a file contains a specific string (returns 1 or 0)
     READ_FILE = "READ_FILE"          # Read from filesystem (e.g., file exists check)
     USE_MODEL = "USE_MODEL"          # Use a model to decide
     READ_FILE_WITH_MODEL_DIGEST = "READ_FILE_WITH_MODEL_DIGEST" # Read from filesystem and use a model to digest the file contents
     JSON_KEY_VALUE = "JSON_KEY_VALUE"  # Read a specific key value from a JSON file
+    GREP = "GREP"                    # Run grep pattern on a file/glob, returns match count
+    SHELL = "SHELL"                  # Run a shell command, returns exit code
 
 
 class Model(BaseModel):
@@ -46,8 +49,9 @@ class Decision(BaseModel):
     """Decision configuration for DecisionStep."""
     operator: Literal["eq", "gt", "lt", "gte", "lte", "neq"]
     value: Union[float, str]  # Support both numeric and string comparisons
-    action: Literal["CONTINUE", "STOP", "REPEAT_PREVIOUS_STEP", "JUMP_TO_STEP"]
+    action: Literal["CONTINUE", "CONTINUE_WITH_WARNING", "STOP", "REPEAT_PREVIOUS_STEP", "JUMP_TO_STEP"]
     destinationStep: str | None = None  # Required when action is JUMP_TO_STEP
+    NOTE: str | None = None  # Optional documentation note
 
 
 class DecisionStep(BaseModel):
@@ -346,6 +350,81 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
         except Exception as e:
             print(f"⚠ Error processing file or calling model: {e}, defaulting to CONTINUE")
             return (SUCCESS, "CONTINUE", None)
+
+    if decision_mode == DecisionMode.FILE_CONTAINS:
+        base_path = get_base_path()
+        pattern = step.modeInfo.get("fileName")
+        search_string = step.modeInfo.get("searchString")
+
+        if not pattern or search_string is None:
+            print("⚠ fileName or searchString not specified in modeInfo, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        matches = list(base_path.glob(pattern))
+        if not matches:
+            print(f"  File not found matching pattern: {pattern}")
+            action, destination = evaluate_decisions(step.decision, 0.0)
+            return (SUCCESS, action, destination)
+
+        file_path = matches[0]
+        content = file_path.read_text()
+        found = 1.0 if search_string in content else 0.0
+        print(f"  Search '{search_string}' in {file_path.name}: {'found' if found else 'not found'}")
+        action, destination = evaluate_decisions(step.decision, found)
+        return (SUCCESS, action, destination)
+
+    if decision_mode == DecisionMode.GREP:
+        import subprocess
+        base_path = get_base_path()
+        pattern = step.modeInfo.get("pattern")
+        file_glob = step.modeInfo.get("file")
+
+        if not pattern or not file_glob:
+            print("⚠ pattern or file not specified in modeInfo, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        matches = list(base_path.glob(file_glob))
+        if not matches:
+            print(f"  No files found matching glob: {file_glob}")
+            action, destination = evaluate_decisions(step.decision, 0.0)
+            return (SUCCESS, action, destination)
+
+        total_count = 0
+        for file_path in matches:
+            result = subprocess.run(
+                ["grep", "-c", pattern, str(file_path)],
+                capture_output=True, text=True
+            )
+            try:
+                total_count += int(result.stdout.strip())
+            except ValueError:
+                pass
+
+        print(f"  Grep '{pattern}' in {[m.name for m in matches]}: {total_count} matches")
+        action, destination = evaluate_decisions(step.decision, float(total_count))
+        return (SUCCESS, action, destination)
+
+    if decision_mode == DecisionMode.SHELL:
+        import subprocess
+        command = step.modeInfo.get("command")
+        if not command:
+            print("⚠ command not specified in modeInfo, defaulting to CONTINUE")
+            return (SUCCESS, "CONTINUE", None)
+
+        foundry_root = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH', '.')
+        print(f"  Running shell command: {command}")
+        result = subprocess.run(
+            command, shell=True, cwd=foundry_root,
+            capture_output=True, text=True
+        )
+        exit_code = float(result.returncode)
+        print(f"  Exit code: {int(exit_code)}")
+        if result.stdout:
+            print(f"  stdout: {result.stdout.strip()[-500:]}")
+        if result.stderr:
+            print(f"  stderr: {result.stderr.strip()[-500:]}")
+        action, destination = evaluate_decisions(step.decision, exit_code)
+        return (SUCCESS, action, destination)
 
     # Default case if no mode matches
     print(f"⚠ Unhandled decision mode: {decision_mode}, defaulting to CONTINUE")
