@@ -745,6 +745,22 @@ def run_workflow(
     if repo_path:
         os.environ['RECON_REPO_PATH'] = repo_path
 
+        # Detect and set RECON_FOUNDRY_ROOT if not already set (worker.py sets it for cloud runs)
+        if not os.environ.get('RECON_FOUNDRY_ROOT'):
+            foundry_paths = []
+            for root, dirs, files in os.walk(repo_path):
+                dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast', 'dependencies']]
+                if 'foundry.toml' in files:
+                    foundry_paths.append(root)
+            if len(foundry_paths) == 1:
+                os.environ['RECON_FOUNDRY_ROOT'] = foundry_paths[0]
+                rel = os.path.relpath(foundry_paths[0], repo_path)
+                print(f"  ✓ Auto-detected foundryRoot: {rel}")
+            elif len(foundry_paths) == 0:
+                os.environ['RECON_FOUNDRY_ROOT'] = repo_path
+            else:
+                os.environ['RECON_FOUNDRY_ROOT'] = repo_path
+
     # Load the workflow
     workflow = load_workflow(workflow_file)
 
@@ -928,6 +944,8 @@ def run_workflow(
             print(f"\n🛑 STOP action triggered by step {i}")
             print("Halting workflow execution early.")
             return SUCCESS
+        elif action == "CONTINUE_WITH_WARNING":
+            print(f"\n⚠️  CONTINUE_WITH_WARNING: proceeding despite non-ideal condition")
         elif action == "SKIPPED":
             print(f"\n⏭️  Step {i} was skipped by user request")
             # Continue to next step (don't treat as failure)

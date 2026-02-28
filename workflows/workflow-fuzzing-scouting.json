@@ -37,6 +37,19 @@
       "shouldCommitChanges": false
     },
     {
+      "name": "Ensure Dependencies Installed",
+      "type": "task",
+      "description": "Detect dependency manager and install dependencies if missing",
+      "prompt": "if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Detected soldeer project, installing dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install timed out or failed, continuing...'; elif [ -f .gitmodules ]; then echo 'Detected git submodule project, installing dependencies...'; git submodule update --init --recursive; forge install --no-commit; elif [ -f package.json ] && [ ! -d node_modules ]; then if [ -f pnpm-lock.yaml ]; then echo 'Detected pnpm project, installing dependencies...'; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Detected yarn project, installing dependencies...'; timeout 120 yarn install; else echo 'Detected npm project, installing dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing...'; else echo 'Dependencies appear to be already installed, skipping.'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit; fi; echo 'Verifying compilation...'; forge build",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
+    },
+    {
       "name": "Phase 1: Contract Analysis & Scaffolding Preparation",
       "type": "task",
       "description": "Identify contracts for invariant testing and prepare scaffolding requirements",
@@ -85,6 +98,19 @@
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
+    },
+    {
+      "name": "Clean Flattened Imports",
+      "type": "task",
+      "description": "Remove imports of flattened contracts from scaffolding to prevent identifier collisions",
+      "prompt": "ROOT=${RECON_FOUNDRY_ROOT:-.}; FLATTENED=$(find \"$ROOT/src\" -name '*.flattened.sol' -o -name '*.flat.sol' 2>/dev/null); if [ -n \"$FLATTENED\" ]; then echo 'Found flattened contracts, cleaning imports from scaffolding...'; for f in $FLATTENED; do BASENAME=$(basename \"$f\"); echo \"  Removing imports of $BASENAME from test/recon/\"; find \"$ROOT/test/recon\" -name '*.sol' -exec sed -i \"/$BASENAME/d\" {} +; done; find \"$ROOT/test/recon\" -name '*.sol' -exec sed -i '/flattened\\//d' {} +; echo 'Flattened import cleanup done.'; else echo 'No flattened contracts found, skipping cleanup.'; fi",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
     }
   ]
 }
