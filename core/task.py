@@ -98,18 +98,18 @@ def set_current_process(proc: subprocess.Popen | None):
 def interrupt_current_process() -> bool:
     """
     Send SIGINT (Ctrl+C) to interrupt the current subprocess and its children.
-    
+
     Since we use start_new_session=True, the process runs in its own process group.
     We send SIGINT to the entire process group so that child processes (like echidna
     spawned by bash -c) also receive the signal.
-    
+
     Returns True if signal was sent, False if no process running.
     """
     proc = get_current_process()
     if not proc or proc.poll() is not None:
         print(f"  ⚠ No current process to interrupt (proc={proc}, poll={proc.poll() if proc else 'N/A'})")
         return False
-    
+
     try:
         # Send SIGINT to the entire process group (proc.pid is the group leader)
         os.killpg(proc.pid, signal.SIGINT)
@@ -201,8 +201,8 @@ class OpenCodeLogMonitor:
     OPENCODE outputs JSON lines, and we parse:
     - todowrite tool events to extract todo progress
     - write tool events to extract file write activity
-    
-    Also tracks staleness - if no log updates for stale_timeout seconds, 
+
+    Also tracks staleness - if no log updates for stale_timeout seconds,
     the process is considered stale.
     """
 
@@ -251,28 +251,28 @@ class OpenCodeLogMonitor:
     def _extract_progress(self, json_line: str) -> str | None:
         """
         Extract progress from a JSON line.
-        Returns format: 
+        Returns format:
         - "✅ todos X/Y: {in_progress todo content}" for todowrite
         - "✏️ Write: {filename}" for write
         """
         try:
             import json
             data = json.loads(json_line)
-            
+
             # Check if this is a tool_use event
             if data.get("type") != "tool_use":
                 return None
-            
+
             part = data.get("part", {})
             tool = part.get("tool")
-            
+
             if tool == "todowrite":
                 return self._extract_todo_progress(part)
             elif tool == "write":
                 return self._extract_write_progress(part)
-            
+
             return None
-                
+
         except (json.JSONDecodeError, KeyError, TypeError):
             return None
 
@@ -282,21 +282,21 @@ class OpenCodeLogMonitor:
             state = part.get("state", {})
             input_data = state.get("input", {})
             todos = input_data.get("todos", [])
-            
+
             if not todos:
                 return None
-            
+
             # Calculate progress
             total = len(todos)
             pending_count = sum(1 for t in todos if t.get("status") == "pending")
             completed_count = total - pending_count
-            
+
             # Find in_progress todo content
             in_progress_todo = next(
                 (t for t in todos if t.get("status") == "in_progress"),
                 None
             )
-            
+
             if in_progress_todo:
                 content = in_progress_todo.get("content", "")
                 # Truncate long content
@@ -314,10 +314,10 @@ class OpenCodeLogMonitor:
             state = part.get("state", {})
             input_data = state.get("input", {})
             file_path = input_data.get("filePath", "")
-            
+
             if not file_path:
                 return None
-            
+
             # Extract just the filename from the path
             filename = os.path.basename(file_path)
             return f"✏️ Write: {filename}"
@@ -926,7 +926,8 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
                 print(f"  ⚠ Agent file not found: {agent_file_path}")
 
         # If repo_path is set, prefix command to cd there first
-        repo_path = os.environ.get('RECON_REPO_PATH')
+        # Use RECON_FOUNDRY_ROOT (where foundry.toml lives) with fallback to RECON_REPO_PATH
+        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH')
         cd_prefix = f"cd {repo_path} && " if repo_path else ""
 
         cmd = f"""{cd_prefix}claude {skip_permissions} \
@@ -1001,7 +1002,8 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
                 print(f"  ⚠ Agent file not found: {agent_file_path}")
 
         # If repo_path is set, prefix command to cd there first
-        repo_path = os.environ.get('RECON_REPO_PATH')
+        # Use RECON_FOUNDRY_ROOT (where foundry.toml lives) with fallback to RECON_REPO_PATH
+        repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH')
         cd_prefix = f"cd {repo_path} && " if repo_path else ""
 
         # Pass OPENROUTER_API_KEY inline to work around auth bug
