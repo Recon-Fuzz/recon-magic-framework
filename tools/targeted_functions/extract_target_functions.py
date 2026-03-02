@@ -229,7 +229,7 @@ def find_recon_directory(quiet: bool = False) -> Path:
         valid_matches = [
             m for m in matches
             if m.is_dir() and len(m.relative_to(current_dir).parts) <= 5
-            and (m / "Setup.sol").exists()
+            and (m / "Setup.sol").is_file()
         ]
 
         if valid_matches:
