@@ -88,6 +88,19 @@
       "shouldCommitChanges": false
     },
     {
+      "name": "Suppress Lint on Build",
+      "type": "task",
+      "description": "Disable forge linter during build to prevent lint warnings in third-party code from blocking scaffolding",
+      "prompt": "if ! grep -q '\\[lint\\]' foundry.toml 2>/dev/null; then printf '\\n[lint]\\nlint_on_build = false\\n' >> foundry.toml; elif ! grep -q 'lint_on_build' foundry.toml 2>/dev/null; then sed -i '/\\[lint\\]/a lint_on_build = false' foundry.toml; else sed -i 's/lint_on_build = true/lint_on_build = false/' foundry.toml; fi; echo 'lint_on_build set to false in foundry.toml'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
+    },
+    {
       "name": "Generate Recon Scaffolding",
       "type": "task",
       "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",

@@ -50,9 +50,9 @@
     "PriceOracle"
   ],
   "mocked_contracts": [
-    "ERC20Mock",
-    "ChainlinkOracleMock",
-    "UniswapRouterMock"
+    "ERC20",
+    "ChainlinkOracle",
+    "UniswapRouter"
   ]
 }
 ```
