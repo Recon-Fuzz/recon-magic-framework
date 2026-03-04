@@ -41,7 +41,7 @@
       "name": "Ensure Dependencies Installed",
       "type": "task",
       "description": "Detect dependency manager and install dependencies if missing",
-      "prompt": "if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Detected soldeer project, installing dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install timed out or failed, continuing...'; elif [ -f .gitmodules ]; then echo 'Detected git submodule project, installing dependencies...'; git submodule update --init --recursive; forge install --no-commit; elif [ -f package.json ] && [ ! -d node_modules ]; then if [ -f pnpm-lock.yaml ]; then echo 'Detected pnpm project, installing dependencies...'; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Detected yarn project, installing dependencies...'; timeout 120 yarn install; else echo 'Detected npm project, installing dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing...'; else echo 'Dependencies appear to be already installed, skipping.'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit; fi; echo 'Verifying compilation...'; forge build",
+      "prompt": "if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Detected soldeer project, installing dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install timed out or failed, continuing...'; fi; if [ -f .gitmodules ]; then echo 'Detected git submodule project, installing dependencies...'; git submodule update --init --recursive; forge install --no-commit || echo 'forge install failed, continuing...'; fi; if [ -f package.json ]; then if [ -f pnpm-lock.yaml ]; then echo 'Detected pnpm project, installing dependencies...'; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Detected yarn project, installing dependencies...'; timeout 120 yarn install; else echo 'Detected npm project, installing dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing...'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit; fi; echo 'Verifying compilation...'; forge build",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -118,6 +118,18 @@
       "type": "task",
       "description": "Implement Setup.sol based on setup-config-spec.json",
       "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-2.md. Run exclusively the setup-v2-phase-2 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Fix Import Collisions",
+      "type": "task",
+      "description": "Safety net: detect and fix any remaining duplicate identifier errors from conflicting imports",
+      "prompt": "Run `forge build`. If it compiles cleanly, report success and stop — do nothing else.\n\nIf you see `Error (2333): Identifier already declared`, fix the collisions in `test/recon/` files:\n1. Read the error output to identify which import lines cause each collision\n2. Check whether the colliding import is actually used by setup() or handler logic — if it is not used, remove the import line entirely\n3. If both colliding imports are needed, refactor to named imports with aliases, for example: `import {IPair as FirebirdIPair} from \"contracts/interfaces/IFirebird.sol\";`\n4. Re-run `forge build` and repeat up to 3 times until compilation is clean\n\nOnly fix `Error (2333): Identifier already declared` — do not touch other compilation errors, those are handled by the next phase.",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"

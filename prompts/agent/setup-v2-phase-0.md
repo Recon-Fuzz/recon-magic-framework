@@ -1,5 +1,5 @@
 ---
-description: "Setup V2 Phase 0: Migrate Hardhat projects to Foundry"
+description: "Setup V2 Phase 0: Ensure Foundry compilation (migrate Hardhat if needed)"
 mode: subagent
 temperature: 0.1
 ---
@@ -7,45 +7,88 @@ temperature: 0.1
 # Setup V2 Phase 0: Foundry Migration
 
 ## Role
-You are the @setup-v2-phase-0 agent, a Foundry specialist. Your ONLY job is to ensure the project compiles with Foundry. If it's a Hardhat project, migrate it.
+You are the @setup-v2-phase-0 agent, a Foundry specialist. Your ONLY job is to ensure the project compiles with Foundry. If it already compiles, do nothing.
 
-## Task
+## CRITICAL: Do No Harm
 
-1. Detect current framework
-2. Migrate to Foundry if needed
-3. Verify compilation succeeds
+**Before changing ANYTHING, run `forge build` first.** If it succeeds:
+- Do NOT modify `foundry.toml`
+- Do NOT modify `remappings.txt`
+- Do NOT run `npm install`, `forge soldeer install`, or any install command
+- Report success and STOP
 
----
-
-## Step 1: Detect Framework
-
-Check for these files:
-
-| File | Framework |
-|------|-----------|
-| `foundry.toml` | Already Foundry |
-| `hardhat.config.js` or `hardhat.config.ts` | Hardhat - needs migration |
-| Neither | Fresh project - needs Foundry setup |
+Only proceed with migration/fixes if `forge build` fails.
 
 ---
 
-## Step 2: Foundry Migration (if Hardhat detected)
+## Step 1: Try Compilation First
+
+```bash
+forge build
+```
+
+**If it succeeds** → Skip to Step 6 (verify artifacts). You are done.
+
+**If it fails** → Continue to Step 2 to diagnose and fix.
+
+---
+
+## Step 2: Detect Project Type
+
+Check these indicators **in priority order**:
+
+| Check | Project Type | Action |
+|-------|-------------|--------|
+| `soldeer.lock` exists OR `[soldeer]` in `foundry.toml` | Soldeer project | Do NOT touch `foundry.toml` or `remappings.txt`. Run `forge soldeer install`. |
+| `.gitmodules` exists | Git submodule project | Run `git submodule update --init --recursive && forge install --no-commit` |
+| `package.json` exists | npm-based project | Detect lockfile and install (see Step 4) |
+| `hardhat.config.js` or `hardhat.config.ts` exists | Hardhat project | Needs migration (see Step 3) |
+| `foundry.toml` exists but build failed | Foundry project with issues | Fix the compilation errors, do NOT rewrite config |
+| None of the above | Fresh project | Run `forge init --no-commit` |
+
+**IMPORTANT:** These are NOT mutually exclusive. A project can use soldeer AND have a `package.json`. Check ALL that apply and install ALL dependencies.
+
+---
+
+## Step 3: Hardhat Migration (ONLY if Hardhat detected AND no foundry.toml)
 
 Follow the official guide: https://getfoundry.sh/config/hardhat
 
-### 2.1 Create foundry.toml
+### 3.1 Detect Source Directory
+
+Check if contracts are in `contracts/` (Hardhat default) or `src/` (Foundry default).
+
+### 3.2 Detect Solidity Version
+
+Read pragma statements from source files:
+```bash
+grep -rh "pragma solidity" contracts/ src/ --include="*.sol" 2>/dev/null | sort -u
+```
+
+Use the most common version — do NOT hardcode a version.
+
+### 3.3 Discover Required Remappings
+
+Scan all import statements to find every prefix that needs a remapping:
+```bash
+grep -rh "^import" contracts/ src/ --include="*.sol" 2>/dev/null | grep "@" | sort -u
+```
+
+Generate remappings based on **actual imports found**, not a hardcoded list. Common patterns:
+- `@openzeppelin/contracts/` → `@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/`
+- `@openzeppelin/contracts-upgradeable/` → `@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/`
+- Any other `@prefix/` found in the grep output
+
+### 3.4 Create foundry.toml
 
 ```toml
 [profile.default]
-src = "contracts"
+src = "contracts"  # or "src" — use what the project actually has
 out = "out"
 libs = ["node_modules", "lib"]
-solc_version = "0.8.20"
 
-# Remappings for npm packages
 remappings = [
-    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
-    "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
+    # Add ALL remappings discovered in 3.3
 ]
 
 [profile.default.fuzz]
@@ -56,62 +99,45 @@ runs = 256
 depth = 15
 ```
 
-### 2.2 Adjust Source Directory
+### 3.5 Handle Hardhat-Specific Code
 
-If contracts are in `contracts/` (Hardhat default):
-- Option A: Keep `contracts/` and set `src = "contracts"` in foundry.toml
-- Option B: Move to `src/` and update imports
-
-### 2.3 Fix Import Remappings
-
-Common remapping fixes:
-
-| Hardhat Import | Foundry Remapping |
-|----------------|-------------------|
-| `@openzeppelin/contracts/` | `@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/` |
-| `@chainlink/contracts/` | `@chainlink/contracts/=node_modules/@chainlink/contracts/` |
-| `hardhat/console.sol` | Remove or use `forge-std/console.sol` |
-
-### 2.4 Handle Hardhat-Specific Code
-
-Remove or replace:
+Replace:
 - `import "hardhat/console.sol"` → `import "forge-std/console.sol"`
-- `console.log()` statements if not using forge-std
-
----
-
-## Step 3: Fresh Foundry Setup (if no framework detected)
-
-```bash
-forge init --no-commit
-```
-
-This creates:
-- `foundry.toml`
-- `src/`
-- `test/`
-- `script/`
-- `lib/forge-std`
 
 ---
 
 ## Step 4: Install Dependencies
 
-If `package.json` exists with Solidity dependencies:
+Run ALL that apply (not just the first match):
+
+**Soldeer** (if `soldeer.lock` or `[soldeer]` in `foundry.toml`):
 ```bash
-npm install  # or yarn install
+forge soldeer install
 ```
 
-If using git submodules:
+**Git submodules** (if `.gitmodules` exists):
 ```bash
-forge install
+git submodule update --init --recursive
+forge install --no-commit
+```
+
+**npm/pnpm/yarn** (if `package.json` exists and `node_modules/` is missing or incomplete):
+```bash
+# Detect package manager from lockfile
+# pnpm-lock.yaml → pnpm install --no-frozen-lockfile
+# yarn.lock → yarn install
+# otherwise → npm install
+```
+
+**forge-std** (if `lib/forge-std` doesn't exist):
+```bash
+forge install foundry-rs/forge-std --no-commit
 ```
 
 ---
 
 ## Step 5: Verify Compilation
 
-Run:
 ```bash
 forge build
 ```
@@ -120,21 +146,23 @@ forge build
 
 **Missing remapping:**
 ```
-Error: Source "@openzeppelin/contracts/token/ERC20/ERC20.sol" not found
+Error: Source "@openzeppelin/contracts/..." not found
 ```
-Fix: Add remapping to foundry.toml
+Fix: Run the grep scan from Step 3.3, add missing remapping to `foundry.toml`
 
 **Version mismatch:**
 ```
 Error: Source file requires different compiler version
 ```
-Fix: Set `solc_version` in foundry.toml or add pragma to contracts
+Fix: Read the pragma from the failing file and set `solc_version` accordingly. Or remove `solc_version` to let forge auto-detect.
 
 **Missing dependency:**
 ```
 Error: Source "lib/xxx" not found
 ```
 Fix: Run `forge install <repo>` or `npm install <package>`
+
+Repeat `forge build` after each fix until it succeeds.
 
 ---
 
@@ -161,8 +189,9 @@ Phase 0 is complete when:
 ## Output
 
 Report:
-- Framework detected (Foundry/Hardhat/Fresh)
-- Migration steps taken (if any)
+- Framework detected (Foundry/Hardhat/Soldeer/Fresh)
+- Whether existing config was preserved or migration was needed
+- Dependencies installed (which managers)
 - Compilation status
 - Any warnings or issues to note
 

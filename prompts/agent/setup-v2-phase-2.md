@@ -143,6 +143,17 @@ import {ContractB} from "src/ContractB.sol";
 // === Mock Imports === //
 import {OracleMock} from "./mocks/OracleMock.sol";
 
+// ⚠️  IMPORT COLLISION RULES:
+// 1. ALWAYS use named imports: `import {X} from "..."` — NEVER bare `import "..."`
+// 2. Before adding an import, check if any existing handler files in test/recon/
+//    already import a contract that defines the same interface/struct name.
+//    For example, if AdapterA.sol and AdapterB.sol both define `interface IPair`,
+//    importing both will cause `Error (2333): Identifier already declared`.
+// 3. Only import contracts that Setup.sol actually uses (deploys, references, or casts).
+//    Do NOT re-import contracts that are only used by handler files.
+// 4. If two imports are both needed but collide, use aliases:
+//    `import {IPair as FirebirdIPair} from "contracts/interfaces/IFirebird.sol";`
+
 abstract contract Setup is BaseSetup, ActorManager, AssetManager {
 
     // === Constants === //
@@ -644,6 +655,11 @@ Fix any errors:
 - **Type mismatches** → Add explicit cast or fix type
 - **Wrong parameter order** → Check constructor signature in source
 - **Undeclared identifier** → Add missing variable or import
+- **`Error (2333): Identifier already declared`** → This means two imported files define the same interface/struct name. To fix:
+  1. Read the error to identify which import lines in `test/recon/` cause the collision
+  2. Check if the colliding import is actually used by `setup()` logic — if not, **remove it**
+  3. If both imports are needed, refactor to named imports with aliases: `import {IPair as FirebirdIPair} from "..."`
+  4. Re-run `forge build` after each fix — repeat up to 3 times until clean
 
 ---
 

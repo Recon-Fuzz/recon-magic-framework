@@ -51,6 +51,46 @@
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 4b: Check context extraction result",
+      "type": "decision",
+      "description": "Check if context_output was created by sol-context. If yes, skip retry. If no, retry with clean build-info.",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "context_output"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 5: Identifying Meaningful Values",
+          "NOTE": "context_output exists, sol-context succeeded"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE",
+          "NOTE": "context_output missing, retry with clean build-info"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 4c: Retry Extract Context (clean build-info)",
+      "type": "task",
+      "description": "Retry sol-context after clearing stale build-info so it regenerates in the format it needs",
+      "prompt": "rm -rf out/build-info && npx -y sol-context@latest",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
@@ -161,7 +201,7 @@
         "save_to": "magic/echidna-error-analysis.json"
       },
       "shouldCreateSummary": false,
-      "shouldCommitChanges": false
+      "shouldCommitChanges": true
     },
     {
       "name": "Step 13: Handle Echidna Results",
@@ -190,8 +230,90 @@
         {
           "operator": "eq",
           "value": 2,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 13b: Increment Echidna Retry Counter",
+          "NOTE": "Non-compilation error — try to fix up to 3 times before stopping"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 13b: Increment Echidna Retry Counter",
+      "type": "task",
+      "description": "Track how many times we've retried Echidna for non-compilation errors",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-retry-count.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-retry-count.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-retry-count.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 13c: Check Echidna Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, try to fix. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "CONTINUE",
+          "NOTE": "Under retry limit, attempt fix"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
           "action": "STOP",
-          "NOTE": "Other error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
+          "NOTE": "Exceeded 3 retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 13d: Fix Echidna Errors",
+      "type": "task",
+      "description": "Attempt to fix non-compilation Echidna errors (unlinked libraries, setup failures, etc.)",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the error (exit_code=2: non-compilation error). Read the error analysis carefully and fix the issues. Common fixes include: linking libraries in echidna.yaml, fixing setup() function, correcting contract deployment order, or fixing configuration issues.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 13e: Retry Echidna After Fix",
+      "type": "decision",
+      "description": "Always jump back to Echidna after attempting a fix",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count.txt"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 11: Run Echidna Programmatically",
+          "NOTE": "Retry counter file exists, jump back to Echidna"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 11: Run Echidna Programmatically",
+          "NOTE": "Fallback: jump back to Echidna regardless"
         }
       ],
       "shouldCreateSummary": false,
@@ -207,8 +329,50 @@
         "model": "inherit"
       },
       "shouldCreateSummary": true,
-      "shouldCommitChanges": true,
-      "nextStep": "Step 11: Run Echidna Programmatically"
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 14b: Increment Compilation Retry Counter",
+      "type": "task",
+      "description": "Track how many times we've retried Echidna after compilation fixes (cycle 1)",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-compile-retry-count.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-compile-retry-count.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-compile-retry-count.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 14c: Check Compilation Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, rerun Echidna. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-compile-retry-count.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 11: Run Echidna Programmatically",
+          "NOTE": "Under retry limit, rerun Echidna with fixed code"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
+          "action": "STOP",
+          "NOTE": "Exceeded 3 compilation fix retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
     },
     {
       "name": "Step 15: Generate Functions to Cover",
@@ -365,7 +529,7 @@
         "save_to": "magic/echidna-error-analysis.json"
       },
       "shouldCreateSummary": false,
-      "shouldCommitChanges": false
+      "shouldCommitChanges": true
     },
     {
       "name": "Step 25: Handle Echidna Results",
@@ -394,8 +558,90 @@
         {
           "operator": "eq",
           "value": 2,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 25b: Increment Echidna Retry Counter",
+          "NOTE": "Non-compilation error — try to fix up to 3 times before stopping"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 25b: Increment Echidna Retry Counter",
+      "type": "task",
+      "description": "Track how many times we've retried Echidna for non-compilation errors (cycle 2)",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-retry-count-2.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-retry-count-2.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-retry-count-2.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 25c: Check Echidna Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, try to fix. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count-2.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "CONTINUE",
+          "NOTE": "Under retry limit, attempt fix"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
           "action": "STOP",
-          "NOTE": "Other error detected (unlinked_libraries, setup, rpc, etc.), stopping workflow"
+          "NOTE": "Exceeded 3 retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 25d: Fix Echidna Errors",
+      "type": "task",
+      "description": "Attempt to fix non-compilation Echidna errors (unlinked libraries, setup failures, etc.)",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the error (exit_code=2: non-compilation error). Read the error analysis carefully and fix the issues. Common fixes include: linking libraries in echidna.yaml, fixing setup() function, correcting contract deployment order, or fixing configuration issues.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 25e: Retry Echidna After Fix",
+      "type": "decision",
+      "description": "Always jump back to Echidna after attempting a fix",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count-2.txt"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 23: Run Echidna Programmatically",
+          "NOTE": "Retry counter file exists, jump back to Echidna"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 23: Run Echidna Programmatically",
+          "NOTE": "Fallback: jump back to Echidna regardless"
         }
       ],
       "shouldCreateSummary": false,
@@ -411,8 +657,50 @@
         "model": "inherit"
       },
       "shouldCreateSummary": true,
-      "shouldCommitChanges": true,
-      "nextStep": "Step 23: Run Echidna Programmatically"
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 26b: Increment Compilation Retry Counter",
+      "type": "task",
+      "description": "Track how many times we've retried Echidna after compilation fixes (cycle 2)",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-compile-retry-count-2.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-compile-retry-count-2.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-compile-retry-count-2.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 26c: Check Compilation Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, rerun Echidna. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-compile-retry-count-2.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 23: Run Echidna Programmatically",
+          "NOTE": "Under retry limit, rerun Echidna with fixed code"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
+          "action": "STOP",
+          "NOTE": "Exceeded 3 compilation fix retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
     },
     {
       "name": "Step 27: Evaluate Coverage",
