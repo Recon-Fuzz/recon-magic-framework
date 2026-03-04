@@ -28,9 +28,20 @@ def filter_build_info_file(input_path: Path, output_path: Path | None = None, ve
     with open(input_path, 'r') as f:
         data = json.load(f)
 
+    # If build-info doesn't have the expected input/output format, pass through unchanged
+    if 'input' not in data or 'output' not in data:
+        if verbose:
+            print(f"⚠️  Build-info format has no input/output keys, passing through unchanged", file=sys.stderr)
+        if output_path is None:
+            output_path = input_path.parent / f"{input_path.stem}.filtered{input_path.suffix}"
+        with open(output_path, 'w') as f:
+            json.dump(data, f)
+        stats = {'input_sources': 0, 'output_sources': 0, 'removed_sources': 0, 'removed_files': []}
+        return output_path, stats
+
     # Get input and output sources
-    input_sources = data.get('input', {}).get('sources', {})
-    ast_output = data.get('output', {}).get('sources', {})
+    input_sources = data['input'].get('sources', {})
+    ast_output = data['output'].get('sources', {})
 
     # Filter to only include sources that have valid AST data
     filtered_input_sources = {}
