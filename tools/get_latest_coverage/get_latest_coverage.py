@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+
+def _get_base_dir() -> Path:
+    """Get the effective base directory, preferring RECON_FOUNDRY_ROOT env var."""
+    foundry_root = os.environ.get('RECON_FOUNDRY_ROOT')
+    if foundry_root:
+        return Path(foundry_root)
+    return Path.cwd()
 
 
 def find_latest_coverage_file(magic_dir: Path) -> Path | None:
@@ -79,7 +88,7 @@ This will:
     args = parser.parse_args()
 
     # Find magic directory in current working directory
-    magic_dir = Path.cwd() / "magic"
+    magic_dir = _get_base_dir() / "magic"
     if not magic_dir.is_dir():
         print(f"Error: Magic directory not found: {magic_dir}", file=sys.stderr)
         return 1

@@ -40,7 +40,7 @@
       "name": "Ensure Dependencies Installed",
       "type": "task",
       "description": "Detect dependency manager and install dependencies if missing",
-      "prompt": "if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Detected soldeer project, installing dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install timed out or failed, continuing...'; fi; if [ -f .gitmodules ]; then echo 'Detected git submodule project, installing dependencies...'; git submodule update --init --recursive; forge install --no-commit || echo 'forge install failed, continuing...'; fi; if [ -f package.json ]; then if [ -f pnpm-lock.yaml ]; then echo 'Detected pnpm project, installing dependencies...'; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Detected yarn project, installing dependencies...'; timeout 120 yarn install; else echo 'Detected npm project, installing dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing...'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit; fi; echo 'Verifying compilation...'; forge build",
+      "prompt": "if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Detected soldeer project, installing dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install timed out or failed, continuing...'; fi; if [ -f .gitmodules ]; then echo 'Detected git submodule project, installing dependencies...'; git submodule update --init --recursive; forge install --no-commit || echo 'forge install failed, continuing...'; fi; if [ -f package.json ]; then if [ -f pnpm-lock.yaml ]; then echo 'Detected pnpm project, installing dependencies...'; command -v pnpm >/dev/null 2>&1 || npm install -g pnpm; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Detected yarn project, installing dependencies...'; timeout 120 yarn install; else echo 'Detected npm project, installing dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing...'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit; fi; echo 'Verifying compilation...'; forge build",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -104,7 +104,7 @@
       "name": "Generate Recon Scaffolding",
       "type": "task",
       "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",
-      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' $SCAFFOLD_FILE)\" --force",
+      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' $SCAFFOLD_FILE)\" --force",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"

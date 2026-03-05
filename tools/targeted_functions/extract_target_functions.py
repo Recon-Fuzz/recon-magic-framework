@@ -8,12 +8,21 @@ This script extracts targeted functions from a fuzzing suite by:
 3. Generating a JSON output file with contracts and their target functions
 """
 
+import os
 import re
 import json
 import argparse
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple
+
+
+def _get_base_dir() -> Path:
+    """Get the effective base directory, preferring RECON_FOUNDRY_ROOT env var."""
+    foundry_root = os.environ.get('RECON_FOUNDRY_ROOT')
+    if foundry_root:
+        return Path(foundry_root)
+    return Path.cwd()
 
 
 def remove_comments(content: str) -> str:
@@ -213,7 +222,7 @@ def find_recon_directory(quiet: bool = False) -> Path:
         FileNotFoundError if recon directory is not found
     """
     import sys
-    current_dir = Path.cwd()
+    current_dir = _get_base_dir()
 
     # Search patterns in priority order
     search_patterns = [
@@ -240,9 +249,12 @@ def find_recon_directory(quiet: bool = False) -> Path:
             return recon_dir
 
     # No recon directory found
+    foundry_root_env = os.environ.get('RECON_FOUNDRY_ROOT', '<not set>')
     raise FileNotFoundError(
-        f"Error: 'recon/' directory not found in current working directory: {current_dir}\n"
-        f"Searched patterns: {', '.join(search_patterns)}\n"
+        f"Error: 'recon/' directory not found.\n"
+        f"  Base directory (searched from): {current_dir}\n"
+        f"  RECON_FOUNDRY_ROOT env var: {foundry_root_env}\n"
+        f"  Searched patterns: {', '.join(search_patterns)}\n"
         f"Please ensure a 'recon/' folder exists in your project."
     )
 
@@ -277,7 +289,7 @@ def main():
 
     # Set default output to current working directory if not specified
     if args.output is None:
-        args.output = Path.cwd() / "magic" / "target-functions.json"
+        args.output = _get_base_dir() / "magic" / "target-functions.json"
 
     # Derive setup file path from targets directory
     setup_file = targets_dir / "Setup.sol"

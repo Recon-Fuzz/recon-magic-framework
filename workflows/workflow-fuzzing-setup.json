@@ -5,7 +5,9 @@
       "name": "Phase 0a: Analyze Setup Decisions",
       "type": "task",
       "description": "Analyze contracts and target functions to determine setup decisions",
-      "preconditions": ["forge-build-gate"],
+      "preconditions": [
+        "forge-build-gate"
+      ],
       "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-0a.md. Run exclusively the setup-phase-0a agent using the Task tool. This phase will analyze the codebase and output decisions to magic/setup-decisions.json.",
       "model": {
         "type": "OPENCODE",
@@ -56,8 +58,10 @@
       "name": "Step 0d: Auto-Link Libraries",
       "type": "task",
       "description": "Auto linking libraries using recon-generate",
-      "preconditions": ["forge-build-gate"],
-      "prompt": "npx -y recon-generate@latest link2",
+      "preconditions": [
+        "forge-build-gate"
+      ],
+      "prompt": "MEDUSA_STUB=0; test -f medusa.json || { echo '{}' > medusa.json; MEDUSA_STUB=1; }; npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest link2; rc=$?; [ $MEDUSA_STUB -eq 1 ] && rm -f medusa.json; exit $rc",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -69,7 +73,9 @@
       "name": "Phase 2: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
-      "preconditions": ["echidna-run-gate"],
+      "preconditions": [
+        "echidna-run-gate"
+      ],
       "prompt": "extract-target-functions --return-json",
       "model": {
         "type": "PROGRAM",
