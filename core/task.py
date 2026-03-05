@@ -524,12 +524,16 @@ def run_ai_command_with_progress(
             print(f"  📊 AI progress monitoring enabled (every 5s, stale timeout: {stale_timeout}s)")
         # CLAUDE_CODE - TODO: add progress monitoring if needed
 
+        # Resolve CWD: prefer RECON_FOUNDRY_ROOT so Python tools inherit the correct working directory
+        _cwd = (env.get('RECON_FOUNDRY_ROOT') or env.get('RECON_REPO_PATH')) if env else None
+
         # Run the command with Popen for interruptibility
         process = subprocess.Popen(
             cmd,
             shell=True,
             env=env,
             text=True,
+            cwd=_cwd,
             start_new_session=True
         )
         set_current_process(process)
@@ -635,12 +639,16 @@ def run_with_monitoring(
             log_monitor.start()
             print(f"  📊 Log monitoring enabled: {step.logFile} (every {step.logInterval}s)")
 
+        # Resolve CWD: prefer RECON_FOUNDRY_ROOT so Python tools inherit the correct working directory
+        _cwd = (env.get('RECON_FOUNDRY_ROOT') or env.get('RECON_REPO_PATH')) if env else None
+
         # Run the command with Popen for interruptibility
         process = subprocess.Popen(
             cmd,
             shell=shell,
             env=env,
             text=text,
+            cwd=_cwd,
             stdout=subprocess.PIPE if capture_output else None,
             stderr=subprocess.PIPE if capture_output else None,
             start_new_session=True  # Create new process group for clean signal handling
@@ -692,7 +700,7 @@ def resolve_model_string(model_type: str, model_string: str) -> str:
 
     # Model shorthand mappings per model type
     CLAUDE_CODE_MODELS = {
-        "inherit": "opus",
+        "inherit": "sonnet",
         "opus": "opus",
         "sonnet": "sonnet",
         "haiku": "haiku",

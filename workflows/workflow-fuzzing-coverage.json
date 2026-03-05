@@ -46,7 +46,7 @@
       "name": "Step 4: Extract Context with sol-expand",
       "type": "task",
       "description": "Run sol-context tool to extract context from filtered build artifacts",
-      "prompt": "npx -y sol-context@latest",
+      "prompt": "npm_config_cache=/tmp/npm-cache npx -y sol-context@latest",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -85,7 +85,7 @@
       "name": "Step 4c: Retry Extract Context (clean build-info)",
       "type": "task",
       "description": "Retry sol-context after clearing stale build-info so it regenerates in the format it needs",
-      "prompt": "rm -rf out/build-info && npx -y sol-context@latest",
+      "prompt": "rm -rf out/build-info && npm_config_cache=/tmp/npm-cache npx -y sol-context@latest",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -122,7 +122,7 @@
       "name": "Step 7: Generate Non-Reverting Paths",
       "type": "task",
       "description": "Extract non-reverting paths through target functions and move to magic directory",
-      "prompt": "rm -rf out/build-info && forge build -o out --build-info && npx -y recon-generate@latest paths && mkdir -p magic && mv recon-paths.json magic/",
+      "prompt": "rm -rf out/build-info && forge build -o out --build-info && npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest paths && mkdir -p magic && mv recon-paths.json magic/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -378,7 +378,7 @@
       "name": "Step 15: Generate Functions to Cover",
       "type": "task",
       "description": "Generate list of functions that need coverage and move to magic directory",
-      "prompt": "rm -rf out/build-info && forge build -o out --build-info && npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/",
+      "prompt": "rm -rf out/build-info && forge build -o out --build-info && npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest coverage && mkdir -p magic && mv recon-coverage.json magic/",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"

@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+
+def _get_base_dir() -> Path:
+    """Get the effective base directory, preferring RECON_FOUNDRY_ROOT env var."""
+    foundry_root = os.environ.get('RECON_FOUNDRY_ROOT')
+    if foundry_root:
+        return Path(foundry_root)
+    return Path.cwd()
 
 if TYPE_CHECKING:
     from slither import Slither
@@ -207,7 +216,7 @@ This will:
     return_json: bool = args.return_json
 
     # Find magic directory in current working directory
-    magic_dir = Path.cwd() / "magic"
+    magic_dir = _get_base_dir() / "magic"
     if not magic_dir.is_dir():
         print(f"Error: Magic directory not found: {magic_dir}", file=sys.stderr)
         print("Expected to find 'magic/' directory in current working directory", file=sys.stderr)
@@ -229,7 +238,7 @@ This will:
             print(f"Complexity file not found, generating using Slither...", file=verbose_out)
 
         # Generate complexity data using Slither
-        project_root = Path.cwd()
+        project_root = _get_base_dir()
         complexity_data = extract_complexity_using_slither(project_root)
 
         # Save the generated data

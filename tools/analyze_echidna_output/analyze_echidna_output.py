@@ -11,6 +11,14 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 
+def _get_base_dir() -> Path:
+    """Get the effective base directory, preferring RECON_FOUNDRY_ROOT env var."""
+    foundry_root = os.environ.get('RECON_FOUNDRY_ROOT')
+    if foundry_root:
+        return Path(foundry_root)
+    return Path.cwd()
+
+
 def find_echidna_log(log_path: str = "echidna-output.log") -> Optional[str]:
     """
     Find the Echidna log file.
@@ -334,7 +342,9 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
         }
 
         # Check if coverage files were generated
-        coverage_files = list(Path("echidna").glob("*.txt")) if Path("echidna").exists() else []
+        base = _get_base_dir()
+        echidna_dir = base / "echidna"
+        coverage_files = list(echidna_dir.glob("*.txt")) if echidna_dir.exists() else []
         if coverage_files:
             result["coverage_files"] = [str(f) for f in coverage_files]
             result["coverage_generated"] = True
@@ -350,8 +360,9 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
             print(json.dumps(result, indent=2))
         else:
             # Write file for standalone CLI usage
-            summary_file = "magic/echidna-error-analysis.json"
-            os.makedirs("magic", exist_ok=True)
+            magic_dir = str(base / "magic")
+            summary_file = os.path.join(magic_dir, "echidna-error-analysis.json")
+            os.makedirs(magic_dir, exist_ok=True)
             with open(summary_file, 'w') as f:
                 json.dump(result, f, indent=2)
 
@@ -401,8 +412,10 @@ def analyze_echidna_output(exit_code: int, log_file: Optional[str] = None, retur
     else:
         # Standalone CLI mode: Use exit codes to signal error types directly
         # Save error summary for downstream processing
-        summary_file = "magic/echidna-error-analysis.json"
-        os.makedirs("magic", exist_ok=True)
+        base = _get_base_dir()
+        magic_dir = str(base / "magic")
+        summary_file = os.path.join(magic_dir, "echidna-error-analysis.json")
+        os.makedirs(magic_dir, exist_ok=True)
         with open(summary_file, 'w') as f:
             json.dump(summary, f, indent=2)
 

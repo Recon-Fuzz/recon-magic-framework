@@ -104,19 +104,19 @@
         "name": "Run Echidna",
         "type": "task",
         "description": "Run Echidna to test the fuzzing setup and save logs",
-        "prompt": "rm -rf echidna/*.txt magic/WORKFLOW_FAILURE_REPORT.md 2>/dev/null; (echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration 2>&1 | tee magic/echidna-output.log) || true; mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true)",
+        "prompt": "mkdir -p magic; rm -f magic/ECHIDNA_SUCCESS.txt magic/WORKFLOW_FAILURE_REPORT.md; echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration > magic/echidna-output.log 2>&1; echidna_exit=$?; cat magic/echidna-output.log; if [ $echidna_exit -le 1 ]; then echo ECHIDNA_SUCCESS > magic/ECHIDNA_SUCCESS.txt; fi; mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true)",
         "model": {
           "type": "PROGRAM",
           "model": "inherit"
         },
         "allowFailure": true,
         "shouldCreateSummary": false,
-        "shouldCommitChanges": true
+        "shouldCommitChanges": false
       },
       "successCondition": {
         "mode": "FILE_EXISTS",
         "modeInfo": {
-          "fileName": "echidna/*.txt"
+          "fileName": "magic/ECHIDNA_SUCCESS.txt"
         },
         "successValue": 1
       },
