@@ -761,6 +761,13 @@ def run_workflow(
             else:
                 os.environ['RECON_FOUNDRY_ROOT'] = repo_path
 
+        # Change process working directory to foundry root.
+        # This ensures CLI and worker.py behave identically — all relative paths,
+        # subprocess calls, and Path.cwd() fallbacks resolve from the foundry root.
+        foundry_root = os.environ['RECON_FOUNDRY_ROOT']
+        os.chdir(foundry_root)
+        print(f"  ✓ Working directory set to foundry root: {foundry_root}")
+
     # Load the workflow
     workflow = load_workflow(workflow_file)
 
