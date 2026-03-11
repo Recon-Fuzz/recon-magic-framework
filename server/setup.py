@@ -5,6 +5,7 @@ Setup operations for workspace and repository cloning.
 import os
 import shutil
 import subprocess
+import time
 
 
 def setup_workspace(workspace_root: str = "/app") -> bool:
@@ -74,7 +75,7 @@ def init_submodules(repo_path: str) -> None:
         print(f"Submodule init failed (continuing): {e}")
 
 
-def clone_repository(repo_url: str, repo_ref: str = "main", target_dir: str = "/app/repo") -> bool:
+def clone_repository(repo_url: str, repo_ref: str = "main", target_dir: str = "/app/repo", max_retries: int = 3, retry_delay: int = 5) -> bool:
     """
     Clone a git repository with submodules.
     - Clone without --recurse-submodules initially
@@ -82,29 +83,46 @@ def clone_repository(repo_url: str, repo_ref: str = "main", target_dir: str = "/
     - Initialize submodules with HTTPS
     - Checkout specific branch/ref
     - Clone to target directory (default: /app/repo)
+    - Retries up to max_retries times on failure with retry_delay seconds between attempts
     """
-    try:
-        cmd = [
-            "git", "clone",
-            "-b", repo_ref,
-            "--single-branch",
-            repo_url,
-            target_dir
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+    last_stderr = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Clean up target directory from any previous failed attempt
+            if os.path.exists(target_dir):
+                shutil.rmtree(target_dir)
 
-        if result.returncode != 0:
-            print(f"Error cloning repository: {result.stderr}")
-            return False
+            cmd = [
+                "git", "clone",
+                "-b", repo_ref,
+                "--single-branch",
+                repo_url,
+                target_dir
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
 
-        # Fix SSH URLs and initialize submodules
-        fix_submodule_ssh_urls(target_dir)
-        init_submodules(target_dir)
+            if result.returncode != 0:
+                last_stderr = result.stderr
+                print(f"Clone attempt {attempt}/{max_retries} failed: {result.stderr}")
+                if attempt < max_retries:
+                    print(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                continue
 
-        return True
-    except Exception as e:
-        print(f"Exception cloning repository: {e}")
-        return False
+            # Fix SSH URLs and initialize submodules
+            fix_submodule_ssh_urls(target_dir)
+            init_submodules(target_dir)
+
+            return True
+        except Exception as e:
+            last_stderr = str(e)
+            print(f"Clone attempt {attempt}/{max_retries} exception: {e}")
+            if attempt < max_retries:
+                print(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+
+    print(f"All {max_retries} clone attempts failed. Last error: {last_stderr}")
+    return False
 
 
 def clone_claude_config(claude_url: str, claude_ref: str = "main", target_dir: str = "/app/.claude") -> bool:
