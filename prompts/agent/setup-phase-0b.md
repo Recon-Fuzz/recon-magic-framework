@@ -253,23 +253,26 @@ abstract contract Setup is BaseSetup, ActorManager, AssetManager, Utils {
     
     function setup() internal virtual override {
         // 1. Time warp if needed
-        
+
         // 2. Add actors based on decisions.multi_user
-        
+
         // 3. Deploy tokens using AssetManager
-        
+
+        // 3.5. Etch hardcoded external addresses (if any)
+        //      See "Etch Hardcoded Addresses" section below
+
         // 4. Deploy mocks (non-token dependencies)
-        
+
         // 5. Deploy ONLY what's required for system to start
         //    - Singletons: deploy directly
         //    - Multi-instance with deploy_in_setup > 0: deploy minimum, push to array
-        
+
         // 6. Post-deploy actions (registrations, initial config)
-        
+
         // 7. Set up approvals array
         address[] memory approvalArray = new address[](N);
         // ...
-        
+
         // 8. Finalize
         _finalizeAssetDeployment(_getActors(), approvalArray, type(uint88).max);
     }
@@ -287,6 +290,30 @@ abstract contract Setup is BaseSetup, ActorManager, AssetManager, Utils {
     // }
 }
 ```
+
+### Etch Hardcoded Addresses
+
+If `setup-decisions.json` contains a `hardcoded_addresses` array (or if you find hardcoded mainnet addresses while reading the source), etch minimal bytecode at those addresses BEFORE deploying contracts that reference them.
+
+**How to find them:**
+```
+grep -rn 'address.*constant.*= 0x' src/ | grep -v 'address(0)'
+```
+
+**Rules:**
+- Only etch addresses that are clearly external mainnet contracts (multisigs, routers, treasuries, etc.)
+- Do NOT etch addresses that are part of the system being deployed (e.g., factory-created contracts)
+- Place etch calls BEFORE any contracts that reference those addresses
+- Use `hex"01"` unless the contract actually calls functions on that address (then deploy a mock and etch its code)
+
+**Pattern:**
+```solidity
+// Etch hardcoded mainnet addresses so isContract() checks pass in local EVM
+vm.etch(0x4F6F977aCDD1177DCD81aB83074855EcB9C2D49e, hex"01");  // TEAM_MULTISIG
+vm.etch(0xABCD1234..., hex"01");  // TREASURY
+```
+
+If no hardcoded addresses exist, skip this step entirely.
 
 ### Helper Deploy Pattern
 For `helper_deploy` functions - accept config params so each instance is DIFFERENT:

@@ -77,10 +77,22 @@
       "allowFailure": true
     },
     {
+      "name": "Build Recon Scaffolding Output",
+      "type": "task",
+      "description": "Run forge build targeting .recon/out so recon-generate finds compiled contracts with visible output",
+      "prompt": "PROFILE=$(grep -q '^\\[profile\\.recon\\]' \"${RECON_FOUNDRY_ROOT}/foundry.toml\" 2>/dev/null && echo 'recon' || echo '');\nenv ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} forge build --build-info --out .recon/out > /tmp/recon-build.log 2>&1;\nBUILD_EXIT=$?;\ncat /tmp/recon-build.log;\n\nif [ $BUILD_EXIT -ne 0 ] && grep -qE 'Error \\(1834\\)|Copying of type struct.*not yet supported' /tmp/recon-build.log; then\n  echo '>>> via_ir compilation error detected. Adding via_ir = true and retrying... <<<';\n  if grep -qE '^via[_-]ir\\s*=\\s*false' foundry.toml 2>/dev/null; then\n    sed -i 's/^via[_-]ir\\s*=\\s*false/via_ir = true/' foundry.toml;\n  elif ! grep -qE '^via[_-]ir\\s*=\\s*true' foundry.toml 2>/dev/null; then\n    if grep -q '^\\[profile\\.default\\]' foundry.toml 2>/dev/null; then\n      sed -i '/^\\[profile\\.default\\]/a via_ir = true' foundry.toml;\n    elif grep -n '^\\[' foundry.toml 2>/dev/null | head -1 | grep -q .; then\n      FIRST_SEC=$(grep -n '^\\[' foundry.toml | head -1 | cut -d: -f1);\n      sed -i \"${FIRST_SEC}i via_ir = true\" foundry.toml;\n    else\n      printf '\\nvia_ir = true\\n' >> foundry.toml;\n    fi;\n  fi;\n  if grep -q '^\\[profile\\.recon\\]' foundry.toml 2>/dev/null; then\n    if ! awk '/^\\[profile\\.recon\\]/{f=1;next} /^\\[/{f=0} f && /^via[_-]ir/' foundry.toml | grep -q .; then\n      sed -i '/^\\[profile\\.recon\\]/a via_ir = true' foundry.toml;\n    fi;\n  fi;\n  rm -rf .recon/out;\n  env ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} forge build --build-info --out .recon/out;\nelif [ $BUILD_EXIT -ne 0 ]; then\n  exit $BUILD_EXIT;\nfi;\n\nBI_FILE=$(find .recon/out/build-info -name '*.json' -not -name '*.filtered.json' 2>/dev/null | head -1);\nif [ -n \"$BI_FILE\" ]; then filter-build-info \"$BI_FILE\" -o \"$BI_FILE\"; fi;\necho 'Recon build output ready.'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
       "name": "Generate Recon Scaffolding",
       "type": "task",
       "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",
-      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); MOCK_NAMES=$(jq -r 'if .mocked_contracts | length > 0 then [.mocked_contracts[] | sub(\"Mock$\"; \"\")] | join(\",\") else empty end' $SCAFFOLD_FILE); PROFILE=$(grep -q '^\\[profile\\.recon\\]' \"${RECON_FOUNDRY_ROOT}/foundry.toml\" 2>/dev/null && echo 'recon' || echo ''); env ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' $SCAFFOLD_FILE)\" ${MOCK_NAMES:+--mock \"$MOCK_NAMES\"} --force",
+      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); MOCK_NAMES=$(jq -r 'if .mocked_contracts | length > 0 then [.mocked_contracts[] | sub(\"Mock$\"; \"\")] | join(\",\") else empty end' $SCAFFOLD_FILE); PROFILE=$(grep -q '^\\[profile\\.recon\\]' \"${RECON_FOUNDRY_ROOT}/foundry.toml\" 2>/dev/null && echo 'recon' || echo ''); if grep -q 'ignored_warnings_from' foundry.toml 2>/dev/null; then if ! grep -q 'contracts/__recon' foundry.toml 2>/dev/null; then sed -i 's/ignored_warnings_from = \\[/ignored_warnings_from = [\"contracts\\/__recon\", /' foundry.toml; fi; else printf '\\nignored_warnings_from = [\"contracts/__recon\"]\\n' >> foundry.toml; fi; env ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' $SCAFFOLD_FILE)\" ${MOCK_NAMES:+--mock \"$MOCK_NAMES\"} --force 2>&1",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -218,7 +230,8 @@
         "model": "inherit"
       },
       "shouldCreateSummary": true,
-      "shouldCommitChanges": true
+      "shouldCommitChanges": true,
+      "staleTimeout": 1800
     },
     {
       "name": "Phase 7: Write Unit Tests",
@@ -230,7 +243,8 @@
         "model": "inherit"
       },
       "shouldCreateSummary": true,
-      "shouldCommitChanges": true
+      "shouldCommitChanges": true,
+      "staleTimeout": 1800
     },
     {
       "name": "Final Echidna Validation",

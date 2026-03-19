@@ -696,6 +696,54 @@ def push_changes(step_num: int) -> bool:
         return False
 
 
+def _relocate_framework_files(old_root: str, new_root: str) -> None:
+    """Move framework-created files from old foundry root to new one."""
+    import shutil
+
+    # Move magic/ directory contents (scope.md, etc.)
+    old_magic = os.path.join(old_root, 'magic')
+    new_magic = os.path.join(new_root, 'magic')
+    if os.path.isdir(old_magic):
+        os.makedirs(new_magic, exist_ok=True)
+        for item in os.listdir(old_magic):
+            src = os.path.join(old_magic, item)
+            dst = os.path.join(new_magic, item)
+            if not os.path.exists(dst):
+                shutil.move(src, dst)
+
+    # Move COMPILATION_FAILED.md if it exists
+    for fname in ['COMPILATION_FAILED.md']:
+        old_f = os.path.join(old_root, fname)
+        new_f = os.path.join(new_root, fname)
+        if os.path.isfile(old_f) and not os.path.isfile(new_f):
+            shutil.move(old_f, new_f)
+
+
+def _refresh_foundry_root(repo_path: str) -> None:
+    """Re-detect foundry root if current value is the repo root fallback."""
+    current = os.environ.get('RECON_FOUNDRY_ROOT', '')
+    if current != repo_path:
+        return  # Already points to a specific directory, not fallback
+
+    foundry_paths = []
+    exclude = {'node_modules', '.git', 'lib', 'out', 'cache', 'broadcast', 'dependencies', '.recon'}
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = [d for d in dirs if d not in exclude]
+        if 'foundry.toml' in files:
+            foundry_paths.append(root)
+
+    if len(foundry_paths) == 1 and foundry_paths[0] != repo_path:
+        new_root = foundry_paths[0]
+
+        # Relocate framework-created files to the new root
+        _relocate_framework_files(repo_path, new_root)
+
+        os.environ['RECON_FOUNDRY_ROOT'] = new_root
+        os.chdir(new_root)
+        rel = os.path.relpath(new_root, repo_path)
+        print(f"  ✓ Foundry root updated: {rel}")
+
+
 def run_workflow(
     workflow_file: str,
     dangerous: bool = False,
@@ -749,7 +797,7 @@ def run_workflow(
         if not os.environ.get('RECON_FOUNDRY_ROOT'):
             foundry_paths = []
             for root, dirs, files in os.walk(repo_path):
-                dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast', 'dependencies']]
+                dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast', 'dependencies', '.recon']]
                 if 'foundry.toml' in files:
                     foundry_paths.append(root)
             if len(foundry_paths) == 1:
@@ -760,6 +808,13 @@ def run_workflow(
                 os.environ['RECON_FOUNDRY_ROOT'] = repo_path
             else:
                 os.environ['RECON_FOUNDRY_ROOT'] = repo_path
+
+        # Change process working directory to foundry root.
+        # This ensures CLI and worker.py behave identically — all relative paths,
+        # subprocess calls, and Path.cwd() fallbacks resolve from the foundry root.
+        foundry_root = os.environ['RECON_FOUNDRY_ROOT']
+        os.chdir(foundry_root)
+        print(f"  ✓ Working directory set to foundry root: {foundry_root}")
 
     # Load the workflow
     workflow = load_workflow(workflow_file)
@@ -907,6 +962,12 @@ def run_workflow(
             return return_code
 
         print(f"\n✓ Step {i} completed successfully")
+
+        # Re-detect foundry root if it was set to repo root as fallback
+        # (handles Hardhat→Foundry migration where foundry.toml appears mid-workflow)
+        repo_path_env = os.environ.get('RECON_REPO_PATH')
+        if repo_path_env:
+            _refresh_foundry_root(repo_path_env)
 
         # Collect step results
         step_result: dict = {"step_name": step.name, "step_num": i}

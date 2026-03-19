@@ -55,7 +55,7 @@ def find_foundry_root(repo_path: str, explicit_root: str | None = None) -> str:
     # 2. Auto-detect (only if exactly one foundry.toml found)
     foundry_paths = []
     for root, dirs, files in os.walk(repo_path):
-        dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast']]
+        dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'lib', 'out', 'cache', 'broadcast', '.recon']]
         if 'foundry.toml' in files:
             foundry_paths.append(root)
 

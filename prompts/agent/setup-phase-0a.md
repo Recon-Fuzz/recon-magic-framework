@@ -149,6 +149,33 @@ function _getDeployed{Thing}(uint8 index) internal view returns (address) {
 }
 ```
 
+### Step 2b: Check for Hardcoded External Addresses
+
+Search the source contracts for hardcoded addresses that point to external mainnet contracts. These addresses will have no deployed code in Echidna's local EVM, causing `isContract()` checks and external calls to revert.
+
+**Search with:**
+```
+grep -rn 'address.*constant.*= 0x' src/ | grep -v 'address(0)'
+```
+
+**What to include:** Addresses that are clearly external mainnet contracts — multisigs, treasuries, routers, protocol addresses, team wallets.
+
+**What to exclude:** `address(0)`, addresses that are part of the system being deployed, addresses set in constructors/initializers (not hardcoded constants).
+
+**Decision output — add to the top level of `setup-decisions.json`:**
+```json
+"hardcoded_addresses": [
+  {
+    "address": "0x4F6F977aCDD1177DCD81aB83074855EcB9C2D49e",
+    "name": "TEAM_MULTISIG",
+    "file": "src/core/Config.sol",
+    "usage": "isContract check in constructor"
+  }
+]
+```
+
+Most codebases will have an empty array — this is purely informational for `setup-phase-0b` to know which addresses need `vm.etch()`.
+
 ### Step 2: Identify Custom Mocks Needed
 Check if any dependencies require custom mocks (not standard MockERC20):
 
