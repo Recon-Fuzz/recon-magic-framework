@@ -75,6 +75,7 @@ class TaskStep(BaseModel):
     logFile: str | None = Field(default=None, alias="logFile")
     logInterval: int = Field(default=10, alias="logInterval")  # seconds
     logRegex: str | None = Field(default=None, alias="logRegex")
+    staleTimeout: int | None = Field(default=None, alias="staleTimeout")
 
 
 # Global reference to currently running subprocess (for skip/interrupt)
@@ -960,7 +961,8 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
                 model_type="CLAUDE_CODE",
                 env=env,
                 step=step,
-                step_id=step_id
+                step_id=step_id,
+                stale_timeout=step.staleTimeout or 600
             )
 
             if return_code == STALE and attempt < max_retries - 1:
@@ -1038,7 +1040,8 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
                 model_type="OPENCODE",
                 env=env,
                 step=step,
-                step_id=step_id
+                step_id=step_id,
+                stale_timeout=step.staleTimeout or 600
             )
 
             if return_code == STALE and attempt < max_retries - 1:

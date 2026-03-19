@@ -145,11 +145,34 @@ def analyze_error_type(log_content: str) -> Tuple[str, Dict]:
         error_details["suggested_action"] = "generate_ai_summary"
         return "constructor_args", error_details
 
+    # Shared pattern for address-not-a-contract errors
+    address_not_contract_pattern = (
+        r"AddressNotAContract|not a contract|isContract|code\.length == 0"
+        r"|has no code|no code at|extcodesize.*is zero"
+    )
+
     # Check for deployment_failed
     if re.search(r"Deploying the contract .* failed", log_content):
         error_details["error_lines"] = extract_context(lines, r"Deploying the contract .* failed")
         error_details["context"] = '\n'.join(error_details["error_lines"])
         error_details["suggested_action"] = "generate_ai_summary"
+
+        # Enrich with vm.etch guidance when address-related patterns are detected
+        if re.search(address_not_contract_pattern, log_content, re.IGNORECASE):
+            error_details["suggested_fix"] = (
+                "Hardcoded mainnet address has no code in local EVM.\n"
+                "Fix: Add vm.etch(ADDRESS, hex\"01\") at the TOP of setup() in test/recon/Setup.sol, "
+                "BEFORE any contract deployments.\n"
+                "Search for all hardcoded addresses: grep -rn 'address.*constant.*= 0x' src/ | grep -v 'address(0)'\n"
+                "Apply vm.etch() for each address that is checked with isContract() or extcodesize."
+            )
+            error_details["common_causes"] = [
+                "Source contract has hardcoded mainnet addresses (e.g., multisig, treasury, router)",
+                "Those addresses have no deployed code in Echidna's local EVM",
+                "isContract() checks or external calls to those addresses revert",
+                "Fix with vm.etch(address, hex\"01\") for isContract-only checks, or deploy a mock for actual calls"
+            ]
+
         return "deployment_failed", error_details
 
     # Check for invalid_method_filters
@@ -218,13 +241,29 @@ def analyze_error_type(log_content: str) -> Tuple[str, Dict]:
         lines = log_content.split('\n')
         error_details["error_lines"] = lines[-20:] if len(lines) > 20 else lines
 
-        # Common causes
-        error_details["common_causes"] = [
-            "Contract state initialization issues",
-            "Missing or incorrect RPC configuration",
-            "Out of gas during setup",
-            "Reverting require statements in setUp()"
-        ]
+        # Enrich with vm.etch guidance when address-related patterns are detected
+        if re.search(address_not_contract_pattern, log_content, re.IGNORECASE):
+            error_details["suggested_fix"] = (
+                "Hardcoded mainnet address has no code in local EVM.\n"
+                "Fix: Add vm.etch(ADDRESS, hex\"01\") at the TOP of setup() in test/recon/Setup.sol, "
+                "BEFORE any contract deployments.\n"
+                "Search for all hardcoded addresses: grep -rn 'address.*constant.*= 0x' src/ | grep -v 'address(0)'\n"
+                "Apply vm.etch() for each address that is checked with isContract() or extcodesize."
+            )
+            error_details["common_causes"] = [
+                "Source contract has hardcoded mainnet addresses (e.g., multisig, treasury, router)",
+                "Those addresses have no deployed code in Echidna's local EVM",
+                "isContract() checks or external calls to those addresses revert",
+                "Fix with vm.etch(address, hex\"01\") for isContract-only checks, or deploy a mock for actual calls"
+            ]
+        else:
+            # Common causes when not address-related
+            error_details["common_causes"] = [
+                "Contract state initialization issues",
+                "Missing or incorrect RPC configuration",
+                "Out of gas during setup",
+                "Reverting require statements in setUp()"
+            ]
         return "setup", error_details
 
     # Check for RPC configuration errors
