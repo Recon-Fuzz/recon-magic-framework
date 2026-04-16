@@ -1,0 +1,178 @@
+{
+  "name": "Properties Specification Workflow",
+  "steps": [
+    {
+      "name": "Phase 0: Dependency Analysis",
+      "type": "task",
+      "description": "Analyze contracts to create dependency list and review priority",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-0.md. Run exclusively the properties-phase-0 agent using the Task tool. This phase will analyze all contracts, create a dependency list showing function calls and storage slot access, and generate a review priority order.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Dependency List",
+      "type": "decision",
+      "description": "Check if magic/contracts-dependency-list.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/contracts-dependency-list.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Dependency list created, continue to next validation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 0 failed to create magic/contracts-dependency-list.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Validate Review Priority",
+      "type": "decision",
+      "description": "Check if magic/properties-review-priority.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/properties-review-priority.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Review priority created, continue to Phase 1"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 0 failed to create magic/properties-review-priority.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 1: First Pass Property Identification",
+      "type": "task",
+      "description": "Perform line-by-line review and identify all properties",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-1.md. Run exclusively the properties-phase-1 agent using the Task tool. This phase will perform a full line-by-line review of all functions and contracts, writing down all identified properties in magic/properties-first-pass.md.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate First Pass Properties",
+      "type": "decision",
+      "description": "Check if magic/properties-first-pass.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/properties-first-pass.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "First pass properties created, continue to Phase 2"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 1 failed to create magic/properties-first-pass.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 2: Property Review and Filtering",
+      "type": "task",
+      "description": "Review properties and filter out invalid, vacuous, or obvious ones",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-2.md. Run exclusively the properties-phase-2 agent using the Task tool. This phase will review the first pass properties, discard invalid/vacuous/obvious properties to magic/discarded-properties.md, and create the refined magic/properties-second-pass.md.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Second Pass Properties",
+      "type": "decision",
+      "description": "Check if magic/properties-second-pass.md was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/properties-second-pass.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Second pass properties created, continue to Setup check"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Phase 2 failed to create magic/properties-second-pass.md"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Check Recon Setup Exists",
+      "type": "decision",
+      "description": "Check if recon/Setup.sol exists before proceeding to property implementation",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "**/recon/Setup.sol"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Recon Setup found, continue to Phase 3 implementation"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "STOP",
+          "NOTE": "Recon Setup not found - run recon-generate first to create scaffolding"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Phase 3: Property Implementation",
+      "type": "task",
+      "description": "Implement the refined properties as invariant tests",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/properties-phase-3.md. Run exclusively the properties-phase-3 agent using the Task tool. This phase will implement the properties from magic/properties-second-pass.md as actual invariant tests.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    }
+  ]
+}

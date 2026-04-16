@@ -9,12 +9,12 @@ import subprocess
 import requests
 
 
-def create_github_repo(repo_name: str, github_token: str, private: bool = True) -> tuple[bool, str, str]:
+def create_github_repo(repo_name: str, github_token: str, private: bool = True) -> tuple[bool, str, str, int]:
     """
     Create a new GitHub repository via API.
     - POST to https://api.github.com/user/repos
     - Handle error cases (repo already exists, etc.)
-    - Return (success, repo_url, owner_name)
+    - Return (success, repo_url, owner_name, repo_id)
     """
     try:
         headers = {
@@ -37,15 +37,16 @@ def create_github_repo(repo_name: str, github_token: str, private: bool = True) 
             data = response.json()
             repo_url = data.get("html_url", "")
             owner = data.get("owner", {}).get("login", "")
+            repo_id = data.get("id", 0)
             print(f"Repository created successfully: {repo_url}")
-            return True, repo_url, owner
+            return True, repo_url, owner, repo_id
         else:
             print(f"Failed to create repository. HTTP status: {response.status_code}")
             print(response.text)
-            return False, "", ""
+            return False, "", "", 0
     except Exception as e:
         print(f"Exception creating GitHub repo: {e}")
-        return False, "", ""
+        return False, "", "", 0
 
 
 def invite_collaborator(owner: str, repo_name: str, github_token: str, github_handle: str, permission: str = "push") -> bool:
@@ -83,6 +84,36 @@ def invite_collaborator(owner: str, repo_name: str, github_token: str, github_ha
             return False
     except Exception as e:
         print(f"Exception inviting collaborator: {e}")
+        return False
+
+
+def install_github_app_on_repo(installation_id: str, repository_id: int, github_token: str) -> bool:
+    """
+    Add a repository to an existing GitHub App installation.
+    - PUT to https://api.github.com/user/installations/{installation_id}/repositories/{repository_id}
+    - Requires the token owner to have permissions to manage the app installation
+    - Return success status
+    """
+    try:
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": f"token {github_token}"
+        }
+
+        response = requests.put(
+            f"https://api.github.com/user/installations/{installation_id}/repositories/{repository_id}",
+            headers=headers
+        )
+
+        if response.status_code == 204:
+            print(f"GitHub App (installation {installation_id}) installed on repository {repository_id}")
+            return True
+        else:
+            print(f"Failed to install GitHub App. HTTP status: {response.status_code}")
+            print(response.text)
+            return False
+    except Exception as e:
+        print(f"Exception installing GitHub App: {e}")
         return False
 
 

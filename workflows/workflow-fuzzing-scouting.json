@@ -37,6 +37,19 @@
       "shouldCommitChanges": false
     },
     {
+      "name": "Ensure Dependencies Installed",
+      "type": "task",
+      "description": "Detect dependency manager and install dependencies if missing",
+      "prompt": "REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo '.'); if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Detected soldeer project, installing dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install timed out or failed, continuing...'; fi; if [ -f \"$REPO_ROOT/.gitmodules\" ]; then echo 'Detected git submodule project, installing dependencies...'; git -C \"$REPO_ROOT\" submodule update --init --recursive || echo 'submodule update failed, continuing...'; fi; if [ -f package.json ]; then if [ -f pnpm-lock.yaml ]; then echo 'Detected pnpm project, installing dependencies...'; command -v pnpm >/dev/null 2>&1 || npm install -g pnpm; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Detected yarn project, installing dependencies...'; timeout 120 yarn install; else echo 'Detected npm project, installing dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing...'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit || echo 'forge-std install failed, continuing...'; fi; echo 'Verifying compilation...'; forge build",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
+    },
+    {
       "name": "Phase 1: Contract Analysis & Scaffolding Preparation",
       "type": "task",
       "description": "Identify contracts for invariant testing and prepare scaffolding requirements",
@@ -47,6 +60,82 @@
       },
       "shouldCreateSummary": true,
       "shouldCommitChanges": true
+    },
+    {
+      "name": "Validate Contracts to Scaffold File",
+      "type": "decision",
+      "description": "Check if magic/contracts-to-scaffold.json was created",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/contracts-to-scaffold.json"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "CONTINUE",
+          "NOTE": "Contracts to scaffold file created, continue to setting up fuzzing"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Phase 1: Contract Analysis & Scaffolding Preparation",
+          "NOTE": "Contracts to scaffold file not found, retry analysis"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Suppress Lint on Build",
+      "type": "task",
+      "description": "Disable forge linter during build to prevent lint warnings in third-party code from blocking scaffolding",
+      "prompt": "if ! grep -q '\\[lint\\]' foundry.toml 2>/dev/null; then printf '\\n[lint]\\nlint_on_build = false\\n' >> foundry.toml; elif ! grep -q 'lint_on_build' foundry.toml 2>/dev/null; then sed -i '/\\[lint\\]/a lint_on_build = false' foundry.toml; else sed -i 's/lint_on_build = true/lint_on_build = false/' foundry.toml; fi; echo 'lint_on_build set to false in foundry.toml'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
+    },
+    {
+      "name": "Build Recon Scaffolding Output",
+      "type": "task",
+      "description": "Run forge build targeting .recon/out so recon-generate finds compiled contracts with visible output",
+      "prompt": "forge build --build-info --out .recon/out > /tmp/recon-build.log 2>&1;\nBUILD_EXIT=$?;\ncat /tmp/recon-build.log;\n\nif [ $BUILD_EXIT -ne 0 ] && grep -qE 'Error \\(1834\\)|Copying of type struct.*not yet supported' /tmp/recon-build.log; then\n  echo '>>> via_ir compilation error detected. Adding via_ir = true and retrying... <<<';\n  if grep -qE '^via[_-]ir\\s*=\\s*false' foundry.toml 2>/dev/null; then\n    sed -i 's/^via[_-]ir\\s*=\\s*false/via_ir = true/' foundry.toml;\n  elif ! grep -qE '^via[_-]ir\\s*=\\s*true' foundry.toml 2>/dev/null; then\n    if grep -q '^\\[profile\\.default\\]' foundry.toml 2>/dev/null; then\n      sed -i '/^\\[profile\\.default\\]/a via_ir = true' foundry.toml;\n    elif grep -n '^\\[' foundry.toml 2>/dev/null | head -1 | grep -q .; then\n      FIRST_SEC=$(grep -n '^\\[' foundry.toml | head -1 | cut -d: -f1);\n      sed -i \"${FIRST_SEC}i via_ir = true\" foundry.toml;\n    else\n      printf '\\nvia_ir = true\\n' >> foundry.toml;\n    fi;\n  fi;\n  rm -rf .recon/out;\n  forge build --build-info --out .recon/out;\nelif [ $BUILD_EXIT -ne 0 ]; then\n  exit $BUILD_EXIT;\nfi;\n\nBI_FILE=$(find .recon/out/build-info -name '*.json' -not -name '*.filtered.json' 2>/dev/null | head -1);\nif [ -n \"$BI_FILE\" ]; then filter-build-info \"$BI_FILE\" -o \"$BI_FILE\"; fi;\necho 'Recon build output ready.'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Generate Recon Scaffolding",
+      "type": "task",
+      "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",
+      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); if grep -q 'ignored_warnings_from' foundry.toml 2>/dev/null; then if ! grep -q 'contracts/__recon' foundry.toml 2>/dev/null; then sed -i 's/ignored_warnings_from = \\[/ignored_warnings_from = [\"contracts\\/__recon\", /' foundry.toml; fi; else printf '\\nignored_warnings_from = [\"contracts/__recon\"]\\n' >> foundry.toml; fi; npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' $SCAFFOLD_FILE)\" --force 2>&1",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Clean Flattened Imports",
+      "type": "task",
+      "description": "Remove imports of flattened contracts from scaffolding to prevent identifier collisions",
+      "prompt": "ROOT=${RECON_FOUNDRY_ROOT:-.}; FLATTENED=$(find \"$ROOT/src\" -name '*.flattened.sol' -o -name '*.flat.sol' 2>/dev/null); if [ -n \"$FLATTENED\" ]; then echo 'Found flattened contracts, cleaning imports from scaffolding...'; for f in $FLATTENED; do BASENAME=$(basename \"$f\"); echo \"  Removing imports of $BASENAME from test/recon/\"; find \"$ROOT/test/recon\" -name '*.sol' -exec sed -i \"/$BASENAME/d\" {} +; done; find \"$ROOT/test/recon\" -name '*.sol' -exec sed -i '/flattened\\//d' {} +; echo 'Flattened import cleanup done.'; else echo 'No flattened contracts found, skipping cleanup.'; fi",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
     }
   ]
 }

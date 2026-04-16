@@ -2,21 +2,10 @@
   "name": "Fuzzing Coverage Workflow",
   "steps": [
     {
-      "name": "Step 0: Build with Forge",
-      "type": "task",
-      "description": "Run forge build to compile the project",
-      "prompt": "forge build",
-      "model": {
-        "type": "PROGRAM",
-        "model": "inherit"
-      },
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": false
-    },
-    {
       "name": "Step 1: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
+      "preconditions": ["forge-build-gate"],
       "prompt": "extract-target-functions --return-json",
       "model": {
         "type": "PROGRAM",
@@ -33,7 +22,7 @@
       "name": "Step 2: Build Artifacts",
       "type": "task",
       "description": "Generate Forge build artifacts with build-info",
-      "prompt": "forge clean && forge build --build-info",
+      "prompt": "forge clean && forge build -o out --build-info",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
@@ -57,32 +46,56 @@
       "name": "Step 4: Extract Context with sol-expand",
       "type": "task",
       "description": "Run sol-context tool to extract context from filtered build artifacts",
-      "prompt": "npx -y sol-context@latest",
+      "prompt": "npm_config_cache=/tmp/npm-cache npx -y sol-context@latest",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 5: Identifying Touched Functions",
+      "name": "Step 4b: Check context extraction result",
+      "type": "decision",
+      "description": "Check if context_output was created by sol-context. If yes, skip retry. If no, retry with clean build-info.",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "context_output"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 5: Identifying Meaningful Values",
+          "NOTE": "context_output exists, sol-context succeeded"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE",
+          "NOTE": "context_output missing, retry with clean build-info"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 4c: Retry Extract Context (clean build-info)",
       "type": "task",
-      "description": "Identify all contracts that are touched by the contracts targeted in the system that we care about",
-      "prompt": "touched-function-identifier --sol-expand-dir context_output --target-functions magic/target-functions.json --return-json",
+      "description": "Retry sol-context after clearing stale build-info so it regenerates in the format it needs",
+      "prompt": "rm -rf out/build-info && npm_config_cache=/tmp/npm-cache npx -y sol-context@latest",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
       },
-      "output": {
-        "capture": true,
-        "save_to": "magic/functions-to-cover.json"
-      },
+      "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 6: Identifying Meaningful Values",
+      "name": "Step 5: Identifying Meaningful Values",
       "type": "task",
       "description": "Identify values that are useful for clamping target function handlers with",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-0.md. Exclusively run the coverage-phase-0 agent to identify values useful for clamping.",
@@ -94,7 +107,7 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 7: Creating Clamped Handlers",
+      "name": "Step 6: Creating Clamped Handlers",
       "type": "task",
       "description": "Implement clamped function handlers to achieve full coverage on the system setup",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-1.md. Exclusively run the coverage-phase-1 agent to implement clamped handlers",
@@ -106,7 +119,47 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 8: Creating Shortcut Handlers",
+      "name": "Step 7: Generate Non-Reverting Paths",
+      "type": "task",
+      "description": "Extract non-reverting paths through target functions and move to magic directory",
+      "prompt": "rm -rf out/build-info && forge build -o out --build-info && filter-build-info $(find out/build-info -name '*.json' -not -name '*.filtered.json' | head -1) && recon-generate paths && mkdir -p magic && mv recon-paths.json magic/",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 8: Identifying Function Call Sequences",
+      "type": "task",
+      "description": "Identify necessary function call sequences and prerequisites for target functions",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-1.md. Exclusively run the setup-phase-1 agent to identify function call sequences",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 9: Merge Paths and Prerequisites",
+      "type": "task",
+      "description": "Merge paths and prerequisites into a unified structure for each target function",
+      "prompt": "merge-paths-prerequisites --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/merged-paths-prerequisites.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 10: Creating Shortcut Handlers",
       "type": "task",
       "description": "Implement shortcut handlers that allow the fuzzer to reach coverage faster.",
       "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-2.md. Exclusively run the coverage-phase-2 agent to implement shortcut functions",
@@ -118,47 +171,225 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 9: Run Echidna Programmatically",
+      "name": "Step 11: Run Echidna Programmatically",
       "type": "task",
-      "description": "Run Echidna programmatically",
-      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "description": "Run Echidna programmatically and capture output",
+      "prompt": "(set -o pipefail; echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
       },
       "allowFailure": true,
+      "canSkip": true,
+      "logFile": "echidna-output.log",
+      "logInterval": 10,
+      "logRegex": "cov: \\d+, corpus: \\d+",
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 10: Echidna Output Check",
+      "name": "Step 12: Analyze Echidna Output",
+      "type": "task",
+      "description": "Analyze Echidna execution results and determine next action",
+      "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-error-analysis.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 13: Handle Echidna Results",
       "type": "decision",
-      "description": "Verify Echidna produced output; exit if not.",
-      "mode": "FILE_EXISTS",
+      "description": "Take action based on Echidna exit code",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "echidna/*.txt"
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "exit_code"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 0,
-          "action": "STOP",
-          "NOTE": "Echidna output not found, stopping workflow."
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 15: Generate Functions to Cover",
+          "NOTE": "Echidna ran successfully, continue workflow"
         },
         {
           "operator": "eq",
           "value": 1,
-          "action": "CONTINUE",
-          "NOTE": "Echidna output found, continuing workflow."
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 14: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 2,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 13b: Increment Echidna Retry Counter",
+          "NOTE": "Non-compilation error — try to fix up to 3 times before stopping"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 11: Evaluate Coverage",
+      "name": "Step 13b: Increment Echidna Retry Counter",
       "type": "task",
-      "description": "Run coverage evaluation tool",
+      "description": "Track how many times we've retried Echidna for non-compilation errors",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-retry-count.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-retry-count.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-retry-count.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 13c: Check Echidna Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, try to fix. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "CONTINUE",
+          "NOTE": "Under retry limit, attempt fix"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
+          "action": "STOP",
+          "NOTE": "Exceeded 3 retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 13d: Fix Echidna Errors",
+      "type": "task",
+      "description": "Attempt to fix non-compilation Echidna errors (unlinked libraries, setup failures, etc.)",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the error (exit_code=2: non-compilation error). Read the error analysis carefully and fix the issues. Common fixes include: linking libraries in echidna.yaml, fixing setup() function, correcting contract deployment order, or fixing configuration issues.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 13e: Retry Echidna After Fix",
+      "type": "decision",
+      "description": "Always jump back to Echidna after attempting a fix",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count.txt"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 11: Run Echidna Programmatically",
+          "NOTE": "Retry counter file exists, jump back to Echidna"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 11: Run Echidna Programmatically",
+          "NOTE": "Fallback: jump back to Echidna regardless"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 14: Fix Compilation Errors",
+      "type": "task",
+      "description": "Resolve compilation errors in the fuzzing harness",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 11 to retry Echidna.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 14b: Increment Compilation Retry Counter",
+      "type": "task",
+      "description": "Track how many times we've retried Echidna after compilation fixes (cycle 1)",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-compile-retry-count.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-compile-retry-count.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-compile-retry-count.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 14c: Check Compilation Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, rerun Echidna. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-compile-retry-count.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 11: Run Echidna Programmatically",
+          "NOTE": "Under retry limit, rerun Echidna with fixed code"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
+          "action": "STOP",
+          "NOTE": "Exceeded 3 compilation fix retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 15: Generate Functions to Cover",
+      "type": "task",
+      "description": "Generate list of functions that need coverage and move to magic directory",
+      "prompt": "rm -rf out/build-info && forge build -o out --build-info && filter-build-info $(find out/build-info -name '*.json' -not -name '*.filtered.json' | head -1) && recon-generate coverage && mkdir -p magic && mv recon-coverage.json magic/",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 16: Evaluate Coverage",
+      "type": "task",
+      "description": "Evaluate coverage for functions in recon-coverage.json",
       "prompt": "covg-eval magic/ echidna/ --return-json",
       "model": {
         "type": "PROGRAM",
@@ -172,37 +403,70 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 12: Initial Check of Coverage",
+      "name": "Step 17: Score and Sort by Complexity",
+      "type": "task",
+      "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
+      "prompt": "covg-scoring --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 18: Create Latest Coverage Link",
+      "type": "task",
+      "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
+      "prompt": "get-latest-coverage --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-latest.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 19: Initial Check of Coverage",
       "type": "decision",
       "description": "Determine if coverage needs to be improved",
-      "mode": "FILE_EXISTS",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "functions-missing-covg-*.json"
+        "fileName": "magic/functions-missing-covg-latest.json",
+        "keyPath": "summary.functions_with_missing_coverage"
       },
       "decision": [
         {
-          "operator": "eq",
-          "value": 1,
+          "operator": "gt",
+          "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 13: Improving Coverage",
-          "NOTE": "Branch to improve coverage by identifying source of blockages"
+          "destinationStep": "Step 20: Function Grouping and Prioritization",
+          "NOTE": "Functions need coverage improvement"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 18: Workflow Complete",
-          "NOTE": "No missing coverage file found, skip to workflow completion"
+          "destinationStep": "Step 33: Workflow Complete",
+          "NOTE": "Full coverage achieved, skip to completion"
         }
       ],
       "shouldCreateSummary": true,
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 13: Improving Coverage",
+      "name": "Step 20: Function Grouping and Prioritization",
       "type": "task",
-      "description": "Analyze coverage gaps and improve clamped handlers to achieve better coverage",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to improve coverage of the system",
+      "description": "Group uncovered functions and prioritize how they should be fixed using the functions-missing-covg file",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-3.md. Exclusively run the coverage-phase-3 agent to analyze coverage gaps and prioritize how they should be fixed in the functions-missing-covg file",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"
@@ -211,45 +475,235 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 14: Run Echidna Programmatically",
+      "name": "Step 21: Analyzing Coverage Gaps",
       "type": "task",
-      "description": "Run Echidna programmatically",
-      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration",
+      "description": "Analyze coverage gaps and document the root causes by adding analysis field to functions-missing-covg file",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-4.md. Exclusively run the coverage-phase-4 agent to identify the root cause for coverage gaps based on the analysis field in the functions-missing-covg file",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 22: Implement Coverage Solutions",
+      "type": "task",
+      "description": "Implement solutions to improve coverage based on the analysis from coverage-phase-4",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/coverage-phase-5.md. Exclusively run the coverage-phase-5 agent to implement solutions that will improve coverage",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 23: Run Echidna Programmatically",
+      "type": "task",
+      "description": "Run Echidna programmatically and capture output",
+      "prompt": "(set -o pipefail; echidna . --contract CryticTester --config echidna.yaml --format text --timeout 1800 --test-limit 99999999999999999999 --disable-slither --test-mode exploration 2>&1 | tee echidna-output.log; echo \"ECHIDNA_EXIT_CODE=$?\" > echidna-exit-code.txt) || true",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
       },
+      "canSkip": true,
+      "logFile": "echidna-output.log",
+      "logInterval": 10,
+      "logRegex": "cov: \\d+, corpus: \\d+",
       "allowFailure": true,
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 15: Echidna Output Check",
+      "name": "Step 24: Analyze Echidna Output",
+      "type": "task",
+      "description": "Analyze Echidna execution results and determine next action",
+      "prompt": "EXIT_CODE=$(grep 'ECHIDNA_EXIT_CODE=' echidna-exit-code.txt | cut -d'=' -f2); analyze-echidna-output $EXIT_CODE --log-file echidna-output.log --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-error-analysis.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 25: Handle Echidna Results",
       "type": "decision",
-      "description": "Verify Echidna produced output; exit if not.",
-      "mode": "FILE_EXISTS",
+      "description": "Take action based on Echidna exit code",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "echidna/*.txt"
+        "fileName": "magic/echidna-error-analysis.json",
+        "keyPath": "exit_code"
       },
       "decision": [
         {
           "operator": "eq",
           "value": 0,
-          "action": "STOP",
-          "NOTE": "Echidna output not found, stopping workflow."
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 27: Evaluate Coverage",
+          "NOTE": "Echidna ran successfully, continue workflow"
         },
         {
           "operator": "eq",
           "value": 1,
-          "action": "CONTINUE",
-          "NOTE": "Echidna output found, continuing workflow."
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 26: Fix Compilation Errors",
+          "NOTE": "Compilation error detected, triggering fix agent"
+        },
+        {
+          "operator": "eq",
+          "value": 2,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 25b: Increment Echidna Retry Counter",
+          "NOTE": "Non-compilation error — try to fix up to 3 times before stopping"
         }
       ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 16: Evaluate Coverage",
+      "name": "Step 25b: Increment Echidna Retry Counter",
+      "type": "task",
+      "description": "Track how many times we've retried Echidna for non-compilation errors (cycle 2)",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-retry-count-2.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-retry-count-2.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-retry-count-2.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 25c: Check Echidna Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, try to fix. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count-2.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "CONTINUE",
+          "NOTE": "Under retry limit, attempt fix"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
+          "action": "STOP",
+          "NOTE": "Exceeded 3 retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 25d: Fix Echidna Errors",
+      "type": "task",
+      "description": "Attempt to fix non-compilation Echidna errors (unlinked libraries, setup failures, etc.)",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the error (exit_code=2: non-compilation error). Read the error analysis carefully and fix the issues. Common fixes include: linking libraries in echidna.yaml, fixing setup() function, correcting contract deployment order, or fixing configuration issues.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 25e: Retry Echidna After Fix",
+      "type": "decision",
+      "description": "Always jump back to Echidna after attempting a fix",
+      "mode": "FILE_EXISTS",
+      "modeInfo": {
+        "fileName": "magic/echidna-retry-count-2.txt"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 23: Run Echidna Programmatically",
+          "NOTE": "Retry counter file exists, jump back to Echidna"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 23: Run Echidna Programmatically",
+          "NOTE": "Fallback: jump back to Echidna regardless"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 26: Fix Compilation Errors",
+      "type": "task",
+      "description": "Resolve compilation errors in the fuzzing harness",
+      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-compilation-errors.md. The file magic/echidna-error-analysis.json contains details about the compilation error. Exclusively run the fix-compilation-errors agent to resolve the compilation issues, then jump back to Step 21 to retry Echidna.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 26b: Increment Compilation Retry Counter",
+      "type": "task",
+      "description": "Track how many times we've retried Echidna after compilation fixes (cycle 2)",
+      "prompt": "mkdir -p magic && COUNT=$(cat magic/echidna-compile-retry-count-2.txt 2>/dev/null || echo 0); NEW=$((COUNT + 1)); echo $NEW > magic/echidna-compile-retry-count-2.txt; printf '{\"retry_count\": %d}' $NEW",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/echidna-compile-retry-count-2.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 26c: Check Compilation Retry Limit",
+      "type": "decision",
+      "description": "If we've retried 3 or fewer times, rerun Echidna. If more than 3, stop.",
+      "mode": "JSON_KEY_VALUE",
+      "modeInfo": {
+        "fileName": "magic/echidna-compile-retry-count-2.json",
+        "keyPath": "retry_count"
+      },
+      "decision": [
+        {
+          "operator": "lte",
+          "value": 3,
+          "action": "JUMP_TO_STEP",
+          "destinationStep": "Step 23: Run Echidna Programmatically",
+          "NOTE": "Under retry limit, rerun Echidna with fixed code"
+        },
+        {
+          "operator": "gt",
+          "value": 3,
+          "action": "STOP",
+          "NOTE": "Exceeded 3 compilation fix retries, giving up"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 27: Evaluate Coverage",
       "type": "task",
       "description": "Run coverage evaluation tool",
       "prompt": "covg-eval magic/ echidna/ --return-json",
@@ -265,33 +719,89 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Step 17: Coverage Improvement Decision Check",
+      "name": "Step 28: Score and Sort by Complexity",
+      "type": "task",
+      "description": "Add cyclomatic complexity scores to missing coverage functions and sort by complexity (auto-generates complexity data if needed)",
+      "prompt": "covg-scoring --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-{timestamp}.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Step 29: Create Latest Coverage Link",
+      "type": "task",
+      "description": "Find the most recent coverage file and create a -latest.json copy for decision steps",
+      "prompt": "get-latest-coverage --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/functions-missing-covg-latest.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 30: Update Coverage Groups",
+      "type": "task",
+      "description": "Update grouped coverage file by removing now-covered functions and appending new uncovered ones",
+      "prompt": "update-coverage-groups",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 31: Coverage Improvement Decision Check",
       "type": "decision",
       "description": "Check if coverage needs to be improved",
-      "mode": "FILE_EXISTS",
+      "mode": "JSON_KEY_VALUE",
       "modeInfo": {
-        "fileName": "functions-missing-covg-*.json"
+        "fileName": "magic/functions-missing-covg-latest.json",
+        "keyPath": "summary.functions_with_missing_coverage"
       },
       "decision": [
         {
-          "operator": "eq",
-          "value": 1,
+          "operator": "gt",
+          "value": 0,
           "action": "JUMP_TO_STEP",
-          "destinationStep": "Step 13: Improving Coverage",
-          "NOTE": "Loop back to Step 13 to continue with coverage improvement"
+          "destinationStep": "Step 20: Function Grouping and Prioritization",
+          "NOTE": "Loop back to Step 20 to continue with coverage improvement"
         },
         {
           "operator": "eq",
           "value": 0,
           "action": "CONTINUE",
-          "NOTE": "No missing coverage file found, proceed to workflow completion"
+          "NOTE": "Full coverage achieved, proceed to workflow completion"
         }
       ],
       "shouldCreateSummary": true,
       "shouldCommitChanges": false
     },
     {
-      "name": "Step 18: Workflow Complete",
+      "name": "Step 32: Dispatch Fuzzing Job",
+      "type": "task",
+      "description": "Queue a 10 MLN TestEchidna fuzzing job with the backend.",
+      "model": {
+        "type": "DISPATCH_FUZZING_JOB",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Step 33: Workflow Complete",
       "type": "task",
       "description": "Workflow has completed successfully - full coverage achieved or no coverage gaps detected",
       "prompt": "echo 'Fuzzing coverage workflow completed successfully'",

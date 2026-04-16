@@ -1,0 +1,8 @@
+{
+    "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "external_directory": "deny",
+        "doom_loop": "deny"
+    }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "Test Workflow Composition",
+  "steps": [
+    {
+      "name": "Parent Step 1: Setup",
+      "type": "task",
+      "description": "First step in parent workflow",
+      "prompt": "echo 'Starting parent workflow'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "type": "workflow",
+      "workflow_file": "test-composition-sub.json"
+    },
+    {
+      "name": "Parent Step 2: Cleanup",
+      "type": "task",
+      "description": "Last step in parent workflow (after sub-workflow)",
+      "prompt": "echo 'Parent workflow complete'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}

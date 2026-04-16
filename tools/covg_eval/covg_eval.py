@@ -149,10 +149,72 @@ def find_functions_in_source(source_path: str) -> dict[str, tuple[int, int]]:
     return functions
 
 
+def is_internal_or_private_function(source_path: str, func_name: str, start_line: int) -> bool:
+    """Check if a function is internal or private by examining its visibility modifier.
+
+    Args:
+        source_path: Path to the Solidity source file.
+        func_name: Name of the function.
+        start_line: Starting line number of the function (1-indexed).
+
+    Returns:
+        True if the function is internal or private, False otherwise.
+    """
+    try:
+        with open(source_path) as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return False
+
+    # Read the function signature (may span multiple lines until we hit '{')
+    signature = ""
+    for i in range(start_line - 1, len(lines)):
+        line = lines[i]
+        signature += " " + line.strip()
+        if "{" in line:
+            break
+
+    # Check for visibility modifiers
+    # Internal or private functions are marked with 'internal' or 'private' keywords
+    # Common pattern: function name(...) <visibility> <modifiers> { ... }
+    if re.search(r'\b(internal|private)\b', signature):
+        return True
+
+    return False
+
+
+def find_function_body_start(source_path: str, start_line: int) -> int:
+    """Find the line where the function body starts (after the opening brace).
+
+    Args:
+        source_path: Path to the Solidity source file.
+        start_line: Function definition start line (1-indexed).
+
+    Returns:
+        Line number where the function body starts (line after '{'), or start_line if not found.
+    """
+    try:
+        with open(source_path) as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return start_line
+
+    # Search for the first opening brace starting from start_line
+    for i in range(start_line - 1, len(lines)):
+        if '{' in lines[i]:
+            # Return the line AFTER the opening brace (i + 2 because i is 0-indexed)
+            # This excludes both the signature and the line with the opening brace
+            return i + 2  # Return 1-indexed line number of the line after '{'
+
+    # If no opening brace found, return start_line
+    return start_line
+
+
 def analyze_function_coverage(
     line_coverage: dict[int, int],
     start_line: int,
     end_line: int,
+    source_path: str | None = None,
 ) -> tuple[float, list[int]]:
     """Analyze line coverage for a specific function.
 
@@ -160,15 +222,23 @@ def analyze_function_coverage(
         line_coverage: Dict mapping line numbers to hit counts.
         start_line: Function start line (1-indexed).
         end_line: Function end line (1-indexed).
+        source_path: Optional path to the source file (used to exclude signature lines).
 
     Returns:
         A tuple of (coverage_percentage, list_of_uncovered_lines).
     """
-    # Extract lines within function range that have coverage data
+    # Find where the function body actually starts (first '{')
+    # This excludes the function signature from coverage analysis
+    body_start_line = start_line
+    if source_path:
+        body_start_line = find_function_body_start(source_path, start_line)
+
+    # Extract lines within function body range that have coverage data
+    # Exclude signature lines (before the opening brace)
     function_lines = {
         ln: hits
         for ln, hits in line_coverage.items()
-        if start_line <= ln <= end_line
+        if body_start_line <= ln <= end_line
     }
 
     if not function_lines:
@@ -223,18 +293,26 @@ def group_consecutive_lines(lines: list[int]) -> list[str]:
 def extract_code_snippets(
     source_path: str,
     uncovered_lines: list[int],
-) -> list[dict[str, str | list[str]]]:
-    """Extract code snippets for uncovered lines, grouped by consecutive ranges.
+    line_coverage: dict[int, int],
+) -> list[dict[str, str | int | list[str]]]:
+    """Extract code snippets for uncovered lines, grouped by chunks separated by covered lines.
+
+    A new chunk starts whenever there's a covered line between uncovered lines.
+    This means if there are uncovered lines 10, 11, 12 (covered), 13, 14, this will create
+    two chunks: [10, 11] and [13, 14].
 
     Args:
         source_path: Path to the Solidity source file.
         uncovered_lines: Sorted list of uncovered line numbers.
+        line_coverage: Dict mapping line numbers to hit counts.
 
     Returns:
         List of dicts, each containing:
             - "line_range": string like "10-15" or "20"
+            - "last_covered_line": int or None, the last covered line before this group
             - "code": list of strings formatted as "lineNum: code content"
                      (skips empty/whitespace-only lines)
+                     Includes the last covered line with [LAST COVERED] prefix if found
     """
     if not uncovered_lines:
         return []
@@ -245,16 +323,28 @@ def extract_code_snippets(
     except FileNotFoundError:
         return []
 
-    # Group consecutive line numbers
+    # Group uncovered lines into chunks separated by covered lines
+    # A new chunk starts when there's a covered line between uncovered lines
     groups: list[list[int]] = []
     current_group = [uncovered_lines[0]]
 
     for line_num in uncovered_lines[1:]:
-        if line_num == current_group[-1] + 1:
-            current_group.append(line_num)
-        else:
+        # Check if there are any covered lines between the last uncovered line and this one
+        has_covered_line_between = False
+        for check_line in range(current_group[-1] + 1, line_num):
+            # A line is covered if it exists in line_coverage and has hits > 0
+            if check_line in line_coverage and line_coverage[check_line] > 0:
+                has_covered_line_between = True
+                break
+
+        if has_covered_line_between:
+            # Start a new chunk because there's a covered line in between
             groups.append(current_group)
             current_group = [line_num]
+        else:
+            # Continue the current chunk
+            current_group.append(line_num)
+
     groups.append(current_group)
 
     # Extract code for each group
@@ -266,8 +356,26 @@ def extract_code_snippets(
         else:
             line_range = f"{group[0]}-{group[-1]}"
 
-        # Extract code, skipping empty/whitespace-only lines
+        # Find the last covered line before this group
+        first_uncovered = group[0]
+        last_covered_line = None
+
+        # Search backwards from the first uncovered line to find the last covered line
+        for line_num in range(first_uncovered - 1, 0, -1):
+            if line_num in line_coverage and line_coverage[line_num] > 0:
+                last_covered_line = line_num
+                break
+
+        # Extract code, including the last covered line if found
         code_lines = []
+
+        # Add the last covered line first, if found
+        if last_covered_line is not None and last_covered_line <= len(lines):
+            code = lines[last_covered_line - 1].rstrip()
+            if code.strip():
+                code_lines.append(f"{last_covered_line}: [LAST COVERED] {code}")
+
+        # Add the uncovered lines
         for line_num in group:
             if line_num <= len(lines):
                 code = lines[line_num - 1].rstrip()  # Remove trailing whitespace
@@ -279,14 +387,40 @@ def extract_code_snippets(
         if code_lines:
             result.append({
                 "line_range": line_range,
+                "last_covered_line": last_covered_line,
                 "code": code_lines,
             })
 
     return result
 
 
+def parse_line_range(line_range: str) -> tuple[int, int]:
+    """Parse a line range string like '66-130' or '17' into (start, end) tuple.
+
+    Args:
+        line_range: String like "66-130" or "17"
+
+    Returns:
+        Tuple of (start_line, end_line)
+    """
+    if '-' in line_range:
+        start, end = line_range.split('-')
+        return int(start), int(end)
+    else:
+        line = int(line_range)
+        return line, line
+
+
 def load_functions_to_cover(magic_dir: Path) -> dict[str, list[str]]:
-    """Load the functions-to-cover.json file.
+    """Load the recon-coverage.json file and extract function names from line ranges.
+
+    The recon-coverage.json format is:
+    {
+      "src/hub/Hub.sol": ["66-130", "133-173", ...],
+      ...
+    }
+
+    This function parses the source files to find which functions are in those line ranges.
 
     Args:
         magic_dir: Path to the magic directory.
@@ -298,14 +432,34 @@ def load_functions_to_cover(magic_dir: Path) -> dict[str, list[str]]:
         FileNotFoundError: If the JSON file doesn't exist.
         json.JSONDecodeError: If the JSON is invalid.
     """
-    json_path = magic_dir / "functions-to-cover.json"
+    json_path = magic_dir / "recon-coverage.json"
     with open(json_path) as f:
         data = json.load(f)
 
     result: dict[str, list[str]] = {}
-    for contract, info in data.items():
-        if "functions_to_cover" in info:
-            result[contract] = info["functions_to_cover"]
+
+    # data maps source_path -> list of line ranges
+    for source_path, line_ranges in data.items():
+        # Extract contract name from path (e.g., "src/hub/Hub.sol" -> "Hub")
+        contract_name = Path(source_path).stem
+
+        # Find all functions in this source file
+        all_functions = find_functions_in_source(source_path)
+
+        # Determine which functions overlap with the specified line ranges
+        functions_to_cover = set()
+
+        for line_range_str in line_ranges:
+            range_start, range_end = parse_line_range(line_range_str)
+
+            # Check which functions overlap with this range
+            for func_name, (func_start, func_end) in all_functions.items():
+                # Check if there's any overlap between the range and the function
+                if not (range_end < func_start or range_start > func_end):
+                    functions_to_cover.add(func_name)
+
+        if functions_to_cover:
+            result[contract_name] = sorted(list(functions_to_cover))
 
     return result
 
@@ -381,16 +535,17 @@ Example usage:
   covg-eval magic/ echidna/
 
 This will:
-  1. Read functions-to-cover.json from the magic/ directory
-  2. Find the most recent LCOV file in echidna/
-  3. Evaluate coverage for each specified function
-  4. Write results to magic/functions-missing-covg-N.json
+  1. Read recon-coverage.json from the magic/ directory
+  2. Parse source files to identify functions in the specified line ranges
+  3. Find the most recent LCOV file in echidna/
+  4. Evaluate coverage for each identified function
+  5. Write results to magic/functions-missing-covg-N.json
         """,
     )
     parser.add_argument(
         "magic_dir",
         type=Path,
-        help="Path to the magic directory containing functions-to-cover.json",
+        help="Path to the magic directory containing recon-coverage.json",
     )
     parser.add_argument(
         "echidna_dir",
@@ -428,12 +583,12 @@ This will:
         functions_to_cover = load_functions_to_cover(magic_dir)
     except FileNotFoundError:
         print(
-            f"Error: functions-to-cover.json not found in {magic_dir}",
+            f"Error: recon-coverage.json not found in {magic_dir}",
             file=sys.stderr,
         )
         return 1
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in functions-to-cover.json: {e}", file=sys.stderr)
+        print(f"Error: Invalid JSON in recon-coverage.json: {e}", file=sys.stderr)
         return 1
 
     # Determine output stream for verbose messages
@@ -459,7 +614,7 @@ This will:
         print(f"Found {len(lcov_sources)} source files in LCOV file", file=verbose_out)
 
     # Analyze coverage for each function
-    missing_coverage: dict = {}
+    missing_coverage: list = []
 
     for contract_name, function_names in functions_to_cover.items():
         # Find the source file for this contract
@@ -498,49 +653,74 @@ This will:
                 line_coverage,
                 start_line,
                 end_line,
+                source_path,
             )
 
             if verbose:
                 print(f"  {func_name} (lines {start_line}-{end_line}): {percentage:.2f}% coverage", file=verbose_out)
 
             if percentage < 100.0:
-                # Extract lines within function range that have coverage data
-                function_lines = {
-                    ln: hits
-                    for ln, hits in line_coverage.items()
-                    if start_line <= ln <= end_line
-                }
-                total_lines = len(function_lines)
-                covered_lines = sum(1 for hits in function_lines.values() if hits > 0)
-                uncovered_count = len(uncovered_lines)
-
                 # Extract code snippets for uncovered lines
-                code_snippets = extract_code_snippets(source_path, uncovered_lines)
+                code_snippets = extract_code_snippets(source_path, uncovered_lines, line_coverage)
 
-                missing_coverage[func_name] = {
-                    "contract": contract_name,
-                    "source_file": source_path,
-                    "function_range": {
-                        "start": start_line,
-                        "end": end_line,
-                    },
-                    "coverage_stats": {
-                        "total_lines": total_lines,
-                        "covered_lines": covered_lines,
-                        "uncovered_lines": uncovered_count,
-                        "percentage": round(percentage, 2),
-                    },
-                    "uncovered_code": code_snippets,
-                }
+                # Create a separate entry for each uncovered section
+                for snippet in code_snippets:
+                    missing_coverage.append({
+                        "function": func_name,
+                        "contract": contract_name,
+                        "source_file": source_path,
+                        "function_range": {
+                            "start": start_line,
+                            "end": end_line,
+                        },
+                        "uncovered_code": snippet,
+                    })
+
+    # Filter out internal/private functions to avoid redundant reporting
+    # Internal/private functions can only be called from within the same contract,
+    # so if they're uncovered, it's because their caller is uncovered.
+    # We filter them out to show only the root cause (the uncovered caller).
+    if verbose:
+        print(f"Filtering internal/private functions...", file=verbose_out)
+        print(f"  Before filtering: {len(missing_coverage)} uncovered sections", file=verbose_out)
+
+    filtered_coverage = []
+    for entry in missing_coverage:
+        func_name = entry["function"]
+        source_path = entry["source_file"]
+        start_line = entry["function_range"]["start"]
+
+        # Check if this function is internal or private
+        is_internal = is_internal_or_private_function(source_path, func_name, start_line)
+
+        if is_internal:
+            if verbose:
+                print(f"  Filtering out internal/private function: {func_name}", file=verbose_out)
+            # Skip this entry - it's an internal/private function that can only
+            # be called from within the contract, so covering its caller will
+            # automatically cover this function
+            continue
+
+        # Keep this entry - it's a public/external function that needs direct coverage
+        filtered_coverage.append(entry)
+
+    if verbose:
+        print(f"  After filtering: {len(filtered_coverage)} uncovered sections", file=verbose_out)
+
+    missing_coverage = filtered_coverage
 
     # Prepare output data
+    # Count unique functions with missing coverage
+    unique_functions_with_issues = len(set(entry["function"] for entry in missing_coverage))
+
     output_data = {
         "timestamp": timestamp,
         "lcov_file": str(lcov_path),
         "missing_coverage": missing_coverage,
         "summary": {
             "functions_analyzed": sum(len(v) for v in functions_to_cover.values()),
-            "functions_with_missing_coverage": len(missing_coverage),
+            "functions_with_missing_coverage": unique_functions_with_issues,
+            "uncovered_sections": len(missing_coverage),
             "full_coverage": len(missing_coverage) == 0
         }
     }
@@ -558,7 +738,8 @@ This will:
         print(f"Results written to: {output_path}")
 
         if missing_coverage:
-            print(f"Found {len(missing_coverage)} functions with < 100% coverage")
+            unique_funcs = len(set(entry["function"] for entry in missing_coverage))
+            print(f"Found {unique_funcs} functions with < 100% coverage ({len(missing_coverage)} uncovered sections)")
         else:
             print("All functions have 100% coverage!")
 

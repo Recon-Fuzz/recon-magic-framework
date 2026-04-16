@@ -1,0 +1,275 @@
+{
+  "name": "Fuzzing Setup V2 Workflow",
+  "description": "Setup V2: Migration, scaffolding, implementation, and validation",
+  "steps": [
+    {
+      "name": "Phase 0: Foundry Migration",
+      "type": "task",
+      "description": "Migrate Hardhat project to Foundry and ensure compilation",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-0.md. Run exclusively the setup-v2-phase-0 agent using the Task tool. This phase will migrate the project to Foundry (if needed) and verify compilation.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Compilation Check",
+      "type": "decision",
+      "description": "Check if compilation failed",
+      "mode": "READ_FILE",
+      "modeInfo": {
+        "fileName": "COMPILATION_FAILED.md"
+      },
+      "decision": [
+        {
+          "operator": "eq",
+          "value": 1,
+          "action": "STOP"
+        },
+        {
+          "operator": "eq",
+          "value": 0,
+          "action": "CONTINUE"
+        }
+      ],
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Ensure Dependencies Installed",
+      "type": "task",
+      "description": "Detect dependency manager and install dependencies if missing",
+      "prompt": "REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo '.'); if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Detected soldeer project, installing dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install timed out or failed, continuing...'; fi; if [ -f \"$REPO_ROOT/.gitmodules\" ]; then echo 'Detected git submodule project, installing dependencies...'; git -C \"$REPO_ROOT\" submodule update --init --recursive || echo 'submodule update failed, continuing...'; fi; if [ -f package.json ]; then if [ -f pnpm-lock.yaml ]; then echo 'Detected pnpm project, installing dependencies...'; command -v pnpm >/dev/null 2>&1 || npm install -g pnpm; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Detected yarn project, installing dependencies...'; timeout 120 yarn install; else echo 'Detected npm project, installing dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing...'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit || echo 'forge-std install failed, continuing...'; fi; echo 'Verifying compilation...'; forge build",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
+    },
+    {
+      "name": "Suppress Lint on Build",
+      "type": "task",
+      "description": "Disable forge linter during build to prevent lint warnings in third-party code from blocking scaffolding",
+      "prompt": "if ! grep -q '\\[lint\\]' foundry.toml 2>/dev/null; then printf '\\n[lint]\\nlint_on_build = false\\n' >> foundry.toml; elif ! grep -q 'lint_on_build' foundry.toml 2>/dev/null; then sed -i '/\\[lint\\]/a lint_on_build = false' foundry.toml; else sed -i 's/lint_on_build = true/lint_on_build = false/' foundry.toml; fi; echo 'lint_on_build set to false in foundry.toml'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
+    },
+    {
+      "name": "Validate Mock Names",
+      "type": "task",
+      "description": "Validate mocked_contracts against .recon/out ABIs; strip trailing Mock suffix if needed; remove unknowns",
+      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); OUT_DIR=\".recon/out\"; mkdir -p \"$OUT_DIR\"; if [ -z \"$(ls -A \"$OUT_DIR\" 2>/dev/null)\" ]; then PROFILE=$(grep -q '^\\[profile\\.recon\\]' \"${RECON_FOUNDRY_ROOT}/foundry.toml\" 2>/dev/null && echo 'recon' || echo ''); env ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} forge build --build-info --out \"$OUT_DIR\" || true; fi; MOCK_COUNT=$(jq '.mocked_contracts | length' \"$SCAFFOLD_FILE\" 2>/dev/null || echo 0); if [ \"$MOCK_COUNT\" -gt 0 ]; then NEW_MOCKS='[]'; for name in $(jq -r '.mocked_contracts[]' \"$SCAFFOLD_FILE\"); do if find \"$OUT_DIR\" -name \"${name}.json\" ! -path '*/build-info/*' 2>/dev/null | grep -q .; then NEW_MOCKS=$(printf '%s' \"$NEW_MOCKS\" | jq --arg n \"$name\" '. + [$n]'); else stripped=\"${name%Mock}\"; if [ \"$stripped\" != \"$name\" ] && find \"$OUT_DIR\" -name \"${stripped}.json\" ! -path '*/build-info/*' 2>/dev/null | grep -q .; then echo \"Renamed: $name -> $stripped\"; NEW_MOCKS=$(printf '%s' \"$NEW_MOCKS\" | jq --arg n \"$stripped\" '. + [$n]'); else echo \"WARNING: No ABI for $name, removing\"; fi; fi; done; jq --argjson m \"$NEW_MOCKS\" '.mocked_contracts = $m' \"$SCAFFOLD_FILE\" > \"${SCAFFOLD_FILE}.tmp\" && mv \"${SCAFFOLD_FILE}.tmp\" \"$SCAFFOLD_FILE\"; echo \"Validated mocked_contracts: $NEW_MOCKS\"; fi",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false,
+      "allowFailure": true
+    },
+    {
+      "name": "Build Recon Scaffolding Output",
+      "type": "task",
+      "description": "Run forge build targeting .recon/out so recon-generate finds compiled contracts with visible output",
+      "prompt": "PROFILE=$(grep -q '^\\[profile\\.recon\\]' \"${RECON_FOUNDRY_ROOT}/foundry.toml\" 2>/dev/null && echo 'recon' || echo '');\nenv ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} forge build --build-info --out .recon/out > /tmp/recon-build.log 2>&1;\nBUILD_EXIT=$?;\ncat /tmp/recon-build.log;\n\nif [ $BUILD_EXIT -ne 0 ] && grep -qE 'Error \\(1834\\)|Copying of type struct.*not yet supported' /tmp/recon-build.log; then\n  echo '>>> via_ir compilation error detected. Adding via_ir = true and retrying... <<<';\n  if grep -qE '^via[_-]ir\\s*=\\s*false' foundry.toml 2>/dev/null; then\n    sed -i 's/^via[_-]ir\\s*=\\s*false/via_ir = true/' foundry.toml;\n  elif ! grep -qE '^via[_-]ir\\s*=\\s*true' foundry.toml 2>/dev/null; then\n    if grep -q '^\\[profile\\.default\\]' foundry.toml 2>/dev/null; then\n      sed -i '/^\\[profile\\.default\\]/a via_ir = true' foundry.toml;\n    elif grep -n '^\\[' foundry.toml 2>/dev/null | head -1 | grep -q .; then\n      FIRST_SEC=$(grep -n '^\\[' foundry.toml | head -1 | cut -d: -f1);\n      sed -i \"${FIRST_SEC}i via_ir = true\" foundry.toml;\n    else\n      printf '\\nvia_ir = true\\n' >> foundry.toml;\n    fi;\n  fi;\n  if grep -q '^\\[profile\\.recon\\]' foundry.toml 2>/dev/null; then\n    if ! awk '/^\\[profile\\.recon\\]/{f=1;next} /^\\[/{f=0} f && /^via[_-]ir/' foundry.toml | grep -q .; then\n      sed -i '/^\\[profile\\.recon\\]/a via_ir = true' foundry.toml;\n    fi;\n  fi;\n  rm -rf .recon/out;\n  env ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} forge build --build-info --out .recon/out;\nelif [ $BUILD_EXIT -ne 0 ]; then\n  exit $BUILD_EXIT;\nfi;\n\nBI_FILE=$(find .recon/out/build-info -name '*.json' -not -name '*.filtered.json' 2>/dev/null | head -1);\nif [ -n \"$BI_FILE\" ]; then filter-build-info \"$BI_FILE\" -o \"$BI_FILE\"; fi;\necho 'Recon build output ready.'",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    },
+    {
+      "name": "Generate Recon Scaffolding",
+      "type": "task",
+      "description": "Generate fuzzing scaffolding based on contracts-to-scaffold.json",
+      "prompt": "SCAFFOLD_FILE=$([ -f magic/contracts-to-scaffold.json ] && echo 'magic/contracts-to-scaffold.json' || echo '../magic/contracts-to-scaffold.json'); MOCK_NAMES=$(jq -r 'if .mocked_contracts | length > 0 then [.mocked_contracts[] | sub(\"Mock$\"; \"\")] | join(\",\") else empty end' $SCAFFOLD_FILE); PROFILE=$(grep -q '^\\[profile\\.recon\\]' \"${RECON_FOUNDRY_ROOT}/foundry.toml\" 2>/dev/null && echo 'recon' || echo ''); if grep -q 'ignored_warnings_from' foundry.toml 2>/dev/null; then if ! grep -q 'contracts/__recon' foundry.toml 2>/dev/null; then sed -i 's/ignored_warnings_from = \\[/ignored_warnings_from = [\"contracts\\/__recon\", /' foundry.toml; fi; else printf '\\nignored_warnings_from = [\"contracts/__recon\"]\\n' >> foundry.toml; fi; env ${PROFILE:+FOUNDRY_PROFILE=$PROFILE} npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest --include \"$(jq -r '.source_contracts | join(\",\")' $SCAFFOLD_FILE)\" ${MOCK_NAMES:+--mock \"$MOCK_NAMES\"} --force 2>&1",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Clean Flattened Imports",
+      "type": "task",
+      "description": "Remove imports of flattened contracts from scaffolding to prevent identifier collisions",
+      "prompt": "ROOT=${RECON_FOUNDRY_ROOT:-.}; FLATTENED=$(find \"$ROOT/src\" -name '*.flattened.sol' -o -name '*.flat.sol' 2>/dev/null); if [ -n \"$FLATTENED\" ]; then echo 'Found flattened contracts, cleaning imports from scaffolding...'; for f in $FLATTENED; do BASENAME=$(basename \"$f\"); echo \"  Removing imports of $BASENAME from test/recon/\"; find \"$ROOT/test/recon\" -name '*.sol' -exec sed -i \"/$BASENAME/d\" {} +; done; find \"$ROOT/test/recon\" -name '*.sol' -exec sed -i '/flattened\\//d' {} +; echo 'Flattened import cleanup done.'; else echo 'No flattened contracts found, skipping cleanup.'; fi",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true,
+      "allowFailure": true
+    },
+    {
+      "name": "Phase 1: Install Dependencies and Create Mocks",
+      "type": "task",
+      "description": "Install chimera, create remaining mock contracts, and verify compilation",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-1.md. Run exclusively the setup-v2-phase-1 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 2: Implement Setup.sol",
+      "type": "task",
+      "description": "Implement Setup.sol based on setup-config-spec.json",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-2.md. Run exclusively the setup-v2-phase-2 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Fix Import Collisions",
+      "type": "task",
+      "description": "Safety net: detect and fix any remaining duplicate identifier errors from conflicting imports",
+      "prompt": "Run `forge build`. If it compiles cleanly, report success and stop — do nothing else.\n\nIf you see `Error (2333): Identifier already declared`, fix the collisions in `test/recon/` files:\n1. Read the error output to identify which import lines cause each collision\n2. Check whether the colliding import is actually used by setup() or handler logic — if it is not used, remove the import line entirely\n3. If both colliding imports are needed, refactor to named imports with aliases, for example: `import {IPair as FirebirdIPair} from \"contracts/interfaces/IFirebird.sol\";`\n4. Re-run `forge build` and repeat up to 3 times until compilation is clean\n\nOnly fix `Error (2333): Identifier already declared` — do not touch other compilation errors, those are handled by the next phase.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 3: Validate Setup",
+      "type": "task",
+      "description": "Validate setup with forge build, forge test, and echidna",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-3.md. Run exclusively the setup-v2-phase-3 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Auto-Link Libraries",
+      "type": "task",
+      "description": "Auto link libraries using recon-generate",
+      "prompt": "MEDUSA_STUB=0; test -f medusa.json || { echo '{}' > medusa.json; MEDUSA_STUB=1; }; npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest link2; rc=$?; [ $MEDUSA_STUB -eq 1 ] && rm -f medusa.json; exit $rc",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Extract Target Functions",
+      "type": "task",
+      "description": "Extract all target handler functions from scaffolded code",
+      "preconditions": [
+        "forge-build-gate"
+      ],
+      "prompt": "extract-target-functions --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/target-functions.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 5: Identify Prerequisite Functions",
+      "type": "task",
+      "description": "Analyze each handler and identify prerequisite functions",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-5.md. Run exclusively the setup-v2-phase-5 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Order Prerequisite Functions",
+      "type": "task",
+      "description": "Sort functions by prerequisite count for testing order",
+      "prompt": "order-prerequisite-func ./magic/function-sequences.json --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/function-sequences-sorted.json"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 6: Move Admin Functions",
+      "type": "task",
+      "description": "Identify and move admin functions to AdminTargets",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-6.md. Run exclusively the setup-v2-phase-6 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true,
+      "staleTimeout": 1800
+    },
+    {
+      "name": "Phase 7: Write Unit Tests",
+      "type": "task",
+      "description": "Write unit tests for all handlers to validate setup",
+      "prompt": "You are provided an agent definition at ./prompts/agent/setup-v2-phase-7.md. Run exclusively the setup-v2-phase-7 agent using the Task tool.",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": true,
+      "shouldCommitChanges": true,
+      "staleTimeout": 1800
+    },
+    {
+      "name": "Final Echidna Validation",
+      "type": "task",
+      "description": "Run Echidna to validate complete setup",
+      "prompt": "(set -o pipefail; echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 10000 2>&1 | tee magic/echidna-output.txt; echo \"ECHIDNA_EXIT_CODE=$?\" > magic/echidna-exit-code.txt) || true",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "allowFailure": true,
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Setup V2 Completion Summary",
+      "type": "task",
+      "description": "Generate final summary of setup completion",
+      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all phases\n2. List key artifacts: Setup.sol, target-functions.json, function-sequences.json, admin-functions.json\n3. Confirm forge build compiles successfully\n4. Confirm forge test runs without reverts\n5. Confirm echidna runs without setup crashes\n6. Next steps: proceed to Coverage workflow",
+      "model": {
+        "type": "OPENCODE",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": true
+    }
+  ]
+}

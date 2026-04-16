@@ -1,0 +1,149 @@
+{
+  "name": "Shared Workflow Gates",
+  "gates": {
+    "forge-build-gate": {
+      "description": "Verify project compiles with Forge, attempt fix if failed",
+      "maxRetries": 2,
+      "check": {
+        "name": "Forge Build Check",
+        "type": "task",
+        "description": "Run forge build and check for errors",
+        "prompt": "mkdir -p magic; rm -f magic/BUILD_SUCCESS.txt magic/WORKFLOW_FAILURE_REPORT.md; REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo '.'); if [ -f soldeer.lock ] || grep -q '\\[soldeer\\]' foundry.toml 2>/dev/null; then echo 'Installing soldeer dependencies...'; timeout 120 forge soldeer install || echo 'soldeer install failed, continuing...'; fi; if [ -f \"$REPO_ROOT/.gitmodules\" ]; then echo 'Initializing git submodules...'; git -C \"$REPO_ROOT\" submodule update --init --recursive || echo 'submodule update failed, continuing...'; fi; if [ ! -d lib/forge-std ]; then echo 'Installing forge-std...'; forge install foundry-rs/forge-std --no-commit || echo 'forge-std install failed, continuing...'; fi; if [ -f package.json ]; then if [ -f pnpm-lock.yaml ]; then echo 'Installing pnpm dependencies...'; command -v pnpm >/dev/null 2>&1 || npm install -g pnpm; timeout 120 pnpm install --no-frozen-lockfile; elif [ -f yarn.lock ]; then echo 'Installing yarn dependencies...'; timeout 120 yarn install; else echo 'Installing npm dependencies...'; timeout 120 npm install --loglevel=error; fi || echo 'Package install failed or timed out, continuing to forge build anyway'; fi; if ! grep -q 'lint_on_build' foundry.toml 2>/dev/null; then if grep -q '\\[lint\\]' foundry.toml 2>/dev/null; then sed -i '/\\[lint\\]/a lint_on_build = false' foundry.toml; else printf '\\n[lint]\\nlint_on_build = false\\n' >> foundry.toml; fi; fi; forge build > magic/build-output.log 2>&1; build_exit=$?; cat magic/build-output.log; if [ $build_exit -eq 0 ]; then echo BUILD_SUCCESS > magic/BUILD_SUCCESS.txt; elif grep -q 'Compiler run successful' magic/build-output.log; then echo BUILD_SUCCESS > magic/BUILD_SUCCESS.txt; fi",
+        "model": {
+          "type": "PROGRAM",
+          "model": "inherit"
+        },
+        "allowFailure": true,
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": false
+      },
+      "successCondition": {
+        "mode": "FILE_EXISTS",
+        "modeInfo": {
+          "fileName": "magic/BUILD_SUCCESS.txt"
+        },
+        "successValue": 1
+      },
+      "fix": {
+        "name": "Forge Build Fix",
+        "type": "task",
+        "description": "Fix compilation errors",
+        "prompt": "Run 'forge build -o out' to verify the code compiles successfully. If there are compilation errors, fix them and run 'forge build -o out' again until the code compiles without errors.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      },
+      "onFailure": {
+        "name": "Generate Failure Report",
+        "type": "task",
+        "description": "Generate a user-readable failure report when gate fails",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/generate-failure-report.md. Run exclusively the generate-failure-report agent to create magic/WORKFLOW_FAILURE_REPORT.md explaining what failed and how to fix it.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      }
+    },
+    "smoke-test-gate": {
+      "description": "Run 10K-test smoke campaign to catch shallow false positives before full budget",
+      "maxRetries": 1,
+      "check": {
+        "name": "Smoke Test Run",
+        "type": "task",
+        "description": "Run a quick 10K-test campaign and check for unexpected failures",
+        "prompt": "rm -f magic/SMOKE_TEST_PASSED.txt magic/smoke-test-results.json; ~/.local/bin/recon fuzz . --contract CryticTester --config echidna.yaml --format text --test-limit 10000 --workers 4 > magic/smoke-test-output.log 2>&1; SMOKE_EXIT=$?; if [ $SMOKE_EXIT -eq 0 ]; then echo SMOKE_TEST_PASSED > magic/SMOKE_TEST_PASSED.txt; elif grep -q 'failed' magic/smoke-test-output.log && ! grep -q 'canary' magic/smoke-test-output.log; then echo 'PROPERTY_FAILURES_DETECTED' > magic/smoke-test-results.json; else echo SMOKE_TEST_PASSED > magic/SMOKE_TEST_PASSED.txt; fi",
+        "model": {
+          "type": "PROGRAM",
+          "model": "inherit"
+        },
+        "allowFailure": true,
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": false
+      },
+      "successCondition": {
+        "mode": "FILE_EXISTS",
+        "modeInfo": {
+          "fileName": "magic/SMOKE_TEST_PASSED.txt"
+        },
+        "successValue": 1
+      },
+      "fix": {
+        "name": "Triage Smoke Test Failures",
+        "type": "task",
+        "description": "Analyze and fix shallow false positives found in smoke test",
+        "prompt": "Read magic/smoke-test-output.log. For each property failure:\n1. If call sequence length <= 3 → likely FP from setup issue, fix the property guard\n2. If involves address(0) → add address(0) guard to property\n3. If involves time warp → check stale-vs-live index values (AP-10)\n4. If fails by 1-2 wei → add tolerance\n5. If involves different actors → add _actorConsistent guard\nFix all identified FPs in Properties.sol, then run forge build to verify.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": true,
+        "shouldCommitChanges": true
+      },
+      "onFailure": {
+        "name": "Generate Smoke Test Failure Report",
+        "type": "task",
+        "description": "Generate failure report for unresolvable smoke test failures",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/generate-failure-report.md. Run exclusively the generate-failure-report agent to create magic/WORKFLOW_FAILURE_REPORT.md explaining smoke test failures.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      }
+    },
+    "echidna-run-gate": {
+      "description": "Run Echidna and verify it completes successfully, attempt fix if failed",
+      "maxRetries": 3,
+      "check": {
+        "name": "Run Echidna",
+        "type": "task",
+        "description": "Run Echidna to test the fuzzing setup and save logs",
+        "prompt": "mkdir -p magic; rm -f magic/ECHIDNA_SUCCESS.txt magic/WORKFLOW_FAILURE_REPORT.md; echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration > magic/echidna-output.log 2>&1; echidna_exit=$?; cat magic/echidna-output.log; if [ $echidna_exit -le 1 ]; then echo ECHIDNA_SUCCESS > magic/ECHIDNA_SUCCESS.txt; fi; mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true)",
+        "model": {
+          "type": "PROGRAM",
+          "model": "inherit"
+        },
+        "allowFailure": true,
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": false
+      },
+      "successCondition": {
+        "mode": "FILE_EXISTS",
+        "modeInfo": {
+          "fileName": "magic/ECHIDNA_SUCCESS.txt"
+        },
+        "successValue": 1
+      },
+      "fix": {
+        "name": "Fix Echidna Failure",
+        "type": "task",
+        "description": "Resolve issues preventing Echidna from running successfully",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/fix-echidna-failures.md. Exclusively run the fix-echidna-failures agent using the Task tool. This agent will analyze the saved Echidna logs and implement fixes to resolve the issues.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": true,
+        "shouldCommitChanges": true
+      },
+      "onFailure": {
+        "name": "Generate Failure Report",
+        "type": "task",
+        "description": "Generate a user-readable failure report when gate fails",
+        "prompt": "You are provided an agent definition at ./.opencode/agent/generate-failure-report.md. Run exclusively the generate-failure-report agent to create magic/WORKFLOW_FAILURE_REPORT.md explaining what failed and how to fix it.",
+        "model": {
+          "type": "OPENCODE",
+          "model": "inherit"
+        },
+        "shouldCreateSummary": false,
+        "shouldCommitChanges": true
+      }
+    }
+  }
+}

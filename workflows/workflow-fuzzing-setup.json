@@ -5,6 +5,9 @@
       "name": "Phase 0a: Analyze Setup Decisions",
       "type": "task",
       "description": "Analyze contracts and target functions to determine setup decisions",
+      "preconditions": [
+        "forge-build-gate"
+      ],
       "prompt": "You are provided an agent definition at ./.opencode/agent/setup-phase-0a.md. Run exclusively the setup-phase-0a agent using the Task tool. This phase will analyze the codebase and output decisions to magic/setup-decisions.json.",
       "model": {
         "type": "OPENCODE",
@@ -52,94 +55,17 @@
       "shouldCommitChanges": true
     },
     {
-      "name": "Phase 1: Run Echidna",
+      "name": "Step 0d: Auto-Link Libraries",
       "type": "task",
-      "description": "Run Echidna to test the fuzzing setup",
-      "prompt": "echidna . --contract CryticTester --config echidna.yaml --format text --test-limit 50000 --disable-slither --test-mode exploration",
+      "description": "Auto linking libraries using recon-generate",
+      "preconditions": [
+        "forge-build-gate"
+      ],
+      "prompt": "MEDUSA_STUB=0; test -f medusa.json || { echo '{}' > medusa.json; MEDUSA_STUB=1; }; npm_config_cache=/tmp/npm-cache npx -y recon-generate@latest link2; rc=$?; [ $MEDUSA_STUB -eq 1 ] && rm -f medusa.json; exit $rc",
       "model": {
         "type": "PROGRAM",
         "model": "inherit"
       },
-      "allowFailure": true,
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Phase 1.5: Save Echidna Logs",
-      "type": "task",
-      "description": "Save Echidna output logs to magic/ directory for later analysis",
-      "prompt": "mkdir -p magic/logs && (find . -name '*.txt' -path '*/echidna/*' -exec cp {} magic/logs/ \\; 2>/dev/null || true) && echo 'Echidna logs saved (if any exist)'",
-      "model": {
-        "type": "PROGRAM",
-        "model": "inherit"
-      },
-      "allowFailure": true,
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Echidna Output Check",
-      "type": "decision",
-      "description": "Check if echidna/ directory exists to verify Echidna ran successfully",
-      "mode": "FILE_EXISTS",
-      "modeInfo": {
-        "fileName": "echidna/*.txt"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": 1,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 2: Extract Target Functions",
-          "NOTE": "Echidna ran successfully, jump to extract target functions"
-        },
-        {
-          "operator": "eq",
-          "value": 0,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Fix Echidna Failure",
-          "NOTE": "Echidna failed to create output directory, jump to fix step"
-        }
-      ],
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": false
-    },
-    {
-      "name": "Fix Echidna Failure",
-      "type": "task",
-      "description": "Resolve issues preventing Echidna from running successfully",
-      "prompt": "You are provided an agent definition at ./.opencode/agent/fix-echidna-failures.md. Exclusively run the fix-echidna-failures agent using the Task tool. This agent will analyze the saved Echidna logs and implement fixes to resolve the issues.",
-      "model": {
-        "type": "OPENCODE",
-        "model": "inherit"
-      },
-      "shouldCreateSummary": true,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Retry Echidna After Fix",
-      "type": "decision",
-      "description": "Loop back to run Echidna again to verify the fix worked",
-      "mode": "FILE_EXISTS",
-      "modeInfo": {
-        "fileName": "magic/fix-echidna-running.md"
-      },
-      "decision": [
-        {
-          "operator": "eq",
-          "value": 1,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 1: Run Echidna",
-          "NOTE": "Fix was implemented, loop back to run Echidna again to verify"
-        },
-        {
-          "operator": "eq",
-          "value": 0,
-          "action": "JUMP_TO_STEP",
-          "destinationStep": "Phase 1: Run Echidna",
-          "NOTE": "Fallback to run Echidna again regardless since fix was still implemented"
-        }
-      ],
       "shouldCreateSummary": false,
       "shouldCommitChanges": false
     },
@@ -147,6 +73,9 @@
       "name": "Phase 2: Extract Target Functions",
       "type": "task",
       "description": "Extract all targeted functions from the fuzzing suite using the extract_target_functions.py script",
+      "preconditions": [
+        "echidna-run-gate"
+      ],
       "prompt": "extract-target-functions --return-json",
       "model": {
         "type": "PROGRAM",
@@ -155,22 +84,6 @@
       "output": {
         "capture": true,
         "save_to": "magic/target-functions.json"
-      },
-      "shouldCreateSummary": false,
-      "shouldCommitChanges": true
-    },
-    {
-      "name": "Phase 3: Order Prerequisite Functions",
-      "type": "task",
-      "description": "Sort functions in testing-priority.json based on prerequisite count",
-      "prompt": "order-prerequisite-func ./magic/testing-priority.json --return-json",
-      "model": {
-        "type": "PROGRAM",
-        "model": "inherit"
-      },
-      "output": {
-        "capture": true,
-        "save_to": "magic/testing-priority.json"
       },
       "shouldCreateSummary": false,
       "shouldCommitChanges": true
@@ -185,6 +98,22 @@
         "model": "inherit"
       },
       "shouldCreateSummary": true,
+      "shouldCommitChanges": true
+    },
+    {
+      "name": "Phase 3: Order Prerequisite Functions",
+      "type": "task",
+      "description": "Sort functions in function-sequences.json based on prerequisite count",
+      "prompt": "order-prerequisite-func ./magic/function-sequences.json --return-json",
+      "model": {
+        "type": "PROGRAM",
+        "model": "inherit"
+      },
+      "output": {
+        "capture": true,
+        "save_to": "magic/function-sequences-sorted.json"
+      },
+      "shouldCreateSummary": false,
       "shouldCommitChanges": true
     },
     {
@@ -215,7 +144,7 @@
       "name": "Workflow Completion Summary",
       "type": "task",
       "description": "Generate final summary of fuzzing setup completion",
-      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all phases (Phase 0 through Phase 3)\n2. List the key artifacts created (Setup.sol, magic/setup-notes.md, testing-priority.json, echidna output)\n3. Confirm that forge build compiles successfully\n4. Confirm that forge test runs without reverts\n5. Provide next steps: user can now run fuzzing campaigns using Echidna or other fuzzing tools",
+      "prompt": "Create a file called FUZZING_SETUP_COMPLETE.md that summarizes:\n1. Successfully completed all phases (Phase 0 through Phase 3)\n2. List the key artifacts created (Setup.sol, magic/setup-notes.md, function-sequences.json, function-sequences-sorted.json, echidna output)\n3. Confirm that forge build compiles successfully\n4. Confirm that forge test runs without reverts\n5. Provide next steps: user can now run fuzzing campaigns using Echidna or other fuzzing tools",
       "model": {
         "type": "OPENCODE",
         "model": "inherit"

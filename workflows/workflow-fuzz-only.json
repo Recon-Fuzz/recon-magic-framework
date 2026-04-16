@@ -1,0 +1,16 @@
+{
+  "name": "Fuzz Only Workflow",
+  "steps": [
+    {
+      "name": "Dispatch Fuzzing Job",
+      "type": "task",
+      "description": "Queue a 100 MLN TestEchidna fuzzing job with the backend.",
+      "model": {
+        "type": "DISPATCH_FUZZING_JOB",
+        "model": "inherit"
+      },
+      "shouldCreateSummary": false,
+      "shouldCommitChanges": false
+    }
+  ]
+}

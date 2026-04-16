@@ -6,7 +6,7 @@ using LangChain's structured output capabilities and Pydantic schemas.
 """
 
 from typing import Any, Type
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field
 
 
 def create_decision_schema(valid_values: list[float]) -> Type[BaseModel]:
@@ -152,10 +152,18 @@ def perform_decision_with_model(
             The contents of the file as a string
         """
         try:
+            # Get the repo path - use RECON_FOUNDRY_ROOT for monorepos, fall back to RECON_REPO_PATH
+            repo_path = os.environ.get('RECON_FOUNDRY_ROOT') or os.environ.get('RECON_REPO_PATH') or '.'
+            base_path = Path(repo_path)
+
             path = Path(file_path)
+            if not path.is_absolute():
+                # Make relative paths relative to the repo
+                path = base_path / file_path
+
             if not path.exists():
-                # Try to find the file using glob pattern
-                matches = list(Path('.').rglob(file_path))
+                # Try to find the file using glob pattern within the repo
+                matches = list(base_path.glob(f"**/{file_path}"))
                 if not matches:
                     return f"Error: File not found: {file_path}"
                 path = matches[0]
@@ -167,12 +175,11 @@ def perform_decision_with_model(
 
     # Initialize the LLM using OpenRouter
     # OpenRouter allows you to choose from multiple providers (Anthropic, OpenAI, etc.)
-    default_model = "openai/gpt-4o"  # Default to GPT-4o
-    model_name = getattr(model_config, 'model', default_model) if model_config else default_model
+    from core.task import resolve_model_string, ModelType
 
-    # Handle "inherit" as default model
-    if model_name == "inherit":
-        model_name = default_model
+    model_type = getattr(model_config, 'type', ModelType.OPENCODE) if model_config else ModelType.OPENCODE
+    model_string = getattr(model_config, 'model', 'inherit') if model_config else 'inherit'
+    model_name = resolve_model_string(model_type, model_string)
 
     llm = ChatOpenAI(
         model=model_name,  # e.g., "anthropic/claude-3.5-sonnet", "openai/gpt-4o", etc.

@@ -1,0 +1,13 @@
+{
+  "name": "Coverage + Properties Pipeline",
+  "steps": [
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-properties-efficient-v4.0-claude.json"
+    },
+    {
+      "type": "workflow",
+      "workflow_file": "workflow-fuzzing-coverage.json"
+    }
+  ]
+}

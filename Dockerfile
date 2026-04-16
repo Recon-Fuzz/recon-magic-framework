@@ -8,7 +8,7 @@ FROM python:3.12-slim
 RUN useradd -m -s /bin/bash reconuser
 
 # Install Node.js and Go
-RUN apt-get update && apt-get install -y curl git wget ripgrep sudo && \
+RUN apt-get update && apt-get install -y curl git wget ripgrep sudo jq && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz && \
@@ -28,6 +28,9 @@ RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/instal
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
 RUN brew install echidna
 USER root
+
+# Make linuxbrew home directory traversable for other users (needed for echidna access)
+RUN chmod 755 /home/linuxbrew
 
 # Install UV
 RUN pip install uv
@@ -58,12 +61,20 @@ COPY . .
 # Install dependencies and build project
 RUN pip install --break-system-packages -e .
 
+# Install Slither for cyclomatic complexity analysis
+RUN pip install --break-system-packages slither-analyzer
+
 # Setup reconuser permissions
 RUN mkdir -p /tmp && \
     chown -R reconuser:reconuser /tmp /app && \
     echo 'reconuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-# Fix echidna permissions for reconuser
+# Setup OpenCode config for non-interactive mode (prevents CLI hangs)
+RUN mkdir -p /home/reconuser/.config/opencode && \
+    cp /app/opencode.json /home/reconuser/.config/opencode/opencode.json && \
+    chown -R reconuser:reconuser /home/reconuser/.config
+
+# Ensure echidna binaries are executable by reconuser (defense-in-depth)
 RUN chmod -R 755 /home/linuxbrew/.linuxbrew/bin
 
 # Switch to non-root user
@@ -71,7 +82,10 @@ USER reconuser
 
 # Configure git for reconuser
 RUN git config --global user.email "recon@worker.local" && \
-    git config --global user.name "Recon Worker"
+    git config --global user.name "Recon Worker" && \
+    git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    git config --global url."https://github.com/".insteadOf "git://github.com/"
+
 
 # Set working directory to /tmp for user operations
 WORKDIR /tmp
