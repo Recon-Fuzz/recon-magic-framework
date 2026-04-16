@@ -34,21 +34,28 @@ uv tool install --editable .
 
 ### Environment Variables
 
-The framework requires the following environment variables to be set:
+Create a `.env` file in the framework root (see `.env.example`). The main variables:
 
-1. **API Key** - Setup a .env with OPENAI_API_KEY (The Key can be from Openrouter!)
+| Variable | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Yes (for `CLAUDE_CODE` model) | Anthropic API key for Claude Code tasks |
+| `OPENROUTER_API_KEY` / `OPENAI_API_KEY` | Yes (for `OPENCODE` model) | Key for OpenRouter or OpenAI-compatible provider |
+| `RUNNER_ENV` | No | Set to `production` to enable `--dangerously-skip-permissions` for Claude Code |
+| `RECON_REPO_PATH` | Auto | Set automatically by the CLI to the target repository path |
+| `RECON_FOUNDRY_ROOT` | Auto | Auto-detected for monorepos (directory containing `foundry.toml`) |
+| `RECON_FRAMEWORK_ROOT` | Auto | Set automatically by the CLI to the framework installation path |
 
 ## Usage
 
 **CLI (recommended):**
 ```bash
-recon --workflow audit
-recon --workflow workflow-loop --dangerous --cap 10 --logs ./logs
+recon-magic-framework --workflow audit
+recon-magic-framework --workflow workflow-loop --dangerous --cap 10 --logs ./logs
 ```
 
 **Direct (simple):**
 ```bash
-python main.py workflow
+python main.py workflows/audit.json
 ```
 
 **Important**: The command must be run from the root of a git repository.
@@ -122,6 +129,21 @@ Workflows are JSON files that define a sequence of steps to execute. Each step c
 - **OPENCODE**: Uses alternative code assistant
 - **INHERIT**: Inherits model configuration from parent
 
+### Decision Modes
+
+Decision steps support several modes that determine how the condition value is obtained:
+
+| Mode | Description | `modeInfo` fields |
+|---|---|---|
+| `FILE_EXISTS` | Check if a file (or glob pattern) exists. Returns `1` if found, `0` if not. | `fileName` |
+| `FILE_CONTAINS` | Check if a file contains a specific string. Returns `1` if found, `0` if not. | `fileName`, `searchString` |
+| `READ_FILE` | Read file contents and parse as a number for comparison. | `fileName` |
+| `JSON_KEY_VALUE` | Read a specific key path from a JSON file (e.g. `summary.count`). | `fileName`, `keyPath` |
+| `GREP` | Run a grep pattern on files matching a glob. Returns the total match count. | `pattern`, `file` |
+| `SHELL` | Run a shell command. Returns the exit code for comparison. | `command` |
+| `USE_MODEL` | Use an LLM to evaluate a prompt and select a decision value. | `prompt` (+ `model` on step) |
+| `READ_FILE_WITH_MODEL_DIGEST` | Read a file, then pass its contents to an LLM to digest and decide. | `fileName`, `prompt` (+ `model` on step) |
+
 ### Decision Actions
 
 Decision steps can trigger different actions based on conditions:
@@ -151,7 +173,7 @@ Each step supports these options:
 
 Create JSON files in the `workflows/` directory. See examples:
 
-- `workflows/workflow_audit.json` - Multi-phase audit workflow
+- `workflows/audit.json` - Multi-phase audit workflow
 - `workflows/workflow-jump-example.json` - Conditional branching
 - `workflows/workflow-loop.json` - Looping example
 
@@ -193,7 +215,7 @@ Then open http://localhost:8000/studio/ in your browser. The editor auto-syncs w
 ### Security Audit Workflow
 
 ```bash
-recon workflow_audit
+recon-magic-framework --workflow audit
 ```
 
 This runs a multi-phase smart contract audit with decision points to stop early if critical issues are found.
@@ -201,7 +223,7 @@ This runs a multi-phase smart contract audit with decision points to stop early 
 ### Echidna Fuzzing Workflow
 
 ```bash
-recon workflow-echidna-example
+recon-magic-framework --workflow workflow-echidna-example
 ```
 
 Automated fuzzing setup and execution workflow.
@@ -254,35 +276,31 @@ The framework automatically:
 
 ```
 .
-├── cli.py                 # CLI entry point
-├── main.py               # Workflow execution engine
-├── core/                 # Core execution modules
-│   ├── task.py          # Task step execution
-│   ├── decision.py      # Decision step execution
-│   └── git_commit.py    # Git utilities
-├── workflows/           # Workflow JSON files
-└── utilities/           # Helper tools
-    ├── workflow-maker/  # Markdown to JSON converter
-    └── looper/         # Prompt repetition tool
+├── cli.py                  # CLI entry point (recon-magic-framework binary)
+├── main.py                 # Workflow execution engine
+├── worker.py               # Server/cloud worker for remote execution
+├── type.ts                 # TypeScript type definitions (used by studio editor)
+├── core/                   # Core execution modules
+│   ├── task.py             # Task step execution (CLAUDE_CODE, OPENCODE, PROGRAM)
+│   ├── decision.py         # Decision step execution (8 modes)
+│   ├── model_decision.py   # LLM-based decision helper
+│   ├── git_commit.py       # Git utilities
+│   └── path_utils.py       # Path resolution (RECON_FOUNDRY_ROOT / RECON_REPO_PATH)
+├── workflows/              # Workflow JSON files
+├── prompts/                # Agent reference documents and prompt templates
+├── tools/                  # Installable CLI tools (coverage eval, function extraction, etc.)
+├── server/                 # Server components (jobs, postprocessing, GitHub integration)
+├── studio/                 # Visual workflow editor (browser-based)
+├── programs/               # Shell scripts and helper programs
+├── log_formatters/         # Log formatting utilities
+└── utilities/              # Helper tools
+    ├── workflow-maker/     # Markdown to JSON converter
+    └── looper/             # Prompt repetition tool
 ```
 
 ### Type Safety
 
 The workflow schema is defined using Pydantic models in `main.py` and TypeScript types in `type.ts` for the visual editor.
-
-## Usage
-
-### Programmatic
-
-use `main`
-
-### Cli
-
-use `cli`
-
-### For Server
-
-use `worker`
 
 ## License
 
