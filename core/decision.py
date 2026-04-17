@@ -153,11 +153,6 @@ def execute_decision_step(step: DecisionStep, step_num: int) -> tuple[int, str, 
     """
     print(f"Executing decision step: {step.name}")
 
-    # # Check that we have at least one decision
-    # if not step.decision:
-    #     print("⚠ No decisions defined, defaulting to CONTINUE")
-    #     return (SUCCESS, "CONTINUE", None)
-
     # Get the mode from the first decision (all decisions in a step should have the same mode)
     decision_mode = step.mode
     print(f"Decision mode: {decision_mode}")

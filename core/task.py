@@ -776,6 +776,26 @@ def resolve_path_template(path_template: str, step_num: int, tool_data: dict | N
     return Path(path)
 
 
+def _resolve_agent_prompt(prompt: str, framework_root: str) -> str:
+    """Resolve agent file references in prompts, loading and injecting agent content."""
+    agent_file_match = re.search(r'\./(?:\.opencode|prompts)/(agents?)/([^.\s]+)\.md', prompt)
+    if not agent_file_match:
+        return prompt
+
+    prompts_dir = os.environ.get('PROMPTS_DIR', str(Path(framework_root) / 'prompts'))
+    agent_file_path = Path(prompts_dir) / agent_file_match.group(1) / f"{agent_file_match.group(2)}.md"
+    if not agent_file_path.exists():
+        print(f"  ⚠ Agent file not found: {agent_file_path}")
+        return prompt
+
+    print(f"  Loading agent definition from: {agent_file_path}")
+    agent_content = agent_file_path.read_text()
+    parts = agent_content.split('---', 2)
+    if len(parts) >= 3:
+        return parts[2].strip()
+    return agent_content
+
+
 def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None) -> tuple[int, str, str | None, str | None]:
     """
     Execute a task step based on its model type.
@@ -913,26 +933,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         parser_script_file = Path(framework_root) / 'log_formatters' / 'claude_code.py'
 
         # Process prompt - if it references an agent file, read and inject its content
-        prompt = step.prompt
-
-        agent_file_match = re.search(r'\./(?:\.opencode|prompts)/(agents?)/([^.\s]+)\.md', prompt)
-        if agent_file_match:
-            # Resolve agent file from PROMPTS_DIR
-            prompts_dir = os.environ.get('PROMPTS_DIR', str(Path(framework_root) / 'prompts'))
-            agent_file_path = Path(prompts_dir) / agent_file_match.group(1) / f"{agent_file_match.group(2)}.md"
-            if agent_file_path.exists():
-                print(f"  Loading agent definition from: {agent_file_path}")
-                agent_content = agent_file_path.read_text()
-                # Extract content after frontmatter (between --- markers)
-                parts = agent_content.split('---', 2)
-                if len(parts) >= 3:
-                    # Use everything after the second ---
-                    prompt = parts[2].strip()
-                else:
-                    # No frontmatter, use full content
-                    prompt = agent_content
-            else:
-                print(f"  ⚠ Agent file not found: {agent_file_path}")
+        prompt = _resolve_agent_prompt(step.prompt, framework_root)
 
         # If repo_path is set, prefix command to cd there first
         # Use RECON_FOUNDRY_ROOT (where foundry.toml lives) with fallback to RECON_REPO_PATH
@@ -991,25 +992,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
         parser_script_file = Path(framework_root) / 'log_formatters' / 'opencode.py'
 
         # Process prompt - if it references an agent file, read and inject its content
-        prompt = step.prompt
-        agent_file_match = re.search(r'\./(?:\.opencode|prompts)/(agents?)/([^.\s]+)\.md', prompt)
-        if agent_file_match:
-            # Resolve agent file from PROMPTS_DIR
-            prompts_dir = os.environ.get('PROMPTS_DIR', str(Path(framework_root) / 'prompts'))
-            agent_file_path = Path(prompts_dir) / agent_file_match.group(1) / f"{agent_file_match.group(2)}.md"
-            if agent_file_path.exists():
-                print(f"  Loading agent definition from: {agent_file_path}")
-                agent_content = agent_file_path.read_text()
-                # Extract content after frontmatter (between --- markers)
-                parts = agent_content.split('---', 2)
-                if len(parts) >= 3:
-                    # Use everything after the second ---
-                    prompt = parts[2].strip()
-                else:
-                    # No frontmatter, use full content
-                    prompt = agent_content
-            else:
-                print(f"  ⚠ Agent file not found: {agent_file_path}")
+        prompt = _resolve_agent_prompt(step.prompt, framework_root)
 
         # If repo_path is set, prefix command to cd there first
         # Use RECON_FOUNDRY_ROOT (where foundry.toml lives) with fallback to RECON_REPO_PATH
@@ -1143,7 +1126,7 @@ def execute_task_step(step: TaskStep, step_num: int, step_id: str | None = None)
             error_body = ""
             try:
                 error_body = e.response.json().get("message", str(e))
-            except:
+            except Exception:
                 error_body = str(e)
             print(f"  ❌ Failed to dispatch fuzzing job: {error_body}")
             return (FAILURE, "CONTINUE", None, None)
